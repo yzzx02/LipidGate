@@ -1,3 +1,3 @@
-from .detection import run_feature_detection
+from .detection import FeatureDetectionResult, run_feature_detection, run_feature_detection_result
 
-__all__ = ["run_feature_detection"]
+__all__ = ["FeatureDetectionResult", "run_feature_detection", "run_feature_detection_result"]

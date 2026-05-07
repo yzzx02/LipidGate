@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import copy
+import os
 import shutil
 import tempfile
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
 import pandas as pd
 
 from lipidbench.utils.feature_table_io import load_feature_table
+
+
+@dataclass(frozen=True)
+class FeatureDetectionResult:
+    table_path: Path
+    algo: str
+    output_dir: Path
+    row_count: int | None
+    parameters: dict = field(default_factory=dict)
+    message: str = ""
 
 
 def default_config() -> dict:
@@ -56,9 +68,21 @@ def _mzml_input_dir(input_path: str | Path) -> Iterator[Path]:
         return
     if not path.exists():
         raise FileNotFoundError(path)
-    with tempfile.TemporaryDirectory(prefix="lipidgate_mzml_") as tmp_dir_str:
+    temp_parent = path.parent if path.parent.exists() else None
+    try:
+        temp_dir = tempfile.TemporaryDirectory(prefix="lipidgate_mzml_", dir=temp_parent)
+    except OSError:
+        temp_dir = tempfile.TemporaryDirectory(prefix="lipidgate_mzml_")
+    with temp_dir as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
-        shutil.copy2(path, tmp_dir / path.name)
+        target = tmp_dir / path.name
+        try:
+            os.link(path, target)
+        except OSError:
+            try:
+                target.symlink_to(path)
+            except OSError:
+                shutil.copy2(path, target)
         yield tmp_dir
 
 
@@ -79,7 +103,7 @@ def _merge_params(config: dict, algo: str, params: dict | None) -> dict:
     return cfg
 
 
-def run_feature_detection(
+def _run_feature_detection_path(
     *,
     algo: str,
     input_path: str | Path,
@@ -153,6 +177,72 @@ def run_feature_detection(
             return out_file
 
     raise ValueError(f"Unsupported MS1 algorithm: {algo}")
+
+
+def run_feature_detection_result(
+    *,
+    algo: str,
+    input_path: str | Path,
+    output_dir: str | Path,
+    params: dict | None = None,
+    msdial_table: str | Path | None = None,
+    config: dict | None = None,
+    asari_table: str = "preferred",
+) -> FeatureDetectionResult:
+    table_path = _run_feature_detection_path(
+        algo=algo,
+        input_path=input_path,
+        output_dir=output_dir,
+        params=params,
+        msdial_table=msdial_table,
+        config=config,
+        asari_table=asari_table,
+    )
+    algo_norm = algo.strip().lower().replace("_", "-")
+    if algo_norm == "msdial":
+        algo_norm = "ms-dial"
+    row_count: int | None
+    try:
+        row_count = int(len(load_feature_table(table_path, algo_norm)))
+    except Exception:
+        row_count = None
+    message = f"Feature detection finished: {table_path}"
+    if row_count is not None:
+        message += f" ({row_count} rows)"
+    return FeatureDetectionResult(
+        table_path=table_path,
+        algo=algo_norm,
+        output_dir=Path(output_dir).resolve(),
+        row_count=row_count,
+        parameters=dict(params or {}),
+        message=message,
+    )
+
+
+def run_feature_detection(
+    *,
+    algo: str,
+    input_path: str | Path,
+    output_dir: str | Path,
+    params: dict | None = None,
+    msdial_table: str | Path | None = None,
+    config: dict | None = None,
+    asari_table: str = "preferred",
+) -> Path:
+    """Run one MS1 workflow and return only the feature table path.
+
+    Kept for compatibility; new callers should use run_feature_detection_result.
+    """
+
+    return run_feature_detection_result(
+        algo=algo,
+        input_path=input_path,
+        output_dir=output_dir,
+        params=params,
+        msdial_table=msdial_table,
+        config=config,
+        asari_table=asari_table,
+    ).table_path
 
 
 def load_detection_result(path: str | Path, algo: str) -> pd.DataFrame:

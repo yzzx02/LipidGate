@@ -612,7 +612,7 @@ class PhospholipidMS2Searcher:
             precursor_mz = spectrum.selected_precursors[0].get("mz")
             if precursor_mz is None:
                 continue
-            raw_peaks = spectrum.peaks("raw")
+            raw_peaks = [(float(mz), float(intensity)) for mz, intensity in spectrum.peaks("raw")]
             normalized = [peak for peak in normalize_peaks(raw_peaks) if peak.relative_intensity >= self.min_relative_intensity]
             if not normalized:
                 continue

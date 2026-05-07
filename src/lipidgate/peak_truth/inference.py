@@ -25,7 +25,21 @@ def _load_attr_scaler(obj: dict | None, scaler_path: Path | None = None) -> Attr
     )
 
 
-def _resolve_image(row: pd.Series, image_root: Path, mzml_stem: str | None) -> Path:
+def _build_image_index(image_root: Path) -> dict[str, Path]:
+    if not image_root.exists():
+        return {}
+    index: dict[str, Path] = {}
+    for path in sorted(image_root.rglob("*.png")):
+        index.setdefault(path.stem, path)
+    return index
+
+
+def _resolve_image(
+    row: pd.Series,
+    image_root: Path,
+    mzml_stem: str | None,
+    image_index: dict[str, Path] | None = None,
+) -> Path:
     if "image" in row and pd.notna(row["image"]):
         p = Path(str(row["image"]))
         return p if p.is_absolute() else image_root / p
@@ -36,10 +50,11 @@ def _resolve_image(row: pd.Series, image_root: Path, mzml_stem: str | None) -> P
     if mzml_stem:
         candidates.append(image_root / mzml_stem / f"{feature_id}.png")
     candidates.append(image_root / f"{feature_id}.png")
-    candidates.extend(sorted(image_root.rglob(f"{feature_id}.png")))
     for p in candidates:
         if p.exists():
             return p
+    if image_index and feature_id in image_index:
+        return image_index[feature_id]
     raise FileNotFoundError(f"EIC image not found for Feature_ID={feature_id} under {image_root}")
 
 
@@ -108,6 +123,7 @@ def predict_peak_truth(
     image_root = Path(image_root).resolve()
     probabilities: list[float] = []
     image_paths: list[str] = []
+    image_index = _build_image_index(image_root)
 
     with torch.no_grad():
         for start in range(0, len(attrs_df), int(batch_size)):
@@ -115,7 +131,7 @@ def predict_peak_truth(
             images = []
             attr_tensors = []
             for _, row in batch.iterrows():
-                image_path = _resolve_image(row, image_root, mzml_stem)
+                image_path = _resolve_image(row, image_root, mzml_stem, image_index=image_index)
                 image_paths.append(str(image_path.relative_to(image_root) if image_path.is_relative_to(image_root) else image_path))
                 image = Image.open(image_path).convert("RGB")
                 images.append(transform(image))

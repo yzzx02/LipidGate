@@ -13,6 +13,8 @@ outputs/
 eic_images/
 *.log
 *.tmp
+.library_cache/
+libraries/ms2/.library_cache/
 
 # Raw/vendor working data that should stay local.
 *.mzML

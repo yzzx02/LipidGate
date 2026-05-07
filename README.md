@@ -7,6 +7,8 @@ LipidGate is a desktop and command-line workflow for lipidomics data:
 - Rule-based MS2 library matching against final MSP libraries.
 
 The MS1/peak-truth result and MS2 result are exported independently in v1.
+The GUI is the preferred entry point for routine use and shows independent
+previews for feature tables, peak-truth tables, EIC images, and MS2 results.
 
 ## Layout
 
@@ -42,3 +44,11 @@ git lfs track "*.msp" "*.pth" "*.pt" "*.ckpt"
 ```
 
 Excel/CSV library sources are intentionally not tracked. Only final MSP libraries are included.
+Runtime MSP parse caches are written under `.library_cache/` next to the MSP
+file and are ignored by Git.
+
+## Algorithm Risk Notes
+
+Potential MS2 matching risks discovered during wrapper/GUI optimization are
+tracked in `docs/ms2_algorithm_risks.md`. They are documented separately because
+the v1 optimization pass keeps the core matching rules unchanged.
