@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lipidgate"
+version = "0.1.0"
+description = "Integrated lipid feature detection, peak truth scoring, and MS2 rule-based identification."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "matplotlib",
+  "scikit-learn",
+  "pillow",
+  "PySide6",
+  "pymzml",
+  "pyopenms",
+  "torch",
+  "torchvision",
+  "PyYAML",
+  "openpyxl",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+lipidgate = "lipidgate.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

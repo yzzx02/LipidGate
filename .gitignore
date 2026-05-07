@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Runtime outputs
+results/
+outputs/
+eic_images/
+*.log
+*.tmp
+
+# Raw/vendor working data that should stay local.
+*.mzML
+*.mzXML
+*.raw
+*.wiff
+*.scan
+
+# Intermediate library sources/results. Final MSP libraries are tracked via LFS.
+*.xlsx
+*.xls
+*.csv
+!examples/**/*.csv
+!configs/**/*.csv
+
+# Local editor state
+.vscode/
+.idea/

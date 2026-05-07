@@ -1,0 +1,322 @@
+from __future__ import annotations
+
+import shutil
+import unittest
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+import pandas as pd
+
+from phospholipid_ms2.library import convert_excel_directory_to_msp, load_standard_msp
+
+
+@contextmanager
+def workspace_temp_dir():
+    root = Path(__file__).resolve().parents[2] / ".test_outputs"
+    root.mkdir(parents=True, exist_ok=True)
+    tmp_dir = root / f"library_{uuid.uuid4().hex}"
+    tmp_dir.mkdir()
+    try:
+        yield tmp_dir
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+class LibraryConversionTests(unittest.TestCase):
+    def test_excel_directory_can_be_converted_to_standard_msp(self) -> None:
+        with workspace_temp_dir() as temp_path:
+            excel_path = temp_path / "PE([M-H]-).xlsx"
+            df = pd.DataFrame(
+                [
+                    {
+                        "main_class": "PE",
+                        "lipid_name": "PE(34:1)",
+                        "lipid_chain_name": "PE(16:0_18:1)",
+                        "化学式": "C39H76NO8P",
+                        "加合物类型": "[M-H]-",
+                        "加合物m/z": 716.523,
+                        "碎片名": "[RCOO]-(16:0)",
+                        "碎片m/z": 255.2329,
+                        "Fragment_Type": "Diagnostic_FA",
+                    },
+                    {
+                        "main_class": "PE",
+                        "lipid_name": "PE(34:1)",
+                        "lipid_chain_name": "PE(16:0_18:1)",
+                        "化学式": "C39H76NO8P",
+                        "加合物类型": "[M-H]-",
+                        "加合物m/z": 716.523,
+                        "碎片名": "[C2H7NO4P]-",
+                        "碎片m/z": 140.0118,
+                        "Fragment_Type": "Diagnostic_HG",
+                    },
+                ]
+            )
+            df.to_excel(excel_path, index=False)
+
+            output_msp = temp_path / "library.msp"
+            convert_excel_directory_to_msp(temp_path, output_msp)
+            output_text = output_msp.read_text(encoding="utf-8")
+            self.assertIn('255.2329 100.00 "[RCOO]-(16:0)" "Diagnostic_FA"', output_text)
+            records = load_standard_msp(output_msp)
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0].compound_class, "PE")
+            self.assertEqual(len(records[0].fragments), 2)
+            self.assertEqual(records[0].fragments[0].required_group, "hg")
+            self.assertEqual(records[0].fragments[1].required_group, "fah")
+
+    def test_compact_msp_fragment_fields_are_loaded(self) -> None:
+        msp_text = """Name: Archaeol(20:0_20:0)
+PrecursorMZ: 653.6806
+PrecursorType: [M+H]+
+CompoundClass: Archaeol
+Formula: C43H88O3
+Comment: MS1_name=Archaeol(20:0_20:0);polarity=+
+Num Peaks: 3
+653.6812 54.70 "[M+H]+ Precursor Mass" "Precursor Ion"
+373.3682 109.41 "Chainloss" "Diagnostic_FA_Loss"
+281.3208 10.94 "SN1/SN2" "Diagnostic_FA"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "compact.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].fragments[0].name, "SN1/SN2")
+        self.assertEqual(records[0].fragments[0].fragment_type, "Diagnostic_FA")
+        self.assertEqual(records[0].fragments[1].name, "Chainloss")
+        self.assertEqual(records[0].fragments[1].fragment_type, "Diagnostic_FA_Loss")
+        self.assertEqual(records[0].fragments[2].fragment_type, "Precursor Ion")
+
+    def test_single_label_msp_fragment_defaults_to_common(self) -> None:
+        msp_text = """Name: Archaeol(20:0_20:0)
+PrecursorMZ: 653.6806
+PrecursorType: [M+H]+
+CompoundClass: Archaeol
+Formula: C43H88O3
+Comment: MS1_name=Archaeol(20:0_20:0);polarity=+
+Num Peaks: 2
+373.3682 109.41 "Chainloss"
+281.3208 10.94 "SN1/SN2"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "single_label.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        self.assertEqual([fragment.name for fragment in records[0].fragments], ["SN1/SN2", "Chainloss"])
+        self.assertTrue(all(fragment.fragment_type == "Common" for fragment in records[0].fragments))
+
+    def test_negative_pc_common_signature_fragments_are_candidate_hg(self) -> None:
+        msp_text = """Name: PC(8:1_15:4)
+PrecursorMZ: 642.3413
+PrecursorType: [M+HCOO]-
+CompoundClass: PC
+Formula: C31H52O8NP
+Comment: MS1_name=PC(23:5);polarity=-
+Num Peaks: 3
+168.0431 100.00 "[C4H11NO4P]-" "Common"
+224.0693 100.00 "[C7H15NO5P]-" "Common"
+642.3413 100.00 "[M+HCOO]-" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "pc_negative.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        fragment_types = {fragment.name: fragment.fragment_type for fragment in records[0].fragments}
+        self.assertEqual(fragment_types["[C4H11NO4P]-"], "Candidate_HG")
+        self.assertEqual(fragment_types["[C7H15NO5P]-"], "Candidate_HG")
+        self.assertEqual(fragment_types["[M+HCOO]-"], "Precursor Ion")
+
+    def test_class_specific_common_headgroups_are_normalized_from_msp(self) -> None:
+        msp_text = """Name: PG(16:0_18:2)
+PrecursorMZ: 745.5025
+PrecursorType: [M-H]-
+CompoundClass: PG
+Formula: C40H75O10P
+Comment: MS1_name=PG(34:2);polarity=-
+Num Peaks: 2
+152.9933 100.00 "[C3H6O5P]-" "Common"
+171.0064 100.00 "[C3H8O6P]-" "Common"
+209.0221 100.00 "[C6H10O6P]-" "Common"
+745.5025 100.00 "[M-H]-" "Precursor Ion"
+
+Name: PEtOH(16:0_18:1)
+PrecursorMZ: 701.5127
+PrecursorType: [M-H]-
+CompoundClass: PEtOH
+Formula: C39H75O7P
+Comment: MS1_name=PEtOH(34:1);polarity=-
+Num Peaks: 2
+181.0280 100.00 "[C5H10O5P]-" "Common"
+701.5127 100.00 "[M-H]-" "Precursor Ion"
+
+Name: DMPE(18:0_18:2)
+PrecursorMZ: 770.5705
+PrecursorType: [M-H]-
+CompoundClass: DMPE
+Formula: C41H80NO8P
+Comment: MS1_name=DMPE(36:2);polarity=-
+Num Peaks: 2
+168.0431 100.00 "[C4H11NO4P]-" "Common"
+770.5705 100.00 "[M-H]-" "Precursor Ion"
+
+Name: PMeOH(16:0_18:1)
+PrecursorMZ: 687.4970
+PrecursorType: [M-H]-
+CompoundClass: PMeOH
+Formula: C37H73O7P
+Comment: MS1_name=PMeOH(34:1);polarity=-
+Num Peaks: 2
+167.0109 100.00 "[C4H8O5P]-" "Common"
+687.4970 100.00 "[M-H]-" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "class_specific_hg.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        by_class = {record.compound_class: record for record in records}
+        for lipid_class, fragment_name in {
+            "PEtOH": "[C5H10O5P]-",
+            "DMPE": "[C4H11NO4P]-",
+            "PMeOH": "[C4H8O5P]-",
+        }.items():
+            fragment = next(item for item in by_class[lipid_class].fragments if item.name == fragment_name)
+            self.assertEqual(fragment.fragment_type, "Diagnostic_HG")
+            self.assertEqual(fragment.required_group, "hg")
+        for fragment_name in ("[C3H6O5P]-", "[C3H8O6P]-", "[C6H10O6P]-"):
+            fragment = next(item for item in by_class["PG"].fragments if item.name == fragment_name)
+            self.assertEqual(fragment.fragment_type, "Diagnostic_HG")
+            self.assertEqual(fragment.required_group, "hg")
+
+    def test_special_positive_headgroup_fragments_are_normalized_from_msp(self) -> None:
+        msp_text = """Name: NAGly 10:0/10:0
+PrecursorMZ: 400.3057
+PrecursorType: [M+H]+
+CompoundClass: NAGly
+Formula: C22H41NO5
+Comment: MS1_name=NAGly 10:0/10:0;polarity=+
+Num Peaks: 2
+76.0393 750.00 "{'name': 'm/z 76.0393', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+228.1594 999.00 "{'name': 'm/z 228.1594', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+
+Name: NAGlySer 10:0/10:0
+PrecursorMZ: 504.3643
+PrecursorType: [M+NH4]+
+CompoundClass: NAGlySer
+Formula: C25H46N2O7
+Comment: MS1_name=NAGlySer 10:0/10:0;polarity=+
+Num Peaks: 2
+106.0499 200.00 "{'name': 'm/z 106.0499', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+210.1488 999.00 "{'name': 'm/z 210.1488', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+
+Name: NAOrn 10:0/10:0
+PrecursorMZ: 451.3530
+PrecursorType: [M+H]+
+CompoundClass: NAOrn
+Formula: C25H48N2O5
+Comment: MS1_name=NAOrn 10:0/10:0;polarity=+
+Num Peaks: 2
+115.0866 999.00 "{'name': 'm/z 115.0866', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+417.3476 500.00 "{'name': 'm/z 417.3476', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+
+Name: CE 18:0
+PrecursorMZ: 670.6497
+PrecursorType: [M+NH4]+
+CompoundClass: CE
+Formula: C45H80O2
+Comment: MS1_name=CE 18:0;polarity=+
+Num Peaks: 3
+369.3516 999.00 "{'name': '369.3516', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+652.6391 50.00 "{'name': '652.6391', 'type': 'Common', 'required_group': '', 'weight': 1.0}"
+670.6497 100.00 "{'name': '[M+NH4]+', 'type': 'Precursor Ion', 'required_group': '', 'weight': 1.0}"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "special_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        by_class = {record.compound_class: record for record in records}
+        self.assertEqual(by_class["NAGly"].fragments[0].fragment_type, "Diagnostic_HG")
+        self.assertEqual(by_class["NAGly"].fragments[0].required_group, "hg")
+        self.assertEqual(by_class["NAGlySer"].fragments[0].fragment_type, "Diagnostic_HG")
+        self.assertEqual(by_class["NAGlySer"].fragments[0].required_group, "hg")
+        self.assertEqual(by_class["NAOrn"].fragments[0].fragment_type, "Diagnostic_HG")
+        self.assertEqual(by_class["NAOrn"].fragments[0].required_group, "hg")
+        self.assertEqual(by_class["CE"].fragments[0].fragment_type, "Diagnostic_HG")
+        self.assertEqual(by_class["CE"].fragments[0].required_group, "hg")
+
+    def test_pi_related_positive_headgroup_fragments_are_normalized_from_msp(self) -> None:
+        msp_text = """Name: PI(15:0_18:0)
+PrecursorMZ: 842.5753
+PrecursorType: [M+NH4]+
+CompoundClass: PI
+Formula: C42H81O13P
+Comment: MS1_name=PI(33:0);polarity=+
+Num Peaks: 3
+299.2581 100.00 "{'name': '[M-(R=O)-C6H13O9P+H]+(18:0)', 'type': 'Diagnostic_FA_Loss'}"
+565.5190 100.00 "{'name': '[M-C6H13O9P+H]+', 'type': 'Common'}"
+842.5753 100.00 "{'name': '[M+NH4]+', 'type': 'Precursor Ion'}"
+
+Name: LPI(0:0/10:1)
+PrecursorMZ: 504.2204
+PrecursorType: [M+NH4]+
+CompoundClass: LPI
+Formula: C19H35O12P
+Comment: MS1_name=LPI(10:1);polarity=+
+Num Peaks: 3
+75.0441 100.00 "{'name': '[M-(R=O)-C6H13O9P+H]+(10:1)', 'type': 'Diagnostic_FA_Loss'}"
+227.1642 100.00 "{'name': '[M-C6H13O9P+H]+', 'type': 'Common'}"
+504.2204 100.00 "{'name': '[M+NH4]+', 'type': 'Precursor Ion'}"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "pi_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        by_class = {record.compound_class: record for record in records}
+        pi_hg = next(fragment for fragment in by_class["PI"].fragments if fragment.name == "[M-C6H13O9P+H]+")
+        lpi_hg = next(fragment for fragment in by_class["LPI"].fragments if fragment.name == "[M-C6H13O9P+H]+")
+
+        self.assertEqual(pi_hg.fragment_type, "Diagnostic_HG")
+        self.assertEqual(pi_hg.required_group, "hg")
+        self.assertEqual(lpi_hg.fragment_type, "Diagnostic_HG")
+        self.assertEqual(lpi_hg.required_group, "hg")
+
+    def test_mg_positive_fragments_are_normalized_from_msp(self) -> None:
+        msp_text = """Name: MG(17:2)
+PrecursorMZ: 358.2952
+PrecursorType: [M+NH4]+
+CompoundClass: MG
+Formula: C20H36O4
+Comment: MS1_name=MG(17:2);polarity=+
+Num Peaks: 6
+231.2107 100.00 "{'name': '[R1C=O-H2O]+', 'type': 'FA_Frag'}"
+249.2213 100.00 "{'name': '(R=O)+(17:2)', 'type': 'FA_Frag'}"
+267.2319 100.00 "{'name': '[RCOO]-(17:2)', 'type': 'Diagnostic_FA'}"
+323.2581 100.00 "{'name': '[M-H2O+H]+', 'type': 'Common'}"
+341.2686 100.00 "{'name': '[M+H]+', 'type': 'Common'}"
+358.2952 100.00 "{'name': '[M+NH4]+', 'type': 'Precursor Ion'}"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "mg_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].compound_class, "MG")
+        self.assertEqual(len(records[0].fragments), 5)
+        self.assertFalse(any(fragment.name.startswith("[RCOO]-") for fragment in records[0].fragments))
+
+        diagnostic_hg = [fragment for fragment in records[0].fragments if fragment.fragment_type == "Diagnostic_HG"]
+        self.assertEqual({fragment.name for fragment in diagnostic_hg}, {"[R1C=O-H2O]+", "(R=O)+(17:2)", "[M-H2O+H]+"})
+        self.assertTrue(all(fragment.required_group == "hg" for fragment in diagnostic_hg))
+
+
+if __name__ == "__main__":
+    unittest.main()

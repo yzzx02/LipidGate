@@ -1,0 +1,24 @@
+paths:
+  mzml_input: "D:/data/mzml"
+  output_dir: "results"
+  positive_msp: "libraries/ms2/current_positive.msp"
+  negative_msp: "libraries/ms2/current_negative.msp"
+
+ms1:
+  algorithm: "pyopenms"
+  mz_tolerance_ppm: 10.0
+  noise: 1000.0
+  sn: 5.0
+  min_fwhm: 2.5
+  max_fwhm: 60.0
+
+peak_truth:
+  model_dir: "models/peak_truth/convnext_fusion_binary_v3_gpu224_sphingolipid20260330"
+  eic_ppm: 10.0
+  max_features:
+
+ms2:
+  mode: "negative"
+  precursor_tolerance_ppm: 10.0
+  fragment_tolerance_da: 0.02
+  top_n: 5
