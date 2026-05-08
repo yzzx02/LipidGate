@@ -10,7 +10,7 @@ import pandas as pd
 
 from .library import load_library
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
-from .rules import DEFAULT_NEGATIVE_RULES, RuleSet
+from .rules import DEFAULT_RULES, RuleSet
 from .scoring import (
     _empty_pool_scores,
     _fragment_counts_as_effective_loss,
@@ -51,7 +51,7 @@ class LipidMS2Searcher:
         fragment_prefilter_min_candidates: int = 128,
     ) -> None:
         self.library = sorted(load_library(library_path), key=lambda record: record.precursor_mz)
-        self.rules = rules or DEFAULT_NEGATIVE_RULES
+        self.rules = rules or DEFAULT_RULES
         self.precursor_tolerance_da = precursor_tolerance_da
         self.precursor_tolerance_ppm = float(precursor_tolerance_ppm)
         self.fragment_tolerance_da = fragment_tolerance_da
@@ -467,7 +467,6 @@ class LipidMS2Searcher:
                     experimental_mz=experimental_mz,
                 )
 
-            # TG/DG 正模式严格门控: 关键 FA-loss 必须全命中，避免单碎片误入结果。
             scored.append(candidate_score)
         passed_results = [item for item in scored if item.passed_required_gates]
         if passed_results:

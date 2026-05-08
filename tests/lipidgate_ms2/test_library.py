@@ -3,12 +3,14 @@
 import shutil
 import unittest
 import uuid
+import os
 from contextlib import contextmanager
+from unittest.mock import patch
 from pathlib import Path
 
 import pandas as pd
 
-from lipidgate_ms2.library import convert_excel_directory_to_msp, load_standard_msp
+from lipidgate_ms2.library import convert_excel_directory_to_msp, load_library, load_standard_msp
 
 
 @contextmanager
@@ -109,6 +111,27 @@ Num Peaks: 2
 
         self.assertEqual([fragment.name for fragment in records[0].fragments], ["SN1/SN2", "Chainloss"])
         self.assertTrue(all(fragment.fragment_type == "Common" for fragment in records[0].fragments))
+
+    def test_standard_msp_cache_uses_user_cache_dir(self) -> None:
+        msp_text = """Name: PE(16:0_18:1)
+PrecursorMZ: 716.5230
+PrecursorType: [M-H]-
+CompoundClass: PE
+Comment: MS1_name=PE(34:1);polarity=-
+Num Peaks: 1
+255.2329 100.00 "[RCOO]-(16:0)" "Diagnostic_FA"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "cache_test.msp"
+            cache_root = temp_path / "user_cache"
+            msp_path.write_text(msp_text, encoding="utf-8")
+
+            with patch.dict(os.environ, {"LIPIDGATE_CACHE_DIR": str(cache_root)}):
+                records = load_library(msp_path)
+
+            self.assertEqual(len(records), 1)
+            self.assertTrue(any((cache_root / "ms2_libraries").glob("library_*.pkl")))
+            self.assertFalse((temp_path / ".library_cache").exists())
 
     def test_negative_pc_common_signature_fragments_are_candidate_hg(self) -> None:
         msp_text = """Name: PC(8:1_15:4)

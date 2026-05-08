@@ -32,13 +32,6 @@ NEGATIVE_PC_SIGNATURE_MZ = {
     "pc_168": 168.0431,
     "pc_224": 224.0693,
 }
-POSITIVE_PHOSPHOLIPID_CLASSES = {
-    "PC", "PE", "PG", "PI", "PS", "PA",
-    "LPC", "LPE", "LPG", "LPI", "LPS",
-    "PCO", "PEO", "PGO", "PIO", "PSO",
-    "LPCO", "LPEO", "LPGO", "LPIO", "LPSO",
-    "ETHERLPG", "ETHERPG",
-}
 POSITIVE_HG_CHAIN_LEVEL_CLASSES = {
     "CL", "MLCL", "NAPE", "LNAPE",
 }
@@ -50,11 +43,6 @@ FA_CHAIN_TOKEN_RE = re.compile(
 
 def _is_positive_adduct(adduct: str) -> bool:
     return str(adduct or "").strip().endswith("+")
-
-
-def _is_positive_phospholipid_class(compound_class: str) -> bool:
-    cls = str(compound_class or "").strip().upper().replace("-", "")
-    return cls in POSITIVE_PHOSPHOLIPID_CLASSES
 
 
 def _is_negative_pc_relaxed_record(record: LibraryRecord) -> bool:
@@ -349,7 +337,6 @@ def _derive_required_groups(
     loss_fragment_count = _record_loss_fragment_count(record)
     fa_loss_fragment_count = _record_fa_loss_fragment_count(record)
     is_positive_mode = _is_positive_adduct(record.adduct)
-    is_positive_phospholipid = is_positive_mode and _is_positive_phospholipid_class(record.compound_class)
     positive_hg_or_loss_gate = is_positive_mode and (hg_fragment_count > 0 or loss_fragment_count > 0)
     allow_lyso_hg_only = rule.allow_hg_only_if_no_fah and not fah_tokens and hg_fragment_count > 0
     allow_loss_only = (
@@ -507,7 +494,7 @@ def _missing_required_groups(
             missing.append("hg")
 
         if hg_fragment_count == 0 and loss_fragment_count > 0:
-            # For loss-only positive classes (e.g. TG/TG-O), require chain-count-consistent coverage.
+            # Loss-only positive records require chain-count-consistent coverage.
             required_loss_hits = _positive_required_loss_hits(chain_tokens, fa_loss_fragment_count)
             if matched_loss_count < required_loss_hits:
                 missing.append("loss")

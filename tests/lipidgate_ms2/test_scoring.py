@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
 from lipidgate_ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
-from lipidgate_ms2.rules import DEFAULT_NEGATIVE_RULES
+from lipidgate_ms2.rules import DEFAULT_RULES
 from lipidgate_ms2.scoring import score_candidate
 
 
@@ -37,7 +37,7 @@ def build_spectrum(peaks) -> ExperimentalSpectrum:
 class ScoringTests(unittest.TestCase):
     def setUp(self) -> None:
         self.record = build_record()
-        self.rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        self.rule = DEFAULT_RULES.get("PC")
 
     def test_missing_required_hg_triggers_penalty(self) -> None:
         spectrum = build_spectrum(
@@ -72,7 +72,7 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(120.0, 300.0), (281.2486, 1000.0)]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("FA"), fragment_mz_tolerance=0.01)
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("FA"), fragment_mz_tolerance=0.01)
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
@@ -111,7 +111,7 @@ class ScoringTests(unittest.TestCase):
             ]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("CL"))
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("CL"))
 
         self.assertFalse(result.passed_required_gates)
         self.assertIn("fah", result.missing_required_groups)
@@ -159,8 +159,8 @@ class ScoringTests(unittest.TestCase):
             ]),
         )
 
-        failed = score_candidate(no_chain_info, record, DEFAULT_NEGATIVE_RULES.get("CL"))
-        passed = score_candidate(with_chain_info, record, DEFAULT_NEGATIVE_RULES.get("CL"))
+        failed = score_candidate(no_chain_info, record, DEFAULT_RULES.get("CL"))
+        passed = score_candidate(with_chain_info, record, DEFAULT_RULES.get("CL"))
 
         self.assertFalse(failed.passed_required_gates)
         self.assertIn("chain_info", failed.missing_required_groups)
@@ -186,7 +186,7 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(120.0, 1000.0), (180.0, 500.0)]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("FA"), fragment_mz_tolerance=0.01)
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("FA"), fragment_mz_tolerance=0.01)
 
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, ["precursor"])
@@ -217,7 +217,7 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(688.4917, 1000.0)]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("PC"))
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
@@ -240,7 +240,7 @@ class ScoringTests(unittest.TestCase):
                 FragmentRecord(748.5134, "[M+HCOO]-", "Precursor Ion"),
             ],
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         passing_spectrum = ExperimentalSpectrum(
             scan_id="scan_pc_signature_pair",
             precursor_mz=748.5134,
@@ -295,7 +295,7 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(224.0693, 850.0), (734.5341, 1000.0)]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("PC-O"))
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC-O"))
 
         self.assertTrue(result.passed_required_gates)
 
@@ -316,7 +316,7 @@ class ScoringTests(unittest.TestCase):
                 FragmentRecord(196.0380, "[C5H11NO4P]-", "Diagnostic_HG", required_group="hg"),
             ],
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PE")
+        rule = DEFAULT_RULES.get("PE")
 
         one_hg_spectrum = ExperimentalSpectrum(
             scan_id="scan_negative_one_hg",
@@ -362,7 +362,7 @@ class ScoringTests(unittest.TestCase):
                 FragmentRecord(515.2498, "[M-H]-", "Precursor Ion"),
             ],
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("DGGA")
+        rule = DEFAULT_RULES.get("DGGA")
 
         precursor_only_hg_spectrum = build_spectrum([
             (141.0921, 1000.0),
@@ -382,7 +382,7 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(failing_result.passed_required_gates)
         self.assertIn("hg", failing_result.missing_required_groups)
 
-    def test_oxidized_phospholipid_requires_plain_chain_and_one_oxidized_fa(self) -> None:
+    def test_oxidized_chain_record_requires_plain_chain_and_one_oxidized_fa(self) -> None:
         record = LibraryRecord(
             record_id=65,
             compound_class="OxPE",
@@ -405,7 +405,7 @@ class ScoringTests(unittest.TestCase):
                 ),
             ],
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("OxPE")
+        rule = DEFAULT_RULES.get("OxPE")
 
         passing_spectrum = ExperimentalSpectrum(
             scan_id="scan_oxpe_plain_and_oxidized",
@@ -512,7 +512,7 @@ class ScoringTests(unittest.TestCase):
         )
         spectrum = build_spectrum([(184.0733, 1000.0)])
         spectrum.precursor_mz = 760.585
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, incomplete_record, rule)
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "library_missing_required_fragments")
@@ -542,7 +542,7 @@ class ScoringTests(unittest.TestCase):
                 (605.5503, 1000.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("BMP")
+        rule = DEFAULT_RULES.get("BMP")
         result = score_candidate(spectrum, hg_only_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "")
@@ -572,7 +572,7 @@ class ScoringTests(unittest.TestCase):
                 (605.5503, 1000.0),
             ]),
         )
-        result = score_candidate(spectrum, hg_only_record, DEFAULT_NEGATIVE_RULES.get("BMP"))
+        result = score_candidate(spectrum, hg_only_record, DEFAULT_RULES.get("BMP"))
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "class_level")
         self.assertEqual(result.downgrade_reason, "missing_required_hg")
@@ -601,13 +601,13 @@ class ScoringTests(unittest.TestCase):
                 (210.1488, 1000.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("NAGlySer")
+        rule = DEFAULT_RULES.get("NAGlySer")
         result = score_candidate(spectrum, hg_only_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "lyso_hg_only_fallback")
         self.assertEqual(result.resolution_level, "class_level")
 
-    def test_positive_phospholipid_missing_loss_only_downgrades_resolution(self) -> None:
+    def test_positive_hg_and_loss_record_missing_loss_only_downgrades_resolution(self) -> None:
         positive_record = LibraryRecord(
             record_id=8,
             compound_class="PC",
@@ -632,7 +632,7 @@ class ScoringTests(unittest.TestCase):
                 (742.5744, 500.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, positive_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "species_level")
@@ -664,7 +664,7 @@ class ScoringTests(unittest.TestCase):
                 (565.5190, 700.0),
             ]),
         )
-        result = score_candidate(spectrum, positive_record, DEFAULT_NEGATIVE_RULES.get("PI"))
+        result = score_candidate(spectrum, positive_record, DEFAULT_RULES.get("PI"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
@@ -699,7 +699,7 @@ class ScoringTests(unittest.TestCase):
                 (271.1048, 900.0),
             ]),
         )
-        result = score_candidate(spectrum, apcs_record, DEFAULT_NEGATIVE_RULES.get("APCS"))
+        result = score_candidate(spectrum, apcs_record, DEFAULT_RULES.get("APCS"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "")
 
@@ -730,7 +730,7 @@ class ScoringTests(unittest.TestCase):
                 (271.1048, 800.0),
             ]),
         )
-        result = score_candidate(spectrum, apcs_record, DEFAULT_NEGATIVE_RULES.get("APCS"))
+        result = score_candidate(spectrum, apcs_record, DEFAULT_RULES.get("APCS"))
         self.assertFalse(result.passed_required_gates)
         self.assertIn("hg", result.missing_required_groups)
 
@@ -762,7 +762,7 @@ class ScoringTests(unittest.TestCase):
                 (104.1070, 800.0),
             ]),
         )
-        result = score_candidate(spectrum, apcs_record, DEFAULT_NEGATIVE_RULES.get("APCS"))
+        result = score_candidate(spectrum, apcs_record, DEFAULT_RULES.get("APCS"))
         self.assertFalse(result.passed_required_gates)
         self.assertIn("loss", result.missing_required_groups)
 
@@ -790,7 +790,7 @@ class ScoringTests(unittest.TestCase):
                 (267.2682, 1000.0),
             ]),
         )
-        result = score_candidate(spectrum, dg_record, DEFAULT_NEGATIVE_RULES.get("DG"))
+        result = score_candidate(spectrum, dg_record, DEFAULT_RULES.get("DG"))
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "library_missing_required_fragments")
 
@@ -824,8 +824,8 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(184.0733, 1000.0), (352.2247, 900.0)]),
         )
 
-        neutral_result = score_candidate(neutral_loss_only, pc_o_record, DEFAULT_NEGATIVE_RULES.get("PC-O"))
-        diagnostic_result = score_candidate(diagnostic_loss, pc_o_record, DEFAULT_NEGATIVE_RULES.get("PC-O"))
+        neutral_result = score_candidate(neutral_loss_only, pc_o_record, DEFAULT_RULES.get("PC-O"))
+        diagnostic_result = score_candidate(diagnostic_loss, pc_o_record, DEFAULT_RULES.get("PC-O"))
 
         self.assertTrue(neutral_result.passed_required_gates)
         self.assertEqual(neutral_result.resolution_level, "species_level")
@@ -883,8 +883,8 @@ class ScoringTests(unittest.TestCase):
                 (184.0733, 1000.0),
             ]),
         )
-        pc_p_result = score_candidate(spectrum, pc_p_record, DEFAULT_NEGATIVE_RULES.get("PC-P"))
-        lpc_result = score_candidate(spectrum, lpc_record, DEFAULT_NEGATIVE_RULES.get("LPC"))
+        pc_p_result = score_candidate(spectrum, pc_p_record, DEFAULT_RULES.get("PC-P"))
+        lpc_result = score_candidate(spectrum, lpc_record, DEFAULT_RULES.get("LPC"))
         self.assertTrue(pc_p_result.passed_required_gates)
         self.assertEqual(pc_p_result.resolution_level, "species_level")
         self.assertEqual(pc_p_result.downgrade_reason, "missing_chain_level_information")
@@ -920,7 +920,7 @@ class ScoringTests(unittest.TestCase):
                 (184.0733, 1000.0),
             ]),
         )
-        result = score_candidate(spectrum, lpc_record, DEFAULT_NEGATIVE_RULES.get("LPC"))
+        result = score_candidate(spectrum, lpc_record, DEFAULT_RULES.get("LPC"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "species_level")
         self.assertEqual(result.downgrade_reason, "lyso_hg_only_fallback")
@@ -950,12 +950,12 @@ class ScoringTests(unittest.TestCase):
                 (670.6497, 100.0),
             ]),
         )
-        result = score_candidate(spectrum, ce_record, DEFAULT_NEGATIVE_RULES.get("CE"))
+        result = score_candidate(spectrum, ce_record, DEFAULT_RULES.get("CE"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
 
-    def test_positive_phospholipid_without_library_loss_can_stay_chain_level(self) -> None:
+    def test_positive_record_without_library_loss_can_stay_chain_level(self) -> None:
         positive_record = LibraryRecord(
             record_id=9,
             compound_class="PC",
@@ -978,7 +978,7 @@ class ScoringTests(unittest.TestCase):
                 (742.5744, 700.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, positive_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -1015,7 +1015,7 @@ class ScoringTests(unittest.TestCase):
                 (661.5514, 140.0),
             ]),
         )
-        result = score_candidate(spectrum, naorn_record, DEFAULT_NEGATIVE_RULES.get("NAOrn"))
+        result = score_candidate(spectrum, naorn_record, DEFAULT_RULES.get("NAOrn"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
@@ -1049,7 +1049,7 @@ class ScoringTests(unittest.TestCase):
                 (668.5249, 150.0),
             ]),
         )
-        result = score_candidate(spectrum, nagly_record, DEFAULT_NEGATIVE_RULES.get("NAGly"))
+        result = score_candidate(spectrum, nagly_record, DEFAULT_RULES.get("NAGly"))
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
@@ -1099,7 +1099,7 @@ class ScoringTests(unittest.TestCase):
                 (549.4877, 1000.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("HBMP")
+        rule = DEFAULT_RULES.get("HBMP")
         result = score_candidate(spectrum, hbmp_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "")
@@ -1130,7 +1130,7 @@ class ScoringTests(unittest.TestCase):
                 (969.7518, 1000.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("HBMP")
+        rule = DEFAULT_RULES.get("HBMP")
         result = score_candidate(spectrum, hbmp_record, rule)
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "missing_required_loss")
@@ -1158,7 +1158,7 @@ class ScoringTests(unittest.TestCase):
             ]
         )
         spectrum.precursor_mz = 760.585
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, incomplete_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -1185,7 +1185,7 @@ class ScoringTests(unittest.TestCase):
             ]
         )
         spectrum.precursor_mz = 760.585
-        rule = DEFAULT_NEGATIVE_RULES.get("PC")
+        rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, incomplete_record, rule)
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "missing_required_fah")
@@ -1214,7 +1214,7 @@ class ScoringTests(unittest.TestCase):
                 (196.0380, 200.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("LPE-O")
+        rule = DEFAULT_RULES.get("LPE-O")
         result = score_candidate(spectrum, ether_lyso_record, rule)
         self.assertTrue(result.passed_required_gates)
 
@@ -1240,7 +1240,7 @@ class ScoringTests(unittest.TestCase):
                 (281.2486, 1000.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PE-O")
+        rule = DEFAULT_RULES.get("PE-O")
         result = score_candidate(spectrum, pe_o_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertNotIn("loss", result.missing_required_groups)
@@ -1270,7 +1270,7 @@ class ScoringTests(unittest.TestCase):
                 (466.3298, 250.0),
             ]),
         )
-        result = score_candidate(spectrum, pe_o_record, DEFAULT_NEGATIVE_RULES.get("PE-O"))
+        result = score_candidate(spectrum, pe_o_record, DEFAULT_RULES.get("PE-O"))
         self.assertTrue(result.passed_required_gates)
         self.assertNotIn("hg", result.missing_required_groups)
 
@@ -1298,7 +1298,7 @@ class ScoringTests(unittest.TestCase):
                 (364.2610, 250.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("LPE-O")
+        rule = DEFAULT_RULES.get("LPE-O")
         result = score_candidate(spectrum, ether_lyso_record, rule)
         self.assertTrue(result.passed_required_gates)
 
@@ -1325,7 +1325,7 @@ class ScoringTests(unittest.TestCase):
                 (152.9953, 150.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("LPE")
+        rule = DEFAULT_RULES.get("LPE")
         result = score_candidate(spectrum, lyso_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "class_level")
@@ -1351,7 +1351,7 @@ class ScoringTests(unittest.TestCase):
             ]
         )
         spectrum.precursor_mz = 854.6282
-        rule = DEFAULT_NEGATIVE_RULES.get("PC-O")
+        rule = DEFAULT_RULES.get("PC-O")
         result = score_candidate(spectrum, ether_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -1382,7 +1382,7 @@ class ScoringTests(unittest.TestCase):
                 (152.9953, 150.0),
             ]),
         )
-        pe_rule = DEFAULT_NEGATIVE_RULES.get("PE")
+        pe_rule = DEFAULT_RULES.get("PE")
         result = score_candidate(pe_spectrum, pe_record, pe_rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -1413,7 +1413,7 @@ class ScoringTests(unittest.TestCase):
                 (429.2775, 100.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PS-O")
+        rule = DEFAULT_RULES.get("PS-O")
         result = score_candidate(spectrum, ps_o_record, rule)
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -1445,7 +1445,7 @@ class ScoringTests(unittest.TestCase):
                 (447.2881, 600.0),
             ]),
         )
-        rule = DEFAULT_NEGATIVE_RULES.get("PS-O")
+        rule = DEFAULT_RULES.get("PS-O")
         result = score_candidate(spectrum, ps_o_record, rule)
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "missing_required_hg")
@@ -1480,7 +1480,7 @@ class ScoringTests(unittest.TestCase):
                     polarity="-",
                     peaks=normalize_peaks([(fa_mz, 1000.0), (hg_mz, 800.0), (precursor_mz, 200.0)]),
                 )
-                result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get(lipid_class))
+                result = score_candidate(spectrum, record, DEFAULT_RULES.get(lipid_class))
 
                 self.assertTrue(result.passed_required_gates)
                 self.assertNotIn("hg", result.missing_required_groups)
@@ -1512,7 +1512,7 @@ class ScoringTests(unittest.TestCase):
                     polarity="-",
                     peaks=normalize_peaks([(hg_fragments[0][0], 1000.0), (precursor_mz, 500.0)]),
                 )
-                result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get(lipid_class))
+                result = score_candidate(spectrum, record, DEFAULT_RULES.get(lipid_class))
 
                 self.assertTrue(result.passed_required_gates)
                 self.assertEqual(result.missing_required_groups, [])
@@ -1540,23 +1540,23 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([(285.2441, 1000.0), (320.2795, 200.0)]),
         )
 
-        result = score_candidate(spectrum, record, DEFAULT_NEGATIVE_RULES.get("MG"))
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("MG"))
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
 
     def test_rules_normalize_legacy_ether_lpi_name(self) -> None:
         self.assertEqual(
-            DEFAULT_NEGATIVE_RULES.get("Ether-LPI"),
-            DEFAULT_NEGATIVE_RULES.get("LPI-O"),
+            DEFAULT_RULES.get("Ether-LPI"),
+            DEFAULT_RULES.get("LPI-O"),
         )
         self.assertEqual(
-            DEFAULT_NEGATIVE_RULES.get("BA_Conjugated"),
-            DEFAULT_NEGATIVE_RULES.get("BA"),
+            DEFAULT_RULES.get("BA_Conjugated"),
+            DEFAULT_RULES.get("BA"),
         )
         self.assertEqual(
-            DEFAULT_NEGATIVE_RULES.get("SSulfate-ST"),
-            DEFAULT_NEGATIVE_RULES.get("SSulfate"),
+            DEFAULT_RULES.get("SSulfate-ST"),
+            DEFAULT_RULES.get("SSulfate"),
         )
 
 

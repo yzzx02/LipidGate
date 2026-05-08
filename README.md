@@ -44,8 +44,9 @@ git lfs track "*.msp" "*.pth" "*.pt" "*.ckpt"
 ```
 
 Excel/CSV library sources are intentionally not tracked. Only final MSP libraries are included.
-Runtime MSP parse caches are written under `.library_cache/` next to the MSP
-file and are ignored by Git.
+Runtime MSP parse caches are written to the user cache directory
+(`%LOCALAPPDATA%\LipidGate\Cache` on Windows, or `~/.cache/lipidgate`
+elsewhere). Set `LIPIDGATE_CACHE_DIR` to override this location.
 
 ## Algorithm Risk Notes
 

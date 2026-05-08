@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import os
 import pickle
 import re
 from collections import defaultdict
@@ -13,7 +14,7 @@ import pandas as pd
 from .models import FragmentRecord, LibraryRecord
 
 
-LIBRARY_CACHE_VERSION = 7
+LIBRARY_CACHE_VERSION = 8
 
 
 def _library_cache_metadata(path: Path) -> Dict[str, object]:
@@ -28,7 +29,14 @@ def _library_cache_metadata(path: Path) -> Dict[str, object]:
 
 def _library_cache_path(path: Path) -> Path:
     digest = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
-    return path.parent / ".library_cache" / f"library_{digest}.pkl"
+    cache_root_override = os.environ.get("LIPIDGATE_CACHE_DIR")
+    if cache_root_override:
+        cache_root = Path(cache_root_override)
+    elif os.environ.get("LOCALAPPDATA"):
+        cache_root = Path(os.environ["LOCALAPPDATA"]) / "LipidGate" / "Cache"
+    else:
+        cache_root = Path.home() / ".cache" / "lipidgate"
+    return cache_root / "ms2_libraries" / f"library_{digest}.pkl"
 
 
 def _load_cached_standard_msp(path: Path) -> List[LibraryRecord] | None:

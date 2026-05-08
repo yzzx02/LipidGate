@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import numpy as np
 
 from lipidgate_ms2.library import load_library
 from lipidgate_ms2.models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
-from lipidgate_ms2.rules import DEFAULT_NEGATIVE_RULES
+from lipidgate_ms2.rules import DEFAULT_RULES
 from lipidgate_ms2.scoring import score_candidate
 from lipidgate_ms2.search import LipidMS2Searcher
 
@@ -69,7 +69,7 @@ def test_positive_scoring_uses_record_adduct_not_spectrum_polarity() -> None:
     result = score_candidate(
         spectrum=spectrum,
         record=record,
-        rule=DEFAULT_NEGATIVE_RULES.get("MG"),
+        rule=DEFAULT_RULES.get("MG"),
         precursor_ppm_tolerance=10.0,
         precursor_mz_tolerance_da=None,
         fragment_mz_tolerance=0.02,

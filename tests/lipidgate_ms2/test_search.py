@@ -12,7 +12,7 @@ from lipidgate_ms2.models import (
     PoolScore,
     normalize_peaks,
 )
-from lipidgate_ms2.rules import DEFAULT_NEGATIVE_RULES
+from lipidgate_ms2.rules import DEFAULT_RULES
 from lipidgate_ms2.search import LipidMS2Searcher
 
 
@@ -223,6 +223,42 @@ class SearchSelectionTests(unittest.TestCase):
         )
         self.assertFalse(self.searcher._qualifies_secondary_result(result))
 
+    def test_positive_fa_loss_only_record_uses_unified_searcher(self) -> None:
+        record = LibraryRecord(
+            record_id=43,
+            compound_class="TG",
+            lipid_name="TG(54:3)",
+            lipid_chain_name="TG(16:0_18:1_20:2)",
+            precursor_mz=900.8000,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(603.5000, "M-NH3-(16:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(577.5000, "M-NH3-(18:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(551.5000, "M-NH3-(20:2)", "Diagnostic_FA_Loss"),
+                FragmentRecord(900.8000, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_fa_loss",
+            precursor_mz=900.8000,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (603.5000, 1000.0),
+                (577.5000, 900.0),
+                (900.8000, 100.0),
+            ]),
+        )
+        searcher = self._build_memory_searcher([record], use_fragment_index=False)
+
+        rows = searcher.score_spectrum(spectrum, top_n=5)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["compound_class"], "TG")
+        self.assertEqual(rows[0]["resolution_level"], "chain_level")
+        self.assertTrue(rows[0]["passed_required_gates"])
+
     def test_secondary_result_requires_hg_for_pe_o(self) -> None:
         result = build_candidate(
             5,
@@ -424,7 +460,7 @@ class SearchSelectionTests(unittest.TestCase):
     def _build_memory_searcher(records: list[LibraryRecord], use_fragment_index: bool) -> LipidMS2Searcher:
         searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
         searcher.library = sorted(records, key=lambda record: record.precursor_mz)
-        searcher.rules = DEFAULT_NEGATIVE_RULES
+        searcher.rules = DEFAULT_RULES
         searcher.precursor_tolerance_da = 0.02
         searcher.precursor_tolerance_ppm = 10.0
         searcher.fragment_tolerance_da = 0.02

@@ -58,7 +58,7 @@ class RuleSet:
         return self.by_class.get(normalized_class, self.default_rule)
 
 
-def build_negative_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
+def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
     classes = list(classes or [
         "PC", "PE", "PG", "PI", "PS",
         "LPC", "LPE", "LPG", "LPI", "LPS",
@@ -152,4 +152,9 @@ def build_negative_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
     return RuleSet(by_class=by_class, default_rule=default_rule)
 
 
-DEFAULT_NEGATIVE_RULES = build_negative_rules()
+DEFAULT_RULES = build_default_rules()
+
+# Backward-compatible aliases for older callers. The default rules are now
+# named by role rather than polarity because scoring is adduct-aware.
+build_negative_rules = build_default_rules
+DEFAULT_NEGATIVE_RULES = DEFAULT_RULES
