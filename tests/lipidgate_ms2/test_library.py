@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import shutil
 import unittest
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from phospholipid_ms2.library import convert_excel_directory_to_msp, load_standard_msp
+from lipidgate_ms2.library import convert_excel_directory_to_msp, load_standard_msp
 
 
 @contextmanager

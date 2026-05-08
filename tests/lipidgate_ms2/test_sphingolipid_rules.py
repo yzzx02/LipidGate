@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 
-from phospholipid_ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
-from phospholipid_ms2.search import PhospholipidMS2Searcher
+from lipidgate_ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
+from lipidgate_ms2.search import LipidMS2Searcher
 
 
 def _spectrum(precursor_mz: float, peaks: list[tuple[float, float]]) -> ExperimentalSpectrum:
@@ -17,7 +17,7 @@ def _spectrum(precursor_mz: float, peaks: list[tuple[float, float]]) -> Experime
 
 
 def _score(record: LibraryRecord, peaks: list[tuple[float, float]]):
-    searcher = object.__new__(PhospholipidMS2Searcher)
+    searcher = object.__new__(LipidMS2Searcher)
     searcher.fragment_tolerance_da = 0.02
     return searcher._score_sphingo_candidate(_spectrum(record.precursor_mz, peaks), record)
 

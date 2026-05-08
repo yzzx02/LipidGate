@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 
 import pandas as pd
 
-from phospholipid_ms2.integration import attach_ms2_to_ms1_features
+from lipidgate_ms2.integration import attach_ms2_to_ms1_features
 
 
 class IntegrationTests(unittest.TestCase):

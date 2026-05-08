@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import bisect
 from datetime import datetime
@@ -16,22 +16,22 @@ except ImportError:  # pragma: no cover
     pyopenms = None
 
 
-DEFAULT_TG_CLASSES = ("TG", "TG-O", "oTG", "Ether-TG")
-DEFAULT_TG_ADDUCTS = ("[M+NH4]+",)
+DEFAULT_FA_LOSS_SOURCE_CLASSES = ("TG", "TG-O", "oTG", "Ether-TG")
+DEFAULT_FA_LOSS_SOURCE_ADDUCTS = ("[M+NH4]+",)
 
 
 def _is_positive_adduct(adduct: str) -> bool:
     return "+" in str(adduct)
 
 
-def load_tg_chain_records(
+def load_positive_fa_loss_records(
     input_path: str | Path,
-    tg_classes: Sequence[str] = DEFAULT_TG_CLASSES,
-    tg_adducts: Sequence[str] = DEFAULT_TG_ADDUCTS,
+    source_classes: Sequence[str] = DEFAULT_FA_LOSS_SOURCE_CLASSES,
+    source_adducts: Sequence[str] = DEFAULT_FA_LOSS_SOURCE_ADDUCTS,
 ) -> List[LibraryRecord]:
     records = load_library(input_path)
-    class_set = set(tg_classes)
-    adduct_set = set(tg_adducts)
+    class_set = set(source_classes)
+    adduct_set = set(source_adducts)
     filtered: List[LibraryRecord] = []
     for record in records:
         if record.compound_class not in class_set:
@@ -57,7 +57,7 @@ def load_tg_chain_records(
     return filtered
 
 
-def export_tg_species_excel(records: Sequence[LibraryRecord], output_path: str | Path) -> Path:
+def export_positive_fa_loss_species_excel(records: Sequence[LibraryRecord], output_path: str | Path) -> Path:
     output_path = Path(output_path)
     rows = []
     for record in records:
@@ -90,20 +90,24 @@ def export_tg_species_excel(records: Sequence[LibraryRecord], output_path: str |
     return output_path
 
 
-def export_tg_chain_msp(records: Sequence[LibraryRecord], output_path: str | Path) -> Path:
+def export_positive_fa_loss_chain_msp(records: Sequence[LibraryRecord], output_path: str | Path) -> Path:
     return write_standard_msp(records, output_path)
 
 
-def rebuild_tg_libraries(
+def rebuild_positive_fa_loss_libraries(
     input_path: str | Path,
     species_output_path: str | Path,
     chain_msp_output_path: str | Path,
-    tg_classes: Sequence[str] = DEFAULT_TG_CLASSES,
-    tg_adducts: Sequence[str] = DEFAULT_TG_ADDUCTS,
+    source_classes: Sequence[str] = DEFAULT_FA_LOSS_SOURCE_CLASSES,
+    source_adducts: Sequence[str] = DEFAULT_FA_LOSS_SOURCE_ADDUCTS,
 ) -> Tuple[Path, Path, int]:
-    records = load_tg_chain_records(input_path=input_path, tg_classes=tg_classes, tg_adducts=tg_adducts)
-    species_path = export_tg_species_excel(records, species_output_path)
-    msp_path = export_tg_chain_msp(records, chain_msp_output_path)
+    records = load_positive_fa_loss_records(
+        input_path=input_path,
+        source_classes=source_classes,
+        source_adducts=source_adducts,
+    )
+    species_path = export_positive_fa_loss_species_excel(records, species_output_path)
+    msp_path = export_positive_fa_loss_chain_msp(records, chain_msp_output_path)
     return species_path, msp_path, len(records)
 
 
@@ -144,7 +148,7 @@ def _match_fragments(
     return matches
 
 
-class TGPositiveSearcher:
+class PositiveFALossSearcher:
     def __init__(
         self,
         chain_msp_path: str | Path,
@@ -374,11 +378,11 @@ class TGPositiveSearcher:
         target_path = output_path
         try:
             with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-                combined.to_excel(writer, sheet_name="TG_Positive_Matched", index=False)
+                combined.to_excel(writer, sheet_name="Positive_FA_Loss_Matched", index=False)
             return target_path
         except PermissionError:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             fallback_path = target_path.with_name(f"{target_path.stem}_{timestamp}{target_path.suffix}")
             with pd.ExcelWriter(fallback_path, engine="openpyxl") as writer:
-                combined.to_excel(writer, sheet_name="TG_Positive_Matched", index=False)
+                combined.to_excel(writer, sheet_name="Positive_FA_Loss_Matched", index=False)
             return fallback_path

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 import sys
@@ -8,14 +8,14 @@ PARENT_DIR = PACKAGE_ROOT.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
-from phospholipid_ms2.library import convert_excel_directory_to_msp
-from phospholipid_ms2.search import PhospholipidMS2Searcher
+from lipidgate_ms2.library import convert_excel_directory_to_msp
+from lipidgate_ms2.search import LipidMS2Searcher
 
 
 LIBRARY_DIR = Path(r"D:\Vscode Projects\磷脂负模式二级库")
-STANDARD_LIBRARY = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\phospholipid_ms2\negative_phospholipid_library.msp")
+STANDARD_LIBRARY = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\lipidgate_ms2\negative_phospholipid_library.msp")
 RAW_MZML_DIR = Path(r"D:\Vscode Projects\LC-MS_sample\raw_mzml3")
-OUTPUT_FILE = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\phospholipid_ms2\negative_ms2_results.xlsx")
+OUTPUT_FILE = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\lipidgate_ms2\negative_ms2_results.xlsx")
 MIN_RELATIVE_INTENSITY = 0.002
 
 
@@ -36,7 +36,7 @@ def _should_rebuild_standard_library(library_dir: Path, standard_library: Path) 
 def main() -> None:
     if _should_rebuild_standard_library(LIBRARY_DIR, STANDARD_LIBRARY):
         convert_excel_directory_to_msp(LIBRARY_DIR, STANDARD_LIBRARY)
-    searcher = PhospholipidMS2Searcher(
+    searcher = LipidMS2Searcher(
         STANDARD_LIBRARY,
         min_relative_intensity=MIN_RELATIVE_INTENSITY,
     )

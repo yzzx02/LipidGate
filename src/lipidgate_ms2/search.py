@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import bisect
 import re
@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover
     pymzml = None
 
 
-class PhospholipidMS2Searcher:
+class LipidMS2Searcher:
     RANK_WEIGHT_MATCH = 0.75
     RANK_WEIGHT_PPM = 0.25
     RANK_PPM_FULL_SCORE = 10.0
@@ -680,7 +680,7 @@ class PhospholipidMS2Searcher:
 
     @staticmethod
     def _write_result_workbook(output_path: Path, combined: pd.DataFrame) -> Path:
-        result_df = PhospholipidMS2Searcher._prepare_result_export_df(combined)
+        result_df = LipidMS2Searcher._prepare_result_export_df(combined)
         target_path = output_path
         try:
             with pd.ExcelWriter(target_path, engine="openpyxl") as writer:

@@ -1,14 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
 
-from phospholipid_ms2.library import load_library
-from phospholipid_ms2.models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
-from phospholipid_ms2.rules import DEFAULT_NEGATIVE_RULES
-from phospholipid_ms2.scoring import score_candidate
-from phospholipid_ms2.search import PhospholipidMS2Searcher
+from lipidgate_ms2.library import load_library
+from lipidgate_ms2.models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
+from lipidgate_ms2.rules import DEFAULT_NEGATIVE_RULES
+from lipidgate_ms2.scoring import score_candidate
+from lipidgate_ms2.search import LipidMS2Searcher
 
 
 def test_msp_library_loads_and_builds_precursor_index(tmp_path: Path) -> None:
@@ -35,7 +35,7 @@ def test_msp_library_loads_and_builds_precursor_index(tmp_path: Path) -> None:
     assert records[0].compound_class == "PE"
     assert len(records[0].fragments) == 2
 
-    searcher = PhospholipidMS2Searcher(msp, precursor_tolerance_ppm=10.0)
+    searcher = LipidMS2Searcher(msp, precursor_tolerance_ppm=10.0)
     assert searcher.precursors == [716.5234]
     assert searcher.find_candidates(716.5234)[0].lipid_chain_name == "PE(16:0_18:1)"
 
@@ -80,7 +80,7 @@ def test_positive_scoring_uses_record_adduct_not_spectrum_polarity() -> None:
 
 
 def test_pymzml_numpy_peak_array_is_normalized(monkeypatch) -> None:
-    import phospholipid_ms2.search as search_module
+    import lipidgate_ms2.search as search_module
 
     class FakeSpectrum:
         ms_level = 2
@@ -111,7 +111,7 @@ def test_pymzml_numpy_peak_array_is_normalized(monkeypatch) -> None:
     monkeypatch.setattr(search_module, "pyopenms", None)
     monkeypatch.setattr(search_module, "pymzml", FakePymzml)
 
-    searcher = PhospholipidMS2Searcher.__new__(PhospholipidMS2Searcher)
+    searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
     searcher.min_relative_intensity = 0.001
     spectra = list(searcher._iter_mzml_spectra("tiny.mzML"))
 

@@ -364,8 +364,8 @@ class MS2Page(WorkflowPage):
         self.fragment_da.setRange(0.001, 5.0)
         self.fragment_da.setDecimals(4)
         self.fragment_da.setValue(0.02)
-        self.tg_hint = QtWidgets.QLabel("")
-        self.tg_hint.setObjectName("mutedLabel")
+        self.mode_hint = QtWidgets.QLabel("")
+        self.mode_hint.setObjectName("mutedLabel")
         self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
         self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
         self.table = TablePanel("MS2 Results")
@@ -379,7 +379,7 @@ class MS2Page(WorkflowPage):
         form.addRow("前体 ppm", self.precursor_ppm)
         form.addRow("前体 Da", self.precursor_da)
         form.addRow("碎片 Da", self.fragment_da)
-        form.addRow("", self.tg_hint)
+        form.addRow("", self.mode_hint)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.run_btn)
@@ -408,7 +408,7 @@ class MS2Page(WorkflowPage):
     def _on_mode_changed(self, _index: int | None = None) -> None:
         mode = self._mode_value()
         self.library.setText(str(default_positive_msp() if mode == "positive" else default_negative_msp()))
-        self.tg_hint.setText("参数保持统一：前体 Da 为 0 时使用 ppm；碎片 Da 对所有模式一致。")
+        self.mode_hint.setText("参数保持统一：前体 Da 为 0 时使用 ppm；碎片 Da 对所有模式一致。")
 
     def _browse_mzml(self) -> None:
         self._browse_file(self.mzml, "选择 mzML", "mzML (*.mzML);;All (*.*)", "ms2/mzml")

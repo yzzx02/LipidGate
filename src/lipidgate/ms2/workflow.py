@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,31 +38,24 @@ def run_ms2_search_result(
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    if mode_norm not in {"negative", "positive"}:
+        raise ValueError(f"Unsupported MS2 mode: {mode}. Use 'negative' or 'positive'.")
+
     if library_path is None:
-        library = default_positive_msp() if mode_norm in {"positive", "tg-positive"} else default_negative_msp()
+        library = default_positive_msp() if mode_norm == "positive" else default_negative_msp()
     else:
         library = Path(library_path).resolve()
     if not library.exists():
         raise FileNotFoundError(library)
 
-    if mode_norm == "tg-positive":
-        from phospholipid_ms2.tg_positive import TGPositiveSearcher
+    from lipidgate_ms2.search import LipidMS2Searcher
 
-        searcher = TGPositiveSearcher(
-            chain_msp_path=library,
-            precursor_tolerance_da=precursor_tolerance_da if precursor_tolerance_da is not None else 0.02,
-            precursor_ppm_tolerance=float(precursor_tolerance_ppm),
-            fragment_tolerance_da=float(fragment_tolerance_da),
-        )
-    else:
-        from phospholipid_ms2.search import PhospholipidMS2Searcher
-
-        searcher = PhospholipidMS2Searcher(
-            library_path=library,
-            precursor_tolerance_da=precursor_tolerance_da,
-            precursor_tolerance_ppm=float(precursor_tolerance_ppm),
-            fragment_tolerance_da=float(fragment_tolerance_da),
-        )
+    searcher = LipidMS2Searcher(
+        library_path=library,
+        precursor_tolerance_da=precursor_tolerance_da,
+        precursor_tolerance_ppm=float(precursor_tolerance_ppm),
+        fragment_tolerance_da=float(fragment_tolerance_da),
+    )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
     csv_path = out_dir / "ms2_results.csv"

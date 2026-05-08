@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 
-from phospholipid_ms2.models import (
+from lipidgate_ms2.models import (
     CandidateScore,
     ExperimentalPeak,
     ExperimentalSpectrum,
@@ -12,8 +12,8 @@ from phospholipid_ms2.models import (
     PoolScore,
     normalize_peaks,
 )
-from phospholipid_ms2.rules import DEFAULT_NEGATIVE_RULES
-from phospholipid_ms2.search import PhospholipidMS2Searcher
+from lipidgate_ms2.rules import DEFAULT_NEGATIVE_RULES
+from lipidgate_ms2.search import LipidMS2Searcher
 
 
 def build_candidate(
@@ -65,7 +65,7 @@ def build_match(mz: float, fragment_type: str, rel: float, name: str | None = No
 
 class SearchSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.searcher = PhospholipidMS2Searcher.__new__(PhospholipidMS2Searcher)
+        self.searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
 
     def test_select_results_keeps_primary_and_strong_secondary(self) -> None:
         primary = build_candidate(
@@ -421,8 +421,8 @@ class SearchSelectionTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _build_memory_searcher(records: list[LibraryRecord], use_fragment_index: bool) -> PhospholipidMS2Searcher:
-        searcher = PhospholipidMS2Searcher.__new__(PhospholipidMS2Searcher)
+    def _build_memory_searcher(records: list[LibraryRecord], use_fragment_index: bool) -> LipidMS2Searcher:
+        searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
         searcher.library = sorted(records, key=lambda record: record.precursor_mz)
         searcher.rules = DEFAULT_NEGATIVE_RULES
         searcher.precursor_tolerance_da = 0.02

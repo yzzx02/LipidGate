@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -9,31 +9,31 @@ PARENT_DIR = PACKAGE_ROOT.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
-from phospholipid_ms2.tg_positive import TGPositiveSearcher, rebuild_tg_libraries
+from lipidgate_ms2.positive_fa_loss import PositiveFALossSearcher, rebuild_positive_fa_loss_libraries
 
 
-TG_SPECIES_EXCEL = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\phospholipid_ms2\tg_species_library_positive.xlsx")
-TG_CHAIN_MSP = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\phospholipid_ms2\tg_chain_library_positive.msp")
+FA_LOSS_SPECIES_EXCEL = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\lipidgate_ms2\positive_fa_loss_species_library.xlsx")
+FA_LOSS_CHAIN_MSP = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\lipidgate_ms2\positive_fa_loss_chain_library.msp")
 RAW_MZML_DIR = Path(r"D:\Vscode Projects\LC-MS_sample\raw_mzml3")
-OUTPUT_FILE = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\phospholipid_ms2\tg_positive_ms2_results.xlsx")
+OUTPUT_FILE = Path(r"D:\Vscode Projects\一级鉴定\脂质匹配算法全流程\lipidgate_ms2\positive_fa_loss_ms2_results.xlsx")
 MIN_RELATIVE_INTENSITY = 0.002
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build TG positive species/chain libraries and run MS2 matching.")
+    parser = argparse.ArgumentParser(description="Build positive FA-loss species/chain libraries and run MS2 matching.")
     parser.add_argument(
         "--source",
         required=True,
-        help="TG source library path (directory with xlsx, or xlsx/msp file).",
+        help="Source library path (directory with xlsx, or xlsx/msp file).",
     )
     parser.add_argument(
         "--species-out",
-        default=str(TG_SPECIES_EXCEL),
+        default=str(FA_LOSS_SPECIES_EXCEL),
         help="Output species-level Excel path.",
     )
     parser.add_argument(
         "--chain-msp-out",
-        default=str(TG_CHAIN_MSP),
+        default=str(FA_LOSS_CHAIN_MSP),
         help="Output chain-level MSP path.",
     )
     parser.add_argument(
@@ -75,7 +75,7 @@ def main() -> None:
     args = parse_args()
     source_path = Path(args.source)
     if not source_path.exists():
-        raise FileNotFoundError(f"TG source path does not exist: {source_path}")
+        raise FileNotFoundError(f"Source path does not exist: {source_path}")
     raw_dir = Path(args.raw_dir)
     if not raw_dir.exists():
         raise FileNotFoundError(f"Raw mzML directory does not exist: {raw_dir}")
@@ -87,18 +87,18 @@ def main() -> None:
     if not adduct_list:
         raise ValueError("At least one adduct is required in --adducts")
 
-    species_path, chain_msp_path, chain_count = rebuild_tg_libraries(
+    species_path, chain_msp_path, chain_count = rebuild_positive_fa_loss_libraries(
         input_path=source_path,
         species_output_path=Path(args.species_out),
         chain_msp_output_path=Path(args.chain_msp_out),
-        tg_classes=class_list,
-        tg_adducts=adduct_list,
+        source_classes=class_list,
+        source_adducts=adduct_list,
     )
-    print(f"tg_species_excel={species_path}")
-    print(f"tg_chain_msp={chain_msp_path}")
-    print(f"tg_chain_records={chain_count}")
+    print(f"positive_fa_loss_species_excel={species_path}")
+    print(f"positive_fa_loss_chain_msp={chain_msp_path}")
+    print(f"positive_fa_loss_records={chain_count}")
 
-    searcher = TGPositiveSearcher(
+    searcher = PositiveFALossSearcher(
         chain_msp_path,
         min_relative_intensity=args.min_relative_intensity,
     )

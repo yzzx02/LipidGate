@@ -27,7 +27,7 @@ def test_gui_main_window_instantiates() -> None:
     assert index >= 0
     window.ms2_page.mode.setCurrentIndex(index)
     assert window.ms2_page._mode_value() == "positive"
-    assert "碎片 Da 对所有模式一致" in window.ms2_page.tg_hint.text()
+    assert "碎片 Da 对所有模式一致" in window.ms2_page.mode_hint.text()
 
     assert window.peak_page.tabs.count() == 3
     window.close()

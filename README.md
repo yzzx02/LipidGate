@@ -1,4 +1,4 @@
-# LipidGate
+﻿# LipidGate
 
 LipidGate is a desktop and command-line workflow for lipidomics data:
 
@@ -14,7 +14,7 @@ previews for feature tables, peak-truth tables, EIC images, and MS2 results.
 
 - `src/lipidgate/` - LipidGate CLI, GUI, and workflow wrappers.
 - `src/lipidbench/` - vendored LipidBench runtime modules used by MS1/EIC/attribute workflows.
-- `src/phospholipid_ms2/` - rule-based MS2 matching engine.
+- `src/lipidgate_ms2/` - rule-based MS2 matching engine.
 - `libraries/ms2/` - final positive/negative MSP libraries, tracked by Git LFS.
 - `models/peak_truth/` - peak truth model artifacts, tracked by Git LFS for weights.
 

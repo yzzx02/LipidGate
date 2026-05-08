@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -83,7 +83,7 @@ def test_peak_truth_result_reports_both_outputs(tmp_path: Path, monkeypatch) -> 
 
 
 def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
-    import phospholipid_ms2.search as search_module
+    import lipidgate_ms2.search as search_module
     from lipidgate.ms2 import run_ms2_search_result
 
     mzml = tmp_path / "sample.mzML"
@@ -98,7 +98,7 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
         def search_mzml(self, mzml_path: Path, top_n: int = 5) -> pd.DataFrame:
             return pd.DataFrame({"scan_id": ["scan_1"], "matched_name": ["PE(16:0_18:1)"]})
 
-    monkeypatch.setattr(search_module, "PhospholipidMS2Searcher", FakeSearcher)
+    monkeypatch.setattr(search_module, "LipidMS2Searcher", FakeSearcher)
 
     result = run_ms2_search_result(
         mzml_path=mzml,

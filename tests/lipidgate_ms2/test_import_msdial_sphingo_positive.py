@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 
-from phospholipid_ms2.import_msdial_sphingo_positive import (
+from lipidgate_ms2.import_msdial_sphingo_positive import (
     SourceMspRecord,
     build_library_records,
     transform_source_name,
