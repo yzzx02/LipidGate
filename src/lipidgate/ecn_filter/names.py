@@ -139,5 +139,10 @@ def add_lipid_name_features(
     out["total_C"] = pd.Series([info.total_C for info in infos], index=out.index, dtype="Int64")
     out["total_DB"] = pd.Series([info.total_DB for info in infos], index=out.index, dtype="Int64")
     if "subclass" not in out.columns:
-        out["subclass"] = [info.subclass for info in infos]
+        out["subclass"] = [
+            str(fallback_subclass).strip()
+            if pd.notna(fallback_subclass) and str(fallback_subclass).strip()
+            else info.subclass
+            for info, fallback_subclass in zip(infos, fallback)
+        ]
     return out

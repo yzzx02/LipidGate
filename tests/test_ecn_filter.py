@@ -7,6 +7,7 @@ import pandas as pd
 from lipidgate.ecn_filter import (
     ECNFilterConfig,
     RT_RULE_PASS_COLUMN,
+    add_lipid_name_features,
     apply_ecn_filter,
     parse_lipid_name,
     run_ecn_filter_result,
@@ -28,6 +29,21 @@ def test_parse_lipid_name_preserves_sphingoid_base_order() -> None:
     assert info.lipidname_norm == "Cer(d18:1/16:0)(OH)"
     assert info.total_C == 34
     assert info.total_DB == 1
+
+
+def test_add_lipid_name_features_keeps_authoritative_subclass_column() -> None:
+    df = pd.DataFrame(
+        [
+            {"matched_name": "PC(O-16:0/18:1)", "compound_class": "PC-O"},
+            {"matched_name": "LPC(O-18:1)", "compound_class": "LPC-O"},
+        ]
+    )
+
+    out = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
+
+    assert list(out["subclass"]) == ["PC-O", "LPC-O"]
+    assert list(out["total_C"].astype(int)) == [34, 18]
+    assert list(out["total_DB"].astype(int)) == [1, 1]
 
 
 def test_ecn_filter_deduplicates_exact_chain_candidate_but_keeps_chain_alternatives() -> None:
