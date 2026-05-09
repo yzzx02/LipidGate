@@ -112,3 +112,6 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     assert result.xlsx_path is not None and result.xlsx_path.exists()
     assert result.mode == "positive"
     assert result.row_count == 1
+    assert int(result.data.loc[0, "total_C"]) == 34
+    assert int(result.data.loc[0, "total_DB"]) == 1
+    assert result.data.loc[0, "lipidname_norm"] == "PE(16:0_18:1)"

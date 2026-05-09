@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from lipidgate.ecn_filter import add_lipid_name_features
 from lipidgate.paths import default_negative_msp, default_positive_msp
 
 
@@ -58,6 +59,7 @@ def run_ms2_search_result(
     )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
+    df = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
     csv_path = out_dir / "ms2_results.csv"
     df.to_csv(csv_path, index=False)
     xlsx_path = None

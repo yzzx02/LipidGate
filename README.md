@@ -5,6 +5,7 @@ LipidGate is a desktop and command-line workflow for lipidomics data:
 - MS1 untargeted feature detection with `pyOpenMS`, `asari`, `XCMS`, or imported `MS-DIAL` tables.
 - Peak truth scoring from EIC images plus peak attributes.
 - Rule-based MS2 library matching against final MSP libraries.
+- ECN-style RT consistency filtering for lipid annotation tables.
 
 The MS1/peak-truth result and MS2 result are exported independently in v1.
 The GUI is the preferred entry point for routine use and shows independent
@@ -32,7 +33,12 @@ CLI examples:
 lipidgate detect --algo pyopenms --input "D:\data\mzml" --output results\ms1
 lipidgate peak-truth --feature-table results\ms1\pyopenms\pyopenms_features.csv --algo pyopenms --mzml "D:\data\sample.mzML" --output results\peak_truth
 lipidgate ms2-search --mode negative --mzml "D:\data\sample.mzML" --output results\ms2
+lipidgate ecn-filter --input results\ms2\ms2_results.csv --output results\ecn_filter
 ```
+
+The ECN filter keeps chain-level candidates separate, adds `total_C`,
+`total_DB`, and `lipidname_norm`, then fits subclass/DB-specific RT models to
+flag candidates that do not follow the expected RT trend.
 
 ## Git LFS
 

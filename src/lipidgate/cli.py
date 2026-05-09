@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from lipidgate.ecn_filter import ECNFilterConfig, run_ecn_filter_result
 from lipidgate.ms1 import run_feature_detection_result
 from lipidgate.ms2 import run_ms2_search_result
 from lipidgate.peak_truth import run_peak_truth_result
@@ -47,6 +48,34 @@ def _ms2_search(args: argparse.Namespace) -> int:
         precursor_tolerance_ppm=args.precursor_ppm,
         precursor_tolerance_da=args.precursor_da,
         fragment_tolerance_da=args.fragment_da,
+    )
+    print(f"csv: {result.csv_path}")
+    if result.xlsx_path:
+        print(f"xlsx: {result.xlsx_path}")
+    print(f"rows: {result.row_count}")
+    return 0
+
+
+def _ecn_filter(args: argparse.Namespace) -> int:
+    result = run_ecn_filter_result(
+        input_table=args.input,
+        output_dir=args.output,
+        export_xlsx=not args.no_xlsx,
+        config=ECNFilterConfig(
+            mz_ppm=args.mz_ppm,
+            rt_cluster_sec=args.rt_cluster_sec,
+            min_model_points=args.min_model_points,
+            residual_C_threshold=args.residual_c_threshold,
+            max_iter=args.max_iter,
+            max_removed_fraction=args.max_removed_fraction,
+        ),
+        lipid_column=args.lipid_column,
+        subclass_column=args.subclass_column,
+        rt_column=args.rt_column,
+        mz_column=args.mz_column,
+        adduct_column=args.adduct_column,
+        score_column=args.score_column,
+        intensity_column=args.intensity_column,
     )
     print(f"csv: {result.csv_path}")
     if result.xlsx_path:
@@ -100,6 +129,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--precursor-da", type=float)
     p.add_argument("--fragment-da", type=float, default=0.02)
     p.set_defaults(func=_ms2_search)
+
+    p = sub.add_parser("ecn-filter", help="Evaluate lipid annotation RT consistency with ECN-style models")
+    p.add_argument("--input", required=True, type=Path, help="Annotation CSV/XLSX table")
+    p.add_argument("--output", required=True, type=Path, help="Output directory")
+    p.add_argument("--lipid-column", help="Lipid name column; inferred when omitted")
+    p.add_argument("--subclass-column", help="Subclass/class column; inferred when omitted")
+    p.add_argument("--rt-column", help="Retention time column; inferred when omitted")
+    p.add_argument("--mz-column", help="m/z column; inferred when omitted")
+    p.add_argument("--adduct-column", help="Adduct column; inferred when omitted")
+    p.add_argument("--score-column", help="Score column; inferred when omitted")
+    p.add_argument("--intensity-column", help="Intensity column; inferred when omitted")
+    p.add_argument("--mz-ppm", type=float, default=10.0)
+    p.add_argument("--rt-cluster-sec", type=float, default=5.0)
+    p.add_argument("--min-model-points", type=int, default=4)
+    p.add_argument("--residual-c-threshold", type=float, default=1.5)
+    p.add_argument("--max-iter", type=int, default=10)
+    p.add_argument("--max-removed-fraction", type=float, default=0.30)
+    p.add_argument("--no-xlsx", action="store_true", help="Only write CSV output")
+    p.set_defaults(func=_ecn_filter)
 
     return parser
 
