@@ -259,6 +259,51 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertEqual(rows[0]["resolution_level"], "chain_level")
         self.assertTrue(rows[0]["passed_required_gates"])
 
+    def test_fa_result_does_not_take_main_top_rank(self) -> None:
+        fa_record = LibraryRecord(
+            record_id=44,
+            compound_class="FA",
+            lipid_name="FA(42:0)",
+            lipid_chain_name="FA(42:0)",
+            precursor_mz=700.0,
+            adduct="[M-H]-",
+            fragments=[FragmentRecord(700.0, "[RCOO]-(42:0)", "Precursor Ion")],
+        )
+        pe_record = LibraryRecord(
+            record_id=45,
+            compound_class="PE",
+            lipid_name="PE(34:1)",
+            lipid_chain_name="PE(16:0_18:1)",
+            precursor_mz=700.0,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(140.0118, "[C2H7NO4P]-", "Diagnostic_HG"),
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_fa_and_pe",
+            precursor_mz=700.0,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (140.0118, 600.0),
+                (255.2329, 900.0),
+                (281.2486, 800.0),
+                (700.0, 1000.0),
+            ]),
+        )
+        searcher = self._build_memory_searcher([fa_record, pe_record], use_fragment_index=False)
+
+        rows = searcher.score_spectrum(spectrum, top_n=1)
+
+        self.assertEqual([row["compound_class"] for row in rows], ["PE", "FA"])
+        self.assertEqual([row["result_rank_scope"] for row in rows], ["main", "fa"])
+        self.assertEqual([row["result_rank"] for row in rows], [1, 1])
+        self.assertEqual([row["counts_toward_topn"] for row in rows], [True, False])
+        self.assertGreaterEqual(rows[1]["final_score"], 99.0)
+
     def test_secondary_result_requires_hg_for_pe_o(self) -> None:
         result = build_candidate(
             5,

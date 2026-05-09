@@ -343,6 +343,10 @@ class LipidMS2Searcher:
     def _normal_class_key(cls, lipid_class: object) -> str:
         return re.sub(r"[^A-Za-z0-9]+", "", str(lipid_class or "").upper())
 
+    @classmethod
+    def _is_fa_result(cls, result: CandidateScore) -> bool:
+        return cls._normal_class_key(result.record.compound_class) == "FA"
+
     @staticmethod
     def _matched_diagnostic_fa_loss_count(result: CandidateScore) -> int:
         return sum(1 for match in result.matched_fragments if match.fragment.fragment_type == "Diagnostic_FA_Loss")
@@ -424,6 +428,20 @@ class LipidMS2Searcher:
             }
         return metrics
 
+    @classmethod
+    def _sort_by_rank_metrics(cls, results, rank_metrics) -> None:
+        results.sort(
+            key=lambda item: (
+                rank_metrics.get(id(item), {}).get("rank_score", 0.0),
+                rank_metrics.get(id(item), {}).get("normalized_match_score", 0.0),
+                rank_metrics.get(id(item), {}).get("ppm_score", 0.0),
+                item.matched_intensity_sum,
+                item.matched_relative_intensity_sum,
+                item.total_score,
+            ),
+            reverse=True,
+        )
+
     @staticmethod
     def _format_matched_fragments(matches: Sequence[FragmentMatch]) -> str:
         if not matches:
@@ -469,25 +487,38 @@ class LipidMS2Searcher:
 
             scored.append(candidate_score)
         passed_results = [item for item in scored if item.passed_required_gates]
+        scoped_results: list[tuple[CandidateScore, str, bool]] = []
+        rank_metrics: Dict[int, Dict[str, float]] = {}
         if passed_results:
-            rank_metrics = self._compute_rank_metrics(passed_results)
-            passed_results.sort(
-                key=lambda item: (
-                    rank_metrics.get(id(item), {}).get("rank_score", 0.0),
-                    rank_metrics.get(id(item), {}).get("normalized_match_score", 0.0),
-                    rank_metrics.get(id(item), {}).get("ppm_score", 0.0),
-                    item.matched_intensity_sum,
-                    item.matched_relative_intensity_sum,
-                    item.total_score,
-                ),
-                reverse=True,
-            )
-            selected_results = self._select_results_for_output(passed_results, top_n=top_n)
+            fa_results = [item for item in passed_results if self._is_fa_result(item)]
+            main_results = [item for item in passed_results if not self._is_fa_result(item)]
+            if main_results:
+                main_metrics = self._compute_rank_metrics(main_results)
+                self._sort_by_rank_metrics(main_results, main_metrics)
+                rank_metrics.update(main_metrics)
+                scoped_results.extend(
+                    (item, "main", True)
+                    for item in self._select_results_for_output(main_results, top_n=top_n)
+                )
+            else:
+                tentative_results = self._select_tentative_missing_hg_fallback(scored)
+                tentative_metrics = self._compute_tentative_rank_metrics(tentative_results)
+                rank_metrics.update(tentative_metrics)
+                scoped_results.extend((item, "main", True) for item in tentative_results)
+            if fa_results:
+                fa_metrics = self._compute_rank_metrics(fa_results)
+                self._sort_by_rank_metrics(fa_results, fa_metrics)
+                rank_metrics.update(fa_metrics)
+                scoped_results.extend((item, "fa", False) for item in fa_results[: max(1, top_n)])
         else:
             selected_results = self._select_tentative_missing_hg_fallback(scored)
             rank_metrics = self._compute_tentative_rank_metrics(selected_results)
+            scoped_results.extend((item, "main", True) for item in selected_results)
         rows = []
-        for rank, result in enumerate(selected_results, start=1):
+        scope_ranks = {"main": 0, "fa": 0}
+        for result, rank_scope, counts_toward_topn in scoped_results:
+            scope_ranks[rank_scope] = scope_ranks.get(rank_scope, 0) + 1
+            rank = scope_ranks[rank_scope]
             metric = rank_metrics.get(
                 id(result),
                 {
@@ -513,6 +544,8 @@ class LipidMS2Searcher:
                     "adduct": result.record.adduct,
                     "ppm_error": result.ppm_error,
                     "result_rank": rank,
+                    "result_rank_scope": rank_scope,
+                    "counts_toward_topn": counts_toward_topn,
                     "final_score": round(metric["rank_score"] * 100.0, 4),
                     "rank_score": round(metric["rank_score"] * 100.0, 4),
                     "normalized_match_score": round(metric["normalized_match_score"] * 100.0, 4),
