@@ -39,13 +39,26 @@ def _clean_subclass(text: str) -> str:
     return text
 
 
+def _matching_paren_index(text: str, left: int) -> int:
+    depth = 0
+    for index in range(left, len(text)):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
+
+
 def _split_name(text: str) -> tuple[str, str, str, str]:
     text = re.sub(r"\s+", " ", str(text or "").strip())
     if not text:
         return "", "", "", "plain"
     if "(" in text and ")" in text:
         left = text.find("(")
-        right = text.find(")", left + 1)
+        right = _matching_paren_index(text, left)
         if left < right:
             return _clean_subclass(text[:left]), text[left + 1 : right], text[right + 1 :].strip(), "paren"
     first = _first_chain_match(text)

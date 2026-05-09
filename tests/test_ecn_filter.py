@@ -31,6 +31,15 @@ def test_parse_lipid_name_preserves_sphingoid_base_order() -> None:
     assert info.total_DB == 1
 
 
+def test_parse_lipid_name_handles_chain_level_oxidation_parentheses() -> None:
+    info = parse_lipid_name("OxPC(14:1(1O)_20:1)")
+
+    assert info.lipidname_norm == "OxPC(14:1(1O)_20:1)"
+    assert info.total_C == 34
+    assert info.total_DB == 2
+    assert info.subclass == "OxPC"
+
+
 def test_add_lipid_name_features_keeps_authoritative_subclass_column() -> None:
     df = pd.DataFrame(
         [
@@ -106,3 +115,15 @@ def test_run_ecn_filter_result_writes_csv(tmp_path: Path) -> None:
     assert result.row_count == 4
     written = pd.read_csv(result.csv_path)
     assert "RT_consistency_score" in written.columns
+
+
+def test_run_ecn_filter_result_handles_empty_annotation_table(tmp_path: Path) -> None:
+    input_path = tmp_path / "empty_annotations.csv"
+    pd.DataFrame(columns=["lipidname_norm", "total_C", "total_DB"]).to_csv(input_path, index=False)
+
+    result = run_ecn_filter_result(input_table=input_path, output_dir=tmp_path / "out", export_xlsx=False)
+
+    assert result.row_count == 0
+    written = pd.read_csv(result.csv_path)
+    assert "RT_consistency_score" in written.columns
+    assert RT_RULE_PASS_COLUMN in written.columns

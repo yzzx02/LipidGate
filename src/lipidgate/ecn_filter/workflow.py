@@ -295,6 +295,30 @@ def _standardize_input(df: pd.DataFrame, columns: _ColumnMap) -> pd.DataFrame:
     return out
 
 
+def _empty_result_table(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    defaults = {
+        "lipidname_norm": "object",
+        "total_C": "Int64",
+        "total_DB": "Int64",
+        "subclass": "object",
+        "rt_model_group": "object",
+        "rt_model_type": "object",
+        "rt_model_n_points": "Int64",
+        "rt_model_n_removed": "Int64",
+        "predicted_total_C": "float64",
+        "RT_C_residual": "float64",
+        "RT_consistency_pass": "bool",
+        "RT_consistency_score": "float64",
+        "RT_outlier_reason": "object",
+        RT_RULE_PASS_COLUMN: "bool",
+    }
+    for column, dtype in defaults.items():
+        if column not in out.columns:
+            out[column] = pd.Series(index=out.index, dtype=dtype)
+    return out
+
+
 def apply_ecn_filter(
     df: pd.DataFrame,
     *,
@@ -308,6 +332,8 @@ def apply_ecn_filter(
     intensity_column: str | None = None,
 ) -> pd.DataFrame:
     config = config or ECNFilterConfig()
+    if df.empty:
+        return _empty_result_table(df)
     columns = _column_map(
         df,
         lipid_column=lipid_column,
