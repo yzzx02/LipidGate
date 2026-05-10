@@ -1,10 +1,38 @@
 from __future__ import annotations
 
+import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+
+
+_QT_DLL_HANDLES = []
+
+
+def _add_package_dll_directories(package_name: str) -> None:
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return
+    spec = importlib.util.find_spec(package_name)
+    if spec is None or not spec.submodule_search_locations:
+        return
+    package_dir = Path(next(iter(spec.submodule_search_locations)))
+    candidates = [
+        package_dir,
+        package_dir / "lib",
+        package_dir / "plugins",
+    ]
+    for path in candidates:
+        if path.exists():
+            _QT_DLL_HANDLES.append(os.add_dll_directory(str(path)))
+            os.environ["PATH"] = f"{path}{os.pathsep}{os.environ.get('PATH', '')}"
+
+
+_add_package_dll_directories("shiboken6")
+_add_package_dll_directories("PySide6")
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from lipidbench.utils.feature_table_io import load_feature_table
