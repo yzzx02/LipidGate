@@ -10,6 +10,7 @@ from lipidgate.ecn_filter import (
     add_lipid_name_features,
     apply_ecn_filter,
     build_ecn_passed_table,
+    plot_ecn_preview,
     parse_lipid_name,
     run_ecn_filter_result,
 )
@@ -120,6 +121,36 @@ def test_run_ecn_filter_result_writes_csv(tmp_path: Path) -> None:
     assert not result.model_summary.empty
     written = pd.read_csv(result.csv_path)
     assert "RT_consistency_score" in written.columns
+
+
+def test_plot_ecn_preview_writes_png(tmp_path: Path) -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "rt_minutes": 5.0,
+                "total_C": 32,
+                "rt_model_type": "linear",
+                "rt_model_group": "PC|DB=1",
+                "RT_consistency_pass": True,
+                "predicted_total_C": 32.1,
+            },
+            {
+                "rt_minutes": 6.0,
+                "total_C": 34,
+                "rt_model_type": "linear",
+                "rt_model_group": "PC|DB=1",
+                "RT_consistency_pass": True,
+                "predicted_total_C": 34.0,
+            },
+        ]
+    )
+    summary = pd.DataFrame([{"rt_model_group": "PC|DB=1", "r_squared": 0.99}])
+
+    path = plot_ecn_preview(df, tmp_path, summary)
+
+    assert path.exists()
+    assert path.suffix == ".png"
+    assert path.stat().st_size > 0
 
 
 def test_run_ecn_filter_result_handles_empty_annotation_table(tmp_path: Path) -> None:

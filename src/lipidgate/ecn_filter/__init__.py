@@ -7,6 +7,7 @@ from .workflow import (
     build_ecn_passed_table,
     run_ecn_filter_result,
 )
+from .plots import plot_ecn_preview
 
 __all__ = [
     "LipidNameInfo",
@@ -18,4 +19,5 @@ __all__ = [
     "apply_ecn_filter",
     "build_ecn_passed_table",
     "run_ecn_filter_result",
+    "plot_ecn_preview",
 ]

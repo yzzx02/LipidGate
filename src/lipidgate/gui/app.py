@@ -371,11 +371,13 @@ class MS2Page(WorkflowPage):
 
     def __init__(self, window: "MainWindow"):
         super().__init__(window)
+        self.last_ms2_csv: Path | None = None
+        self.last_ecn_image: Path | None = None
         self.mzml = QtWidgets.QLineEdit()
         self.output_dir = QtWidgets.QLineEdit(self._settings_value("ms2/output_dir", str(Path.cwd() / "results" / "ms2")))
         self.mode = QtWidgets.QComboBox()
         self.mode.addItem("负模式", "negative")
-        self.mode.addItem("正模式（统一规则）", "positive")
+        self.mode.addItem("正模式", "positive")
         self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
         self.output_topn = QtWidgets.QCheckBox("输出 Top N")
         self.output_topn.setChecked(False)
@@ -383,26 +385,33 @@ class MS2Page(WorkflowPage):
         self.top_n.setRange(1, 50)
         self.top_n.setValue(5)
         self.top_n.setEnabled(False)
-        self.precursor_ppm = QtWidgets.QDoubleSpinBox()
-        self.precursor_ppm.setRange(0.1, 1000.0)
-        self.precursor_ppm.setDecimals(2)
-        self.precursor_ppm.setValue(10.0)
-        self.precursor_da = QtWidgets.QDoubleSpinBox()
-        self.precursor_da.setRange(0.0, 10.0)
-        self.precursor_da.setDecimals(4)
-        self.precursor_da.setSpecialValueText("ppm 模式")
-        self.precursor_da.setValue(0.0)
-        self.fragment_da = QtWidgets.QDoubleSpinBox()
-        self.fragment_da.setRange(0.001, 5.0)
-        self.fragment_da.setDecimals(4)
-        self.fragment_da.setValue(0.02)
+        self.tolerance_unit = QtWidgets.QComboBox()
+        self.tolerance_unit.addItem("ppm", "ppm")
+        self.tolerance_unit.addItem("Da", "da")
+        self.ms1_tolerance = QtWidgets.QDoubleSpinBox()
+        self.ms1_tolerance.setRange(0.1, 1000.0)
+        self.ms1_tolerance.setDecimals(2)
+        self.ms1_tolerance.setValue(10.0)
+        self.msms_tolerance = QtWidgets.QDoubleSpinBox()
+        self.msms_tolerance.setRange(0.001, 5.0)
+        self.msms_tolerance.setDecimals(4)
+        self.msms_tolerance.setValue(0.02)
         self.mode_hint = QtWidgets.QLabel("")
         self.mode_hint.setObjectName("mutedLabel")
         self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
+        self.run_ecn_btn = QtWidgets.QPushButton("生成 ECN 预览")
+        self.run_ecn_btn.setEnabled(False)
         self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
         self.table = TablePanel("MS2 Results")
+        self.ecn_table = TablePanel("ECN Passed Results")
+        self.ecn_preview = QtWidgets.QLabel("MS2 鉴定完成后可生成 ECN 等效碳数预览图")
+        self.ecn_preview.setObjectName("ecnPreview")
+        self.ecn_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.ecn_preview.setMinimumHeight(340)
+        self.ecn_preview.setScaledContents(False)
 
         form = QtWidgets.QFormLayout()
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         form.addRow("mzML", path_row(self.mzml, [("选择", self._browse_mzml, "选择 mzML 文件")]))
         form.addRow("输出目录", path_row(self.output_dir, [("选择", self._browse_output, "选择输出目录")]))
         form.addRow("模式", self.mode)
@@ -412,32 +421,46 @@ class MS2Page(WorkflowPage):
         topn_row.addWidget(self.top_n)
         topn_row.addStretch(1)
         form.addRow("Top N", topn_row)
-        form.addRow("前体 ppm", self.precursor_ppm)
-        form.addRow("前体 Da", self.precursor_da)
-        form.addRow("碎片 Da", self.fragment_da)
+        tolerance_row = QtWidgets.QHBoxLayout()
+        tolerance_row.addWidget(self.tolerance_unit)
+        tolerance_row.addWidget(self.ms1_tolerance, 1)
+        form.addRow("MS1 tolerance", tolerance_row)
+        form.addRow("MS/MS tolerance", self.msms_tolerance)
         form.addRow("", self.mode_hint)
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.addWidget(self.run_btn)
+        action_row.addWidget(self.run_ecn_btn)
         action_row.addWidget(self.open_output_btn)
         action_row.addStretch(1)
         form.addRow("", action_row)
 
+        parameter_box = QtWidgets.QGroupBox("参数")
+        parameter_box.setLayout(form)
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(self.table, "MS2 结果")
+        self.tabs.addTab(self.ecn_table, "ECN 通过结果")
+        self.tabs.addTab(self.ecn_preview, "ECN 预览图")
+
         body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        body.addWidget(self.table)
+        body.addWidget(self.tabs)
         body.addWidget(self.log)
         body.setStretchFactor(0, 4)
         body.setStretchFactor(1, 1)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.addWidget(parameter_box)
         layout.addWidget(body, 1)
 
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
+        self.tolerance_unit.currentIndexChanged.connect(self._on_tolerance_unit_changed)
         self.output_topn.toggled.connect(self.top_n.setEnabled)
         self.run_btn.clicked.connect(self.run)
+        self.run_ecn_btn.clicked.connect(self.run_ecn_preview)
         self.open_output_btn.clicked.connect(lambda: open_in_file_manager(self.output_dir.text()))
         self._on_mode_changed()
+        self._on_tolerance_unit_changed()
 
     def _mode_value(self) -> str:
         return str(self.mode.currentData() or "negative")
@@ -445,7 +468,25 @@ class MS2Page(WorkflowPage):
     def _on_mode_changed(self, _index: int | None = None) -> None:
         mode = self._mode_value()
         self.library.setText(str(default_positive_msp() if mode == "positive" else default_negative_msp()))
-        self.mode_hint.setText("参数保持统一：前体 Da 为 0 时使用 ppm；碎片 Da 对所有模式一致。")
+        self._update_mode_hint()
+
+    def _on_tolerance_unit_changed(self, _index: int | None = None) -> None:
+        unit = str(self.tolerance_unit.currentData() or "ppm")
+        if unit == "da":
+            self.ms1_tolerance.setRange(0.0001, 10.0)
+            self.ms1_tolerance.setDecimals(4)
+            if self.ms1_tolerance.value() >= 1.0:
+                self.ms1_tolerance.setValue(0.01)
+        else:
+            self.ms1_tolerance.setRange(0.1, 1000.0)
+            self.ms1_tolerance.setDecimals(2)
+            if self.ms1_tolerance.value() < 0.1:
+                self.ms1_tolerance.setValue(10.0)
+        self._update_mode_hint()
+
+    def _update_mode_hint(self) -> None:
+        unit = str(self.tolerance_unit.currentData() or "ppm")
+        self.mode_hint.setText(f"MS1 tolerance 使用 {unit}；MS/MS tolerance 为碎片 Da。")
 
     def _browse_mzml(self) -> None:
         self._browse_file(self.mzml, "选择 mzML", "mzML (*.mzML);;All (*.*)", "ms2/mzml")
@@ -462,8 +503,15 @@ class MS2Page(WorkflowPage):
         library = self._require_path(self.library, "MSP 库")
         if None in {mzml, output_dir, library}:
             return
-        precursor_da = float(self.precursor_da.value()) or None
+        unit = str(self.tolerance_unit.currentData() or "ppm")
+        precursor_ppm = float(self.ms1_tolerance.value()) if unit == "ppm" else 10.0
+        precursor_da = float(self.ms1_tolerance.value()) if unit == "da" else None
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
+        self.run_ecn_btn.setEnabled(False)
+        self.last_ms2_csv = None
+        self.ecn_table.clear()
+        self.ecn_preview.setText("等待 MS2 鉴定结果")
+        self.ecn_preview.setPixmap(QtGui.QPixmap())
 
         def task() -> MS2SearchResult:
             from lipidgate.ms2 import run_ms2_search_result
@@ -474,9 +522,9 @@ class MS2Page(WorkflowPage):
                 mode=self._mode_value(),
                 library_path=library,
                 top_n=output_top_n,
-                precursor_tolerance_ppm=float(self.precursor_ppm.value()),
+                precursor_tolerance_ppm=precursor_ppm,
                 precursor_tolerance_da=precursor_da,
-                fragment_tolerance_da=float(self.fragment_da.value()),
+                fragment_tolerance_da=float(self.msms_tolerance.value()),
             )
 
         self._start_worker(task, "二级质谱鉴定运行中...", self._on_done, [self.run_btn, self.open_output_btn])
@@ -485,9 +533,49 @@ class MS2Page(WorkflowPage):
         result = payload
         self.table.set_dataframe(result.data)
         self._remember("ms2/output_dir", result.output_dir)
+        self.last_ms2_csv = result.csv_path
+        self.run_ecn_btn.setEnabled(True)
         self.log.append(result.message)
         self.window.status.showMessage(result.message, 8000)
         self.completed.emit(str(result.csv_path))
+
+    def run_ecn_preview(self) -> None:
+        if self.last_ms2_csv is None or not self.last_ms2_csv.exists():
+            QtWidgets.QMessageBox.warning(self, "缺少 MS2 结果", "请先完成一次二级质谱鉴定。")
+            return
+        output_dir = Path(self.output_dir.text().strip() or self.last_ms2_csv.parent)
+        ecn_dir = output_dir / "ecn_filter"
+
+        def task() -> tuple[object, Path]:
+            from lipidgate.ecn_filter import plot_ecn_preview, run_ecn_filter_result
+
+            result = run_ecn_filter_result(input_table=self.last_ms2_csv, output_dir=ecn_dir, export_xlsx=True)
+            image_path = plot_ecn_preview(result.data, result.output_dir, result.model_summary)
+            return result, image_path
+
+        self._start_worker(task, "ECN 预览生成中...", self._on_ecn_done, [self.run_btn, self.run_ecn_btn, self.open_output_btn])
+
+    def _on_ecn_done(self, payload: object) -> None:
+        result, image_path = payload
+        self.ecn_table.set_dataframe(result.passed_data)
+        self.last_ecn_image = image_path
+        pixmap = QtGui.QPixmap(str(image_path))
+        if pixmap.isNull():
+            self.ecn_preview.setText(f"ECN 预览图生成失败:\n{image_path}")
+        else:
+            self.ecn_preview.setPixmap(
+                pixmap.scaled(
+                    980,
+                    520,
+                    QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                    QtCore.Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            self.ecn_preview.setToolTip(str(image_path))
+        self.tabs.setCurrentWidget(self.ecn_preview)
+        self.log.append(result.message)
+        self.log.append(f"ECN preview plot: {image_path}")
+        self.window.status.showMessage(f"ECN 预览已生成: {image_path}", 8000)
 
 
 class ResultsPage(QtWidgets.QWidget):
@@ -575,21 +663,34 @@ class MainWindow(QtWidgets.QMainWindow):
             """
             QMainWindow, QWidget {
                 font-size: 13px;
+                color: #111827;
+            }
+            QMainWindow {
+                background: #eef2f7;
+            }
+            QStackedWidget {
+                background: #ffffff;
+                border: 1px solid #d7dde5;
+                border-radius: 8px;
             }
             QListWidget#sideNav {
-                border: 1px solid #d7dde5;
-                border-radius: 6px;
-                background: #f8fafc;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                background: #111827;
                 padding: 6px;
+                color: #e5e7eb;
             }
             QListWidget#sideNav::item {
-                min-height: 34px;
-                padding: 6px 10px;
-                border-radius: 4px;
+                min-height: 38px;
+                padding: 7px 11px;
+                border-radius: 6px;
             }
             QListWidget#sideNav::item:selected {
-                background: #dbeafe;
-                color: #0f172a;
+                background: #2563eb;
+                color: #ffffff;
+            }
+            QListWidget#sideNav::item:hover {
+                background: #334155;
             }
             QLabel#panelTitle {
                 font-weight: 600;
@@ -597,18 +698,79 @@ class MainWindow(QtWidgets.QMainWindow):
             QLabel#mutedLabel {
                 color: #64748b;
             }
-            QLabel#eicPreview {
+            QLabel#eicPreview, QLabel#ecnPreview {
                 border: 1px solid #d7dde5;
-                border-radius: 6px;
+                border-radius: 8px;
                 background: #f8fafc;
                 color: #64748b;
             }
+            QGroupBox {
+                background: #ffffff;
+                border: 1px solid #d7dde5;
+                border-radius: 8px;
+                margin-top: 14px;
+                padding: 12px 10px 10px 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 4px;
+                color: #334155;
+                font-weight: 600;
+            }
+            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                background: #ffffff;
+                min-height: 27px;
+                padding: 2px 6px;
+            }
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus {
+                border: 1px solid #2563eb;
+            }
             QPushButton, QToolButton {
-                min-height: 26px;
+                min-height: 28px;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                background: #ffffff;
+                padding: 3px 10px;
+            }
+            QPushButton:hover, QToolButton:hover {
+                background: #f8fafc;
+                border-color: #94a3b8;
+            }
+            QPushButton:pressed, QToolButton:pressed {
+                background: #e0f2fe;
+            }
+            QPushButton:disabled, QToolButton:disabled {
+                color: #94a3b8;
+                background: #f1f5f9;
             }
             QTableView {
                 gridline-color: #e2e8f0;
                 selection-background-color: #bfdbfe;
+                alternate-background-color: #f8fafc;
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d7dde5;
+                border-radius: 8px;
+                background: #ffffff;
+            }
+            QTabBar::tab {
+                background: #f1f5f9;
+                border: 1px solid #d7dde5;
+                border-bottom: none;
+                padding: 7px 13px;
+                margin-right: 3px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #1d4ed8;
             }
             """
         )
