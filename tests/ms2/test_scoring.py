@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from lipidgate_ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
-from lipidgate_ms2.rules import DEFAULT_RULES
-from lipidgate_ms2.scoring import score_candidate
+from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
+from lipidgate.ms2.rules import DEFAULT_RULES
+from lipidgate.ms2.scoring import score_candidate
 
 
 def build_record() -> LibraryRecord:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from lipidgate_ms2.library import convert_excel_directory_to_msp, load_library, load_standard_msp
+from lipidgate.ms2.library import convert_excel_directory_to_msp, load_library, load_standard_msp
 
 
 @contextmanager

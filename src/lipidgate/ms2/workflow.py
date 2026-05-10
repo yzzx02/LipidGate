@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,7 +49,7 @@ def run_ms2_search_result(
     if not library.exists():
         raise FileNotFoundError(library)
 
-    from lipidgate_ms2.search import LipidMS2Searcher
+    from lipidgate.ms2.search import LipidMS2Searcher
 
     searcher = LipidMS2Searcher(
         library_path=library,

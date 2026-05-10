@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import unittest
 
-from lipidgate_ms2.models import (
+from lipidgate.ms2.models import (
     CandidateScore,
     ExperimentalPeak,
     ExperimentalSpectrum,
@@ -12,8 +12,8 @@ from lipidgate_ms2.models import (
     PoolScore,
     normalize_peaks,
 )
-from lipidgate_ms2.rules import DEFAULT_RULES
-from lipidgate_ms2.search import LipidMS2Searcher
+from lipidgate.ms2.rules import DEFAULT_RULES
+from lipidgate.ms2.search import LipidMS2Searcher
 
 
 def build_candidate(

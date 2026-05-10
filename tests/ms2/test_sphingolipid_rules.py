@@ -2,8 +2,8 @@
 
 import unittest
 
-from lipidgate_ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
-from lipidgate_ms2.search import LipidMS2Searcher
+from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
+from lipidgate.ms2.search import LipidMS2Searcher
 
 
 def _spectrum(precursor_mz: float, peaks: list[tuple[float, float]]) -> ExperimentalSpectrum:

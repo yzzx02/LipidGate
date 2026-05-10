@@ -4,11 +4,11 @@ from pathlib import Path
 
 import numpy as np
 
-from lipidgate_ms2.library import load_library
-from lipidgate_ms2.models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
-from lipidgate_ms2.rules import DEFAULT_RULES
-from lipidgate_ms2.scoring import score_candidate
-from lipidgate_ms2.search import LipidMS2Searcher
+from lipidgate.ms2.library import load_library
+from lipidgate.ms2.models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
+from lipidgate.ms2.rules import DEFAULT_RULES
+from lipidgate.ms2.scoring import score_candidate
+from lipidgate.ms2.search import LipidMS2Searcher
 
 
 def test_msp_library_loads_and_builds_precursor_index(tmp_path: Path) -> None:
@@ -80,7 +80,7 @@ def test_positive_scoring_uses_record_adduct_not_spectrum_polarity() -> None:
 
 
 def test_pymzml_numpy_peak_array_is_normalized(monkeypatch) -> None:
-    import lipidgate_ms2.search as search_module
+    import lipidgate.ms2.search as search_module
 
     class FakeSpectrum:
         ms_level = 2
