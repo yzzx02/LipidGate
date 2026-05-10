@@ -348,9 +348,12 @@ class MS2Page(WorkflowPage):
         self.mode.addItem("负模式", "negative")
         self.mode.addItem("正模式（统一规则）", "positive")
         self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
+        self.output_topn = QtWidgets.QCheckBox("输出 Top N")
+        self.output_topn.setChecked(False)
         self.top_n = QtWidgets.QSpinBox()
         self.top_n.setRange(1, 50)
         self.top_n.setValue(5)
+        self.top_n.setEnabled(False)
         self.precursor_ppm = QtWidgets.QDoubleSpinBox()
         self.precursor_ppm.setRange(0.1, 1000.0)
         self.precursor_ppm.setDecimals(2)
@@ -375,7 +378,11 @@ class MS2Page(WorkflowPage):
         form.addRow("输出目录", path_row(self.output_dir, [("选择", self._browse_output, "选择输出目录")]))
         form.addRow("模式", self.mode)
         form.addRow("MSP 库", path_row(self.library, [("选择", self._browse_library, "选择 MSP 库")]))
-        form.addRow("Top N", self.top_n)
+        topn_row = QtWidgets.QHBoxLayout()
+        topn_row.addWidget(self.output_topn)
+        topn_row.addWidget(self.top_n)
+        topn_row.addStretch(1)
+        form.addRow("Top N", topn_row)
         form.addRow("前体 ppm", self.precursor_ppm)
         form.addRow("前体 Da", self.precursor_da)
         form.addRow("碎片 Da", self.fragment_da)
@@ -398,6 +405,7 @@ class MS2Page(WorkflowPage):
         layout.addWidget(body, 1)
 
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
+        self.output_topn.toggled.connect(self.top_n.setEnabled)
         self.run_btn.clicked.connect(self.run)
         self.open_output_btn.clicked.connect(lambda: open_in_file_manager(self.output_dir.text()))
         self._on_mode_changed()
@@ -426,6 +434,7 @@ class MS2Page(WorkflowPage):
         if None in {mzml, output_dir, library}:
             return
         precursor_da = float(self.precursor_da.value()) or None
+        output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
 
         def task() -> MS2SearchResult:
             return run_ms2_search_result(
@@ -433,7 +442,7 @@ class MS2Page(WorkflowPage):
                 output_dir=output_dir,
                 mode=self._mode_value(),
                 library_path=library,
-                top_n=int(self.top_n.value()),
+                top_n=output_top_n,
                 precursor_tolerance_ppm=float(self.precursor_ppm.value()),
                 precursor_tolerance_da=precursor_da,
                 fragment_tolerance_da=float(self.fragment_da.value()),

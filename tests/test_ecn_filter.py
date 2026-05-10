@@ -9,6 +9,7 @@ from lipidgate.ecn_filter import (
     RT_RULE_PASS_COLUMN,
     add_lipid_name_features,
     apply_ecn_filter,
+    build_ecn_passed_table,
     parse_lipid_name,
     run_ecn_filter_result,
 )
@@ -113,6 +114,10 @@ def test_run_ecn_filter_result_writes_csv(tmp_path: Path) -> None:
     assert result.csv_path.exists()
     assert result.xlsx_path is None
     assert result.row_count == 4
+    assert result.passed_csv_path is not None and result.passed_csv_path.exists()
+    assert result.model_summary_csv_path is not None and result.model_summary_csv_path.exists()
+    assert len(result.passed_data) == 4
+    assert not result.model_summary.empty
     written = pd.read_csv(result.csv_path)
     assert "RT_consistency_score" in written.columns
 
@@ -127,3 +132,20 @@ def test_run_ecn_filter_result_handles_empty_annotation_table(tmp_path: Path) ->
     written = pd.read_csv(result.csv_path)
     assert "RT_consistency_score" in written.columns
     assert RT_RULE_PASS_COLUMN in written.columns
+    assert result.passed_csv_path is not None and result.passed_csv_path.exists()
+    assert result.model_summary_csv_path is not None and result.model_summary_csv_path.exists()
+
+
+def test_ecn_passed_table_keeps_unmodeled_groups_and_drops_modeled_failures() -> None:
+    df = pd.DataFrame(
+        [
+            {"matched_name": "PC(16:0_18:1)", "rt_model_type": "quadratic", "RT_consistency_pass": True},
+            {"matched_name": "PC(18:0_18:1)", "rt_model_type": "quadratic", "RT_consistency_pass": False},
+            {"matched_name": "LPC(16:0)", "rt_model_type": "insufficient_points", "RT_consistency_pass": False},
+            {"matched_name": "SM(d18:1/16:0)", "rt_model_type": "non_monotonic", "RT_consistency_pass": False},
+        ]
+    )
+
+    passed = build_ecn_passed_table(df)
+
+    assert list(passed["matched_name"]) == ["PC(16:0_18:1)", "LPC(16:0)", "SM(d18:1/16:0)"]

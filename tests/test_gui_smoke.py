@@ -23,6 +23,10 @@ def test_gui_main_window_instantiates() -> None:
     assert window.feature_page.msdial_row.isEnabled()
 
     assert window.ms2_page.mode.findData("tg-positive") == -1
+    assert not window.ms2_page.output_topn.isChecked()
+    assert not window.ms2_page.top_n.isEnabled()
+    window.ms2_page.output_topn.setChecked(True)
+    assert window.ms2_page.top_n.isEnabled()
     index = window.ms2_page.mode.findData("positive")
     assert index >= 0
     window.ms2_page.mode.setCurrentIndex(index)

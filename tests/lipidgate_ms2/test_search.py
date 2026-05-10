@@ -297,11 +297,13 @@ class SearchSelectionTests(unittest.TestCase):
         searcher = self._build_memory_searcher([fa_record, pe_record], use_fragment_index=False)
 
         rows = searcher.score_spectrum(spectrum, top_n=1)
+        fa_only_rows = self._build_memory_searcher([fa_record], use_fragment_index=False).score_spectrum(spectrum, top_n=1)
 
         self.assertEqual([row["compound_class"] for row in rows], ["PE", "FA"])
         self.assertEqual([row["result_rank_scope"] for row in rows], ["main", "fa"])
         self.assertEqual([row["result_rank"] for row in rows], [1, 1])
         self.assertEqual([row["counts_toward_topn"] for row in rows], [True, False])
+        self.assertEqual([row["compound_class"] for row in fa_only_rows], ["FA"])
         self.assertGreaterEqual(rows[1]["final_score"], 99.0)
 
     def test_secondary_result_requires_hg_for_pe_o(self) -> None:

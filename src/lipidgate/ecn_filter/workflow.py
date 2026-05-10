@@ -38,6 +38,10 @@ class ECNFilterResult:
     xlsx_path: Path | None
     output_dir: Path
     row_count: int
+    passed_data: pd.DataFrame = field(default_factory=pd.DataFrame)
+    model_summary: pd.DataFrame = field(default_factory=pd.DataFrame)
+    passed_csv_path: Path | None = None
+    model_summary_csv_path: Path | None = None
     parameters: dict = field(default_factory=dict)
     message: str = ""
 
@@ -61,6 +65,9 @@ class _FitResult:
     n_removed: int
     removed_indexes: tuple[object, ...]
     stop_reason: str
+
+
+FITTED_MODEL_TYPES = {"linear", "quadratic"}
 
 
 def _infer_column(df: pd.DataFrame, aliases: tuple[str, ...], explicit: str | None = None) -> str | None:
@@ -224,6 +231,31 @@ def _predict(model_type: str, coefficients: tuple[float, ...], rt_values: pd.Ser
     return b0 + b1 * rt
 
 
+def _r_squared(observed: pd.Series | np.ndarray, predicted: pd.Series | np.ndarray) -> float:
+    y = np.asarray(observed, dtype=float)
+    y_hat = np.asarray(predicted, dtype=float)
+    valid = np.isfinite(y) & np.isfinite(y_hat)
+    y = y[valid]
+    y_hat = y_hat[valid]
+    if len(y) < 2:
+        return float("nan")
+    ss_total = float(np.sum((y - np.mean(y)) ** 2))
+    if ss_total <= 0.0:
+        return float("nan")
+    ss_residual = float(np.sum((y - y_hat) ** 2))
+    return float(1.0 - ss_residual / ss_total)
+
+
+def _format_curve(model_type: str, coefficients: tuple[float, ...]) -> str:
+    if model_type == "quadratic":
+        b0, b1, b2 = coefficients
+        return f"total_C = {b0:.6g} + {b1:.6g}*rt + {b2:.6g}*rt^2"
+    if model_type == "linear":
+        b0, b1 = coefficients
+        return f"total_C = {b0:.6g} + {b1:.6g}*rt"
+    return ""
+
+
 def _fit_once(points: pd.DataFrame) -> tuple[str, tuple[float, ...]] | None:
     rt = points["_rt_minutes"].to_numpy(dtype=float)
     total_c = points["total_C"].to_numpy(dtype=float)
@@ -319,7 +351,7 @@ def _empty_result_table(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def apply_ecn_filter(
+def _apply_ecn_filter_core(
     df: pd.DataFrame,
     *,
     config: ECNFilterConfig | None = None,
@@ -330,10 +362,10 @@ def apply_ecn_filter(
     adduct_column: str | None = None,
     score_column: str | None = None,
     intensity_column: str | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     config = config or ECNFilterConfig()
     if df.empty:
-        return _empty_result_table(df)
+        return _empty_result_table(df), _empty_model_summary()
     columns = _column_map(
         df,
         lipid_column=lipid_column,
@@ -346,6 +378,7 @@ def apply_ecn_filter(
     )
     full_table = _deduplicate_chain_candidates(_standardize_input(df, columns), columns, config)
     modeling_table = _choose_modeling_representatives(full_table, columns)
+    summary_rows: list[dict[str, object]] = []
 
     out = full_table.copy()
     out["rt_model_group"] = out["subclass"].astype(str) + "|DB=" + out["total_DB"].astype("Int64").astype(str)
@@ -362,11 +395,34 @@ def apply_ecn_filter(
         mask = (out["subclass"] == subclass) & (out["total_DB"] == total_db)
         group_label = f"{subclass}|DB={int(total_db) if pd.notna(total_db) else total_db}"
         fit = _fit_group(group, config)
+        active_group = group.drop(index=list(fit.removed_indexes), errors="ignore")
+        curve = _format_curve(fit.model_type, fit.coefficients)
+        r_squared = np.nan
+        if fit.model_type in FITTED_MODEL_TYPES and not active_group.empty:
+            r_squared = _r_squared(
+                active_group["total_C"],
+                _predict(fit.model_type, fit.coefficients, active_group["_rt_minutes"]),
+            )
+        summary_rows.append(
+            {
+                "subclass": subclass,
+                "total_DB": total_db,
+                "rt_model_group": group_label,
+                "rt_model_type": fit.model_type,
+                "fitting_curve": curve,
+                "r_squared": r_squared,
+                "scatter_count": fit.n_points,
+                "original_scatter_count": len(group),
+                "candidate_rows": int(mask.sum()),
+                "n_removed": fit.n_removed,
+                "stop_reason": fit.stop_reason,
+            }
+        )
         out.loc[mask, "rt_model_group"] = group_label
         out.loc[mask, "rt_model_type"] = fit.model_type
         out.loc[mask, "rt_model_n_points"] = fit.n_points
         out.loc[mask, "rt_model_n_removed"] = fit.n_removed
-        if fit.model_type in {"insufficient_points", "non_monotonic"}:
+        if fit.model_type not in FITTED_MODEL_TYPES:
             out.loc[mask, "RT_outlier_reason"] = fit.stop_reason
             continue
         predictions = _predict(fit.model_type, fit.coefficients, out.loc[mask, "_rt_minutes"])
@@ -392,7 +448,67 @@ def apply_ecn_filter(
         "_intensity_for_sort",
         "_adduct_key",
     ]
-    return out.drop(columns=[column for column in helper_columns if column in out.columns])
+    return (
+        out.drop(columns=[column for column in helper_columns if column in out.columns]),
+        pd.DataFrame(summary_rows, columns=_model_summary_columns()),
+    )
+
+
+def _model_summary_columns() -> list[str]:
+    return [
+        "subclass",
+        "total_DB",
+        "rt_model_group",
+        "rt_model_type",
+        "fitting_curve",
+        "r_squared",
+        "scatter_count",
+        "original_scatter_count",
+        "candidate_rows",
+        "n_removed",
+        "stop_reason",
+    ]
+
+
+def _empty_model_summary() -> pd.DataFrame:
+    return pd.DataFrame(columns=_model_summary_columns())
+
+
+def build_ecn_passed_table(result_df: pd.DataFrame) -> pd.DataFrame:
+    if result_df.empty or "rt_model_type" not in result_df.columns:
+        return result_df.copy()
+    fitted = result_df["rt_model_type"].isin(FITTED_MODEL_TYPES)
+    if "RT_consistency_pass" in result_df.columns:
+        passed = result_df["RT_consistency_pass"].fillna(False).astype(bool)
+    else:
+        passed = pd.Series(False, index=result_df.index)
+    return result_df.loc[(~fitted) | passed].copy()
+
+
+def apply_ecn_filter(
+    df: pd.DataFrame,
+    *,
+    config: ECNFilterConfig | None = None,
+    lipid_column: str | None = None,
+    subclass_column: str | None = None,
+    rt_column: str | None = None,
+    mz_column: str | None = None,
+    adduct_column: str | None = None,
+    score_column: str | None = None,
+    intensity_column: str | None = None,
+) -> pd.DataFrame:
+    result_df, _ = _apply_ecn_filter_core(
+        df,
+        config=config,
+        lipid_column=lipid_column,
+        subclass_column=subclass_column,
+        rt_column=rt_column,
+        mz_column=mz_column,
+        adduct_column=adduct_column,
+        score_column=score_column,
+        intensity_column=intensity_column,
+    )
+    return result_df
 
 
 def run_ecn_filter_result(
@@ -412,7 +528,7 @@ def run_ecn_filter_result(
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     df = _read_table(input_table)
-    result_df = apply_ecn_filter(
+    result_df, model_summary_df = _apply_ecn_filter_core(
         df,
         config=config,
         lipid_column=lipid_column,
@@ -423,13 +539,20 @@ def run_ecn_filter_result(
         score_column=score_column,
         intensity_column=intensity_column,
     )
+    passed_df = build_ecn_passed_table(result_df)
     csv_path = out_dir / "ecn_filter_results.csv"
     result_df.to_csv(csv_path, index=False)
+    passed_csv_path = out_dir / "ecn_passed_results.csv"
+    model_summary_csv_path = out_dir / "ecn_model_summary.csv"
+    passed_df.to_csv(passed_csv_path, index=False)
+    model_summary_df.to_csv(model_summary_csv_path, index=False)
     xlsx_path = None
     if export_xlsx:
         xlsx_path = out_dir / "ecn_filter_results.xlsx"
         with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-            result_df.to_excel(writer, sheet_name="ECN_Filter", index=False)
+            result_df.to_excel(writer, sheet_name="All_Results", index=False)
+            passed_df.to_excel(writer, sheet_name="ECN_Passed", index=False)
+            model_summary_df.to_excel(writer, sheet_name="Model_Summary", index=False)
     used_config = config or ECNFilterConfig()
     return ECNFilterResult(
         data=result_df,
@@ -437,6 +560,10 @@ def run_ecn_filter_result(
         xlsx_path=xlsx_path,
         output_dir=out_dir,
         row_count=int(len(result_df)),
+        passed_data=passed_df,
+        model_summary=model_summary_df,
+        passed_csv_path=passed_csv_path,
+        model_summary_csv_path=model_summary_csv_path,
         parameters={
             "mz_ppm": used_config.mz_ppm,
             "rt_cluster_sec": used_config.rt_cluster_sec,

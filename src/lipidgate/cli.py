@@ -78,9 +78,12 @@ def _ecn_filter(args: argparse.Namespace) -> int:
         intensity_column=args.intensity_column,
     )
     print(f"csv: {result.csv_path}")
+    print(f"passed_csv: {result.passed_csv_path}")
+    print(f"model_summary_csv: {result.model_summary_csv_path}")
     if result.xlsx_path:
         print(f"xlsx: {result.xlsx_path}")
     print(f"rows: {result.row_count}")
+    print(f"passed_rows: {len(result.passed_data)}")
     return 0
 
 
@@ -124,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Search mode.",
     )
     p.add_argument("--library", type=Path)
-    p.add_argument("--top-n", type=int, default=5)
+    p.add_argument("--top-n", type=int, default=1)
     p.add_argument("--precursor-ppm", type=float, default=10.0)
     p.add_argument("--precursor-da", type=float)
     p.add_argument("--fragment-da", type=float, default=0.02)
