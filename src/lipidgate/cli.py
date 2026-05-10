@@ -3,13 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from lipidgate.ecn_filter import ECNFilterConfig, run_ecn_filter_result
-from lipidgate.ms1 import run_feature_detection_result
-from lipidgate.ms2 import run_ms2_search_result
-from lipidgate.peak_truth import run_peak_truth_result
-
 
 def _detect(args: argparse.Namespace) -> int:
+    from lipidgate.ms1 import run_feature_detection_result
+
     result = run_feature_detection_result(
         algo=args.algo,
         input_path=args.input,
@@ -23,6 +20,8 @@ def _detect(args: argparse.Namespace) -> int:
 
 
 def _peak_truth(args: argparse.Namespace) -> int:
+    from lipidgate.peak_truth import run_peak_truth_result
+
     result = run_peak_truth_result(
         feature_table=args.feature_table,
         mzml_path=args.mzml,
@@ -39,6 +38,8 @@ def _peak_truth(args: argparse.Namespace) -> int:
 
 
 def _ms2_search(args: argparse.Namespace) -> int:
+    from lipidgate.ms2 import run_ms2_search_result
+
     result = run_ms2_search_result(
         mzml_path=args.mzml,
         output_dir=args.output,
@@ -57,6 +58,8 @@ def _ms2_search(args: argparse.Namespace) -> int:
 
 
 def _ecn_filter(args: argparse.Namespace) -> int:
+    from lipidgate.ecn_filter import ECNFilterConfig, run_ecn_filter_result
+
     result = run_ecn_filter_result(
         input_table=args.input,
         output_dir=args.output,

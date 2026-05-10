@@ -4,12 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from lipidgate.ecn_filter import ECNFilterResult
-from lipidgate.ms2 import MS2SearchResult
-
 
 def test_cli_ms2_search_prints_only_ms2_outputs(tmp_path: Path, monkeypatch, capsys) -> None:
     import lipidgate.cli as cli
+    import lipidgate.ms2 as ms2_module
+    from lipidgate.ms2 import MS2SearchResult
 
     def fake_run_ms2_search_result(**kwargs) -> MS2SearchResult:
         csv_path = tmp_path / "ms2_results.csv"
@@ -24,7 +23,7 @@ def test_cli_ms2_search_prints_only_ms2_outputs(tmp_path: Path, monkeypatch, cap
             row_count=0,
         )
 
-    monkeypatch.setattr(cli, "run_ms2_search_result", fake_run_ms2_search_result)
+    monkeypatch.setattr(ms2_module, "run_ms2_search_result", fake_run_ms2_search_result)
 
     code = cli.main(["ms2-search", "--mzml", str(tmp_path / "sample.mzML"), "--output", str(tmp_path)])
 
@@ -37,6 +36,8 @@ def test_cli_ms2_search_prints_only_ms2_outputs(tmp_path: Path, monkeypatch, cap
 
 def test_cli_ecn_filter_prints_passed_and_model_outputs(tmp_path: Path, monkeypatch, capsys) -> None:
     import lipidgate.cli as cli
+    import lipidgate.ecn_filter as ecn_module
+    from lipidgate.ecn_filter import ECNFilterResult
 
     def fake_run_ecn_filter_result(**kwargs) -> ECNFilterResult:
         csv_path = tmp_path / "ecn_filter_results.csv"
@@ -56,7 +57,7 @@ def test_cli_ecn_filter_prints_passed_and_model_outputs(tmp_path: Path, monkeypa
             model_summary_csv_path=summary_path,
         )
 
-    monkeypatch.setattr(cli, "run_ecn_filter_result", fake_run_ecn_filter_result)
+    monkeypatch.setattr(ecn_module, "run_ecn_filter_result", fake_run_ecn_filter_result)
 
     code = cli.main(["ecn-filter", "--input", str(tmp_path / "in.csv"), "--output", str(tmp_path)])
 

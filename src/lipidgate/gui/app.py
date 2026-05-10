@@ -35,11 +35,7 @@ _add_package_dll_directories("PySide6")
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from lipidbench.utils.feature_table_io import load_feature_table
-from lipidgate.ms1 import FeatureDetectionResult, run_feature_detection_result
-from lipidgate.ms2 import MS2SearchResult, run_ms2_search_result
 from lipidgate.paths import default_negative_msp, default_peak_truth_model_dir, default_positive_msp
-from lipidgate.peak_truth import PeakTruthResult, run_peak_truth_result
 
 from .components import LogPanel, TablePanel, Worker, open_in_file_manager, path_row, read_table
 
@@ -228,6 +224,9 @@ class FeaturePage(WorkflowPage):
             msdial_table = None
 
         def task() -> tuple[FeatureDetectionResult, pd.DataFrame]:
+            from lipidbench.utils.feature_table_io import load_feature_table
+            from lipidgate.ms1 import run_feature_detection_result
+
             result = run_feature_detection_result(
                 algo=algo,
                 input_path=input_path,
@@ -330,6 +329,8 @@ class PeakTruthPage(WorkflowPage):
         max_features = int(self.max_features.value()) or None
 
         def task() -> tuple[PeakTruthResult, pd.DataFrame, pd.DataFrame]:
+            from lipidgate.peak_truth import run_peak_truth_result
+
             result = run_peak_truth_result(
                 feature_table=feature_table,
                 mzml_path=mzml,
@@ -465,6 +466,8 @@ class MS2Page(WorkflowPage):
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
 
         def task() -> MS2SearchResult:
+            from lipidgate.ms2 import run_ms2_search_result
+
             return run_ms2_search_result(
                 mzml_path=mzml,
                 output_dir=output_dir,
