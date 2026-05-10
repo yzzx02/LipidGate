@@ -40,15 +40,30 @@ def _peak_truth(args: argparse.Namespace) -> int:
 def _ms2_search(args: argparse.Namespace) -> int:
     from lipidgate.ms2 import run_ms2_search_result
 
+    precursor_ppm = args.precursor_ppm
+    precursor_da = args.precursor_da
+    fragment_da = args.fragment_da
+    fragment_ppm = args.fragment_ppm
+    if args.tolerance_unit == "ppm":
+        precursor_ppm = args.ms1_tolerance if args.ms1_tolerance is not None else args.precursor_ppm
+        precursor_da = None
+        fragment_ppm = args.msms_tolerance if args.msms_tolerance is not None else (args.fragment_ppm or args.precursor_ppm)
+        fragment_da = None
+    elif args.tolerance_unit == "da":
+        precursor_da = args.ms1_tolerance if args.ms1_tolerance is not None else (args.precursor_da or 0.01)
+        fragment_da = args.msms_tolerance if args.msms_tolerance is not None else args.fragment_da
+        fragment_ppm = None
+
     result = run_ms2_search_result(
         mzml_path=args.mzml,
         output_dir=args.output,
         mode=args.mode,
         library_path=args.library,
         top_n=args.top_n,
-        precursor_tolerance_ppm=args.precursor_ppm,
-        precursor_tolerance_da=args.precursor_da,
-        fragment_tolerance_da=args.fragment_da,
+        precursor_tolerance_ppm=precursor_ppm,
+        precursor_tolerance_da=precursor_da,
+        fragment_tolerance_da=fragment_da,
+        fragment_tolerance_ppm=fragment_ppm,
     )
     print(f"csv: {result.csv_path}")
     if result.xlsx_path:
@@ -131,9 +146,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--library", type=Path)
     p.add_argument("--top-n", type=int, default=1)
+    p.add_argument("--tolerance-unit", choices=["ppm", "da"], help="Use one unit for both MS1 and MS/MS tolerances")
+    p.add_argument("--ms1-tolerance", type=float, help="MS1 tolerance in --tolerance-unit")
+    p.add_argument("--msms-tolerance", type=float, help="MS/MS tolerance in --tolerance-unit")
     p.add_argument("--precursor-ppm", type=float, default=10.0)
     p.add_argument("--precursor-da", type=float)
     p.add_argument("--fragment-da", type=float, default=0.02)
+    p.add_argument("--fragment-ppm", type=float)
     p.set_defaults(func=_ms2_search)
 
     p = sub.add_parser("ecn-filter", help="Evaluate lipid annotation RT consistency with ECN-style models")

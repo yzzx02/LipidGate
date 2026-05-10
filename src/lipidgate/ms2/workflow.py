@@ -31,7 +31,8 @@ def run_ms2_search_result(
     top_n: int = 1,
     precursor_tolerance_ppm: float = 10.0,
     precursor_tolerance_da: float | None = None,
-    fragment_tolerance_da: float = 0.02,
+    fragment_tolerance_da: float | None = 0.02,
+    fragment_tolerance_ppm: float | None = None,
     export_xlsx: bool = True,
 ) -> MS2SearchResult:
     mode_norm = mode.strip().lower().replace("_", "-")
@@ -49,17 +50,19 @@ def run_ms2_search_result(
     if not library.exists():
         raise FileNotFoundError(library)
 
-    from lipidgate.ms2.search import LipidMS2Searcher
+    from lipidgate.ms2.search import LipidMS2Searcher, prepare_ms2_result_export_df
 
     searcher = LipidMS2Searcher(
         library_path=library,
         precursor_tolerance_da=precursor_tolerance_da,
         precursor_tolerance_ppm=float(precursor_tolerance_ppm),
-        fragment_tolerance_da=float(fragment_tolerance_da),
+        fragment_tolerance_da=float(fragment_tolerance_da) if fragment_tolerance_da is not None else None,
+        fragment_tolerance_ppm=float(fragment_tolerance_ppm) if fragment_tolerance_ppm is not None else None,
     )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
     df = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
+    df = prepare_ms2_result_export_df(df)
     csv_path = out_dir / "ms2_results.csv"
     df.to_csv(csv_path, index=False)
     xlsx_path = None
@@ -67,6 +70,24 @@ def run_ms2_search_result(
         xlsx_path = out_dir / "ms2_results.xlsx"
         with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="MS2_Results", index=False)
+            worksheet = writer.sheets["MS2_Results"]
+            header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
+            for column_name, number_format in [
+                ("rt_minutes", "0.000"),
+                ("precursor_mz", "0.0000"),
+                ("ppm_error", "0.00"),
+                ("final_score", "0.00"),
+            ]:
+                column_index = header_to_index.get(column_name)
+                if column_index is None:
+                    continue
+                for row in worksheet.iter_rows(
+                    min_row=2,
+                    max_row=worksheet.max_row,
+                    min_col=column_index,
+                    max_col=column_index,
+                ):
+                    row[0].number_format = number_format
     return MS2SearchResult(
         data=df,
         csv_path=csv_path,
@@ -80,6 +101,7 @@ def run_ms2_search_result(
             "precursor_tolerance_ppm": precursor_tolerance_ppm,
             "precursor_tolerance_da": precursor_tolerance_da,
             "fragment_tolerance_da": fragment_tolerance_da,
+            "fragment_tolerance_ppm": fragment_tolerance_ppm,
             "export_xlsx": export_xlsx,
         },
         message=f"MS2 search finished: {csv_path} ({len(df)} rows)",
@@ -95,7 +117,8 @@ def run_ms2_search(
     top_n: int = 1,
     precursor_tolerance_ppm: float = 10.0,
     precursor_tolerance_da: float | None = None,
-    fragment_tolerance_da: float = 0.02,
+    fragment_tolerance_da: float | None = 0.02,
+    fragment_tolerance_ppm: float | None = None,
     export_xlsx: bool = True,
 ) -> tuple[pd.DataFrame, Path, Path | None]:
     """Return the legacy tuple for compatibility.
@@ -112,6 +135,7 @@ def run_ms2_search(
         precursor_tolerance_ppm=precursor_tolerance_ppm,
         precursor_tolerance_da=precursor_tolerance_da,
         fragment_tolerance_da=fragment_tolerance_da,
+        fragment_tolerance_ppm=fragment_tolerance_ppm,
         export_xlsx=export_xlsx,
     )
     return result.data, result.csv_path, result.xlsx_path

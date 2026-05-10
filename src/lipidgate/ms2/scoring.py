@@ -389,7 +389,8 @@ def _derive_required_groups(
 def _match_fragments(
     peaks: Sequence[ExperimentalPeak],
     fragments: Sequence[FragmentRecord],
-    mz_tolerance: float,
+    mz_tolerance: float | None,
+    ppm_tolerance: float | None = None,
     experimental_mz: Sequence[float] | None = None,
 ) -> List[FragmentMatch]:
     if experimental_mz is None:
@@ -397,8 +398,9 @@ def _match_fragments(
     matches: List[FragmentMatch] = []
     used_peak_indexes = set()
     for fragment in fragments:
-        left = bisect.bisect_left(experimental_mz, fragment.mz - mz_tolerance)
-        right = bisect.bisect_right(experimental_mz, fragment.mz + mz_tolerance)
+        window_da = _fragment_window_da(fragment.mz, mz_tolerance, ppm_tolerance)
+        left = bisect.bisect_left(experimental_mz, fragment.mz - window_da)
+        right = bisect.bisect_right(experimental_mz, fragment.mz + window_da)
         best_index = None
         best_peak = None
         best_error = None
@@ -415,6 +417,14 @@ def _match_fragments(
             used_peak_indexes.add(best_index)
             matches.append(FragmentMatch(fragment=fragment, experimental_peak=best_peak, mz_error=best_error))
     return matches
+
+
+def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tolerance: float | None) -> float:
+    if mz_tolerance is not None:
+        return float(mz_tolerance)
+    if ppm_tolerance is not None:
+        return abs(float(fragment_mz)) * float(ppm_tolerance) * 1e-6
+    return 0.02
 
 
 def _calculate_pool_scores(
@@ -736,7 +746,8 @@ def _score_fa_precursor_only_candidate(
     precursor_fragments: Sequence[FragmentRecord],
     precursor_ppm_tolerance: float,
     precursor_mz_tolerance_da: float | None,
-    fragment_mz_tolerance: float,
+    fragment_mz_tolerance: float | None,
+    fragment_ppm_tolerance: float | None,
     experimental_mz: Sequence[float] | None,
 ) -> CandidateScore:
     ppm_error = ((spectrum.precursor_mz - record.precursor_mz) / record.precursor_mz) * 1e6
@@ -764,6 +775,7 @@ def _score_fa_precursor_only_candidate(
         spectrum.peaks,
         precursor_fragments,
         fragment_mz_tolerance,
+        ppm_tolerance=fragment_ppm_tolerance,
         experimental_mz=experimental_mz,
     )
     if not matches:
@@ -816,7 +828,8 @@ def score_candidate(
     rule: ClassRule,
     precursor_ppm_tolerance: float = 10.0,
     precursor_mz_tolerance_da: float | None = None,
-    fragment_mz_tolerance: float = 0.02,
+    fragment_mz_tolerance: float | None = 0.02,
+    fragment_ppm_tolerance: float | None = None,
     experimental_mz: Sequence[float] | None = None,
 ) -> CandidateScore:
     fa_precursor_fragments = _record_precursor_ion_fragments(record) if _is_fa_record(record) else []
@@ -828,6 +841,7 @@ def score_candidate(
             precursor_ppm_tolerance=precursor_ppm_tolerance,
             precursor_mz_tolerance_da=precursor_mz_tolerance_da,
             fragment_mz_tolerance=fragment_mz_tolerance,
+            fragment_ppm_tolerance=fragment_ppm_tolerance,
             experimental_mz=experimental_mz,
         )
 
@@ -886,6 +900,7 @@ def score_candidate(
         spectrum.peaks,
         record.fragments,
         fragment_mz_tolerance,
+        ppm_tolerance=fragment_ppm_tolerance,
         experimental_mz=experimental_mz,
     )
     if not matches:

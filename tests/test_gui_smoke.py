@@ -42,10 +42,14 @@ def test_gui_main_window_instantiates() -> None:
         assert window.ms2_page.top_n.isEnabled()
         assert window.ms2_page.tolerance_unit.currentData() == "ppm"
         assert window.ms2_page.ms1_tolerance.value() == 10.0
-        assert window.ms2_page.msms_tolerance.value() == 0.02
+        assert window.ms2_page.msms_tolerance.value() == 10.0
         window.ms2_page.mode.setCurrentIndex(positive_index)
         assert window.ms2_page._mode_value() == "positive"
-        assert "MS1 tolerance 使用 ppm" in window.ms2_page.mode_hint.text()
+        assert "MS1 和 MS/MS tolerance 均使用 ppm" in window.ms2_page.mode_hint.text()
+        window.ms2_page.tolerance_unit.setCurrentIndex(window.ms2_page.tolerance_unit.findData("da"))
+        assert window.ms2_page.ms1_tolerance.value() == 0.01
+        assert window.ms2_page.msms_tolerance.value() == 0.02
+        assert "MS1 和 MS/MS tolerance 均使用 da" in window.ms2_page.mode_hint.text()
         assert not window.ms2_page.run_ecn_btn.isEnabled()
         assert window.ms2_page.tabs.count() == 3
 

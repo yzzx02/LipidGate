@@ -393,9 +393,9 @@ class MS2Page(WorkflowPage):
         self.ms1_tolerance.setDecimals(2)
         self.ms1_tolerance.setValue(10.0)
         self.msms_tolerance = QtWidgets.QDoubleSpinBox()
-        self.msms_tolerance.setRange(0.001, 5.0)
-        self.msms_tolerance.setDecimals(4)
-        self.msms_tolerance.setValue(0.02)
+        self.msms_tolerance.setRange(0.1, 1000.0)
+        self.msms_tolerance.setDecimals(2)
+        self.msms_tolerance.setValue(10.0)
         self.mode_hint = QtWidgets.QLabel("")
         self.mode_hint.setObjectName("mutedLabel")
         self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
@@ -477,16 +477,24 @@ class MS2Page(WorkflowPage):
             self.ms1_tolerance.setDecimals(4)
             if self.ms1_tolerance.value() >= 1.0:
                 self.ms1_tolerance.setValue(0.01)
+            self.msms_tolerance.setRange(0.0001, 10.0)
+            self.msms_tolerance.setDecimals(4)
+            if self.msms_tolerance.value() >= 1.0:
+                self.msms_tolerance.setValue(0.02)
         else:
             self.ms1_tolerance.setRange(0.1, 1000.0)
             self.ms1_tolerance.setDecimals(2)
             if self.ms1_tolerance.value() < 0.1:
                 self.ms1_tolerance.setValue(10.0)
+            self.msms_tolerance.setRange(0.1, 1000.0)
+            self.msms_tolerance.setDecimals(2)
+            if self.msms_tolerance.value() < 0.1:
+                self.msms_tolerance.setValue(10.0)
         self._update_mode_hint()
 
     def _update_mode_hint(self) -> None:
         unit = str(self.tolerance_unit.currentData() or "ppm")
-        self.mode_hint.setText(f"MS1 tolerance 使用 {unit}；MS/MS tolerance 为碎片 Da。")
+        self.mode_hint.setText(f"MS1 和 MS/MS tolerance 均使用 {unit}。")
 
     def _browse_mzml(self) -> None:
         self._browse_file(self.mzml, "选择 mzML", "mzML (*.mzML);;All (*.*)", "ms2/mzml")
@@ -506,6 +514,8 @@ class MS2Page(WorkflowPage):
         unit = str(self.tolerance_unit.currentData() or "ppm")
         precursor_ppm = float(self.ms1_tolerance.value()) if unit == "ppm" else 10.0
         precursor_da = float(self.ms1_tolerance.value()) if unit == "da" else None
+        fragment_ppm = float(self.msms_tolerance.value()) if unit == "ppm" else None
+        fragment_da = float(self.msms_tolerance.value()) if unit == "da" else None
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
         self.run_ecn_btn.setEnabled(False)
         self.last_ms2_csv = None
@@ -524,7 +534,8 @@ class MS2Page(WorkflowPage):
                 top_n=output_top_n,
                 precursor_tolerance_ppm=precursor_ppm,
                 precursor_tolerance_da=precursor_da,
-                fragment_tolerance_da=float(self.msms_tolerance.value()),
+                fragment_tolerance_da=fragment_da,
+                fragment_tolerance_ppm=fragment_ppm,
             )
 
         self._start_worker(task, "二级质谱鉴定运行中...", self._on_done, [self.run_btn, self.open_output_btn])
@@ -538,6 +549,10 @@ class MS2Page(WorkflowPage):
         self.log.append(result.message)
         self.window.status.showMessage(result.message, 8000)
         self.completed.emit(str(result.csv_path))
+        if self._thread is not None:
+            self._thread.finished.connect(self.run_ecn_preview)
+        else:
+            self.run_ecn_preview()
 
     def run_ecn_preview(self) -> None:
         if self.last_ms2_csv is None or not self.last_ms2_csv.exists():

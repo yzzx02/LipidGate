@@ -81,6 +81,26 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(len(result.matched_fragments), 1)
         self.assertEqual(result.matched_fragments[0].fragment.fragment_type, "Precursor Ion")
 
+    def test_fragment_ppm_tolerance_matches_all_required_fragments(self) -> None:
+        spectrum = build_spectrum(
+            [
+                (255.2359, 1000.0),
+                (281.2516, 900.0),
+                (224.0723, 800.0),
+            ]
+        )
+
+        result = score_candidate(
+            spectrum,
+            self.record,
+            self.rule,
+            fragment_mz_tolerance=None,
+            fragment_ppm_tolerance=20.0,
+        )
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(len(result.matched_fragments), 3)
+
     def test_cl_double_negative_requires_three_fa_hits(self) -> None:
         record = LibraryRecord(
             record_id=72,

@@ -96,7 +96,26 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
             self.kwargs = kwargs
 
         def search_mzml(self, mzml_path: Path, top_n: int = 5) -> pd.DataFrame:
-            return pd.DataFrame({"scan_id": ["scan_1"], "matched_name": ["PE(16:0_18:1)"]})
+            return pd.DataFrame(
+                {
+                    "scan_id": ["scan_1"],
+                    "rt_minutes": [5.12345],
+                    "precursor_mz": [760.123456],
+                    "ppm_error": [1.2345],
+                    "compound_class": ["PE"],
+                    "matched_name": ["PE(16:0_18:1)"],
+                    "adduct": ["[M+H]+"],
+                    "result_rank": [1],
+                    "result_rank_scope": ["main"],
+                    "final_score": [98.7654],
+                    "rank_score": [98.7654],
+                    "normalized_match_score": [100.0],
+                    "ppm_score": [90.0],
+                    "total_score": [80.0],
+                    "matched_fragment_count": [3],
+                    "matched_fragments": ["100.0000 HG; 200.0000 FA"],
+                }
+            )
 
     monkeypatch.setattr(search_module, "LipidMS2Searcher", FakeSearcher)
 
@@ -114,4 +133,11 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     assert result.row_count == 1
     assert int(result.data.loc[0, "total_C"]) == 34
     assert int(result.data.loc[0, "total_DB"]) == 1
-    assert result.data.loc[0, "lipidname_norm"] == "PE(16:0_18:1)"
+    assert "lipidname_norm" not in result.data.columns
+    assert "subclass" not in result.data.columns
+    assert "rank_score" not in result.data.columns
+    assert result.data.loc[0, "matched_name"] == "PE(16:0_18:1)"
+    assert result.data.loc[0, "rt_minutes"] == 5.123
+    assert result.data.loc[0, "precursor_mz"] == 760.1235
+    assert result.data.loc[0, "ppm_error"] == 1.23
+    assert result.data.loc[0, "final_score"] == 98.77

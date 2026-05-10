@@ -45,7 +45,8 @@ class LipidMS2Searcher:
         rules: RuleSet | None = None,
         precursor_tolerance_da: float | None = None,
         precursor_tolerance_ppm: float = 10.0,
-        fragment_tolerance_da: float = 0.02,
+        fragment_tolerance_da: float | None = 0.02,
+        fragment_tolerance_ppm: float | None = None,
         min_relative_intensity: float = 0.001,
         use_fragment_index: bool = True,
         fragment_prefilter_min_candidates: int = 128,
@@ -55,11 +56,21 @@ class LipidMS2Searcher:
         self.precursor_tolerance_da = precursor_tolerance_da
         self.precursor_tolerance_ppm = float(precursor_tolerance_ppm)
         self.fragment_tolerance_da = fragment_tolerance_da
+        self.fragment_tolerance_ppm = fragment_tolerance_ppm
         self.min_relative_intensity = min_relative_intensity
         self.use_fragment_index = bool(use_fragment_index)
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
         self.precursors = [record.precursor_mz for record in self.library]
         self.last_output_path: Path | None = None
+
+    def _fragment_window_da(self, fragment_mz: float) -> float:
+        fragment_tolerance_da = getattr(self, "fragment_tolerance_da", 0.02)
+        fragment_tolerance_ppm = getattr(self, "fragment_tolerance_ppm", None)
+        if fragment_tolerance_da is not None:
+            return float(fragment_tolerance_da)
+        if fragment_tolerance_ppm is not None:
+            return abs(float(fragment_mz)) * float(fragment_tolerance_ppm) * 1e-6
+        return 0.02
 
     @staticmethod
     def _sphingo_rule_key(record: LibraryRecord) -> str:
@@ -84,8 +95,9 @@ class LipidMS2Searcher:
         matches: List[FragmentMatch] = []
         used_peak_indexes = set()
         for fragment in record.fragments:
-            left = bisect.bisect_left(experimental_mz, fragment.mz - self.fragment_tolerance_da)
-            right = bisect.bisect_right(experimental_mz, fragment.mz + self.fragment_tolerance_da)
+            window_da = self._fragment_window_da(fragment.mz)
+            left = bisect.bisect_left(experimental_mz, fragment.mz - window_da)
+            right = bisect.bisect_right(experimental_mz, fragment.mz + window_da)
             best_index = None
             best_peak = None
             best_error = None
@@ -232,10 +244,10 @@ class LipidMS2Searcher:
 
         experimental_mz = [peak.mz for peak in spectrum.peaks]
         hit_indexes: list[int] = []
-        tolerance = self.fragment_tolerance_da
         for record_index in range(left, right):
             record = self.library[record_index]
             for fragment in record.fragments:
+                tolerance = self._fragment_window_da(fragment.mz)
                 peak_left = bisect.bisect_left(experimental_mz, fragment.mz - tolerance)
                 if peak_left < len(experimental_mz) and experimental_mz[peak_left] <= fragment.mz + tolerance:
                     hit_indexes.append(record_index)
@@ -482,6 +494,7 @@ class LipidMS2Searcher:
                     precursor_ppm_tolerance=self.precursor_tolerance_ppm,
                     precursor_mz_tolerance_da=self.precursor_tolerance_da,
                     fragment_mz_tolerance=self.fragment_tolerance_da,
+                    fragment_ppm_tolerance=getattr(self, "fragment_tolerance_ppm", None),
                     experimental_mz=experimental_mz,
                 )
 
@@ -677,76 +690,88 @@ class LipidMS2Searcher:
             self.last_output_path = self._write_result_workbook(Path(output_path), combined)
         return combined
 
-    @staticmethod
-    def _prepare_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
-        if combined.empty:
-            return combined.copy()
-        export_df = combined.copy()
-        if "final_score" not in export_df.columns:
-            if "rank_score" in export_df.columns:
-                export_df["final_score"] = export_df["rank_score"]
-            elif "total_score" in export_df.columns:
-                export_df["final_score"] = export_df["total_score"]
-            else:
-                export_df["final_score"] = 0.0
-        export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").round(4)
-        if "rt_minutes" in export_df.columns:
-            export_df["RT"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
-        if "precursor_mz" in export_df.columns:
-            export_df["m/z"] = pd.to_numeric(export_df["precursor_mz"], errors="coerce").round(4)
-        result_columns = [
-            "source_file",
-            "scan_id",
-            "RT",
-            "m/z",
-            "compound_class",
-            "matched_name",
-            "adduct",
-            "final_score",
-            "resolution_level",
-            "downgrade_reason",
-            "matched_fragment_count",
-            "matched_fragments",
-        ]
-        return pd.DataFrame(export_df, columns=[column for column in result_columns if column in export_df.columns])
 
-    @staticmethod
-    def _write_result_workbook(output_path: Path, combined: pd.DataFrame) -> Path:
-        result_df = LipidMS2Searcher._prepare_result_export_df(combined)
-        target_path = output_path
-        try:
-            with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-                result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
-                worksheet = writer.sheets["Matched_Results"]
-                header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-                for column_name, number_format in [("RT", "0.000"), ("m/z", "0.0000"), ("final_score", "0.0000")]:
-                    column_index = header_to_index.get(column_name)
-                    if column_index is None:
-                        continue
-                    for row in worksheet.iter_rows(
-                        min_row=2,
-                        max_row=worksheet.max_row,
-                        min_col=column_index,
-                        max_col=column_index,
-                    ):
-                        row[0].number_format = number_format
-            return target_path
-        except PermissionError:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fallback_path = target_path.with_name(f"{target_path.stem}_{timestamp}{target_path.suffix}")
-            with pd.ExcelWriter(fallback_path, engine="openpyxl") as writer:
-                result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
-                worksheet = writer.sheets["Matched_Results"]
-                header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-                for column_name, number_format in [("RT", "0.000"), ("m/z", "0.0000"), ("final_score", "0.0000")]:
-                    column_index = header_to_index.get(column_name)
-                    if column_index is None:
-                        continue
-                    for row in worksheet.iter_rows(
-                        min_row=2,
-                        max_row=worksheet.max_row,
-                        min_col=column_index,
-                        max_col=column_index,
-                    ):
-                        row[0].number_format = number_format
-            return fallback_path
+def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
+    result_columns = [
+        "source_file",
+        "scan_id",
+        "rt_minutes",
+        "precursor_mz",
+        "ppm_error",
+        "compound_class",
+        "matched_name",
+        "adduct",
+        "total_C",
+        "total_DB",
+        "result_rank",
+        "result_channel",
+        "final_score",
+        "matched_fragment_count",
+        "matched_fragments",
+    ]
+    if combined.empty:
+        return pd.DataFrame(columns=[column for column in result_columns if column in combined.columns])
+    export_df = combined.copy()
+    if "final_score" not in export_df.columns:
+        if "rank_score" in export_df.columns:
+            export_df["final_score"] = export_df["rank_score"]
+        elif "total_score" in export_df.columns:
+            export_df["final_score"] = export_df["total_score"]
+        else:
+            export_df["final_score"] = 0.0
+    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").round(2)
+    if "rt_minutes" in export_df.columns:
+        export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
+    if "precursor_mz" in export_df.columns:
+        export_df["precursor_mz"] = pd.to_numeric(export_df["precursor_mz"], errors="coerce").round(4)
+    if "ppm_error" in export_df.columns:
+        export_df["ppm_error"] = pd.to_numeric(export_df["ppm_error"], errors="coerce").round(2)
+    if "total_C" in export_df.columns:
+        export_df["total_C"] = pd.to_numeric(export_df["total_C"], errors="coerce").astype("Int64")
+    if "total_DB" in export_df.columns:
+        export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
+    if "result_rank_scope" in export_df.columns:
+        export_df["result_channel"] = export_df["result_rank_scope"]
+    return pd.DataFrame(export_df, columns=[column for column in result_columns if column in export_df.columns])
+
+
+def _write_number_formats(worksheet) -> None:
+    header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
+    for column_name, number_format in [
+        ("rt_minutes", "0.000"),
+        ("precursor_mz", "0.0000"),
+        ("ppm_error", "0.00"),
+        ("final_score", "0.00"),
+    ]:
+        column_index = header_to_index.get(column_name)
+        if column_index is None:
+            continue
+        for row in worksheet.iter_rows(
+            min_row=2,
+            max_row=worksheet.max_row,
+            min_col=column_index,
+            max_col=column_index,
+        ):
+            row[0].number_format = number_format
+
+
+def _write_result_workbook(output_path: Path, combined: pd.DataFrame) -> Path:
+    result_df = prepare_ms2_result_export_df(combined)
+    target_path = output_path
+    try:
+        with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
+            result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
+            _write_number_formats(writer.sheets["Matched_Results"])
+        return target_path
+    except PermissionError:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fallback_path = target_path.with_name(f"{target_path.stem}_{timestamp}{target_path.suffix}")
+        with pd.ExcelWriter(fallback_path, engine="openpyxl") as writer:
+            result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
+            _write_number_formats(writer.sheets["Matched_Results"])
+        return fallback_path
+
+
+LipidMS2Searcher.prepare_result_export_df = staticmethod(prepare_ms2_result_export_df)
+LipidMS2Searcher._prepare_result_export_df = staticmethod(prepare_ms2_result_export_df)
+LipidMS2Searcher._write_result_workbook = staticmethod(_write_result_workbook)
