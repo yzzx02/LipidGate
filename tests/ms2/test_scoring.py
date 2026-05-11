@@ -368,6 +368,104 @@ class ScoringTests(unittest.TestCase):
         two_hg_result = score_candidate(two_hg_spectrum, record, rule)
         self.assertTrue(two_hg_result.passed_required_gates)
 
+    def test_naps_requires_all_observable_glycerol_fa_and_hg_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=104,
+            compound_class="NAPS",
+            lipid_name="NAPS(16:0_18:1-N-18:0)",
+            lipid_chain_name="NAPS(16:0_18:1-N-18:0)",
+            precursor_mz=776.4882,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(423.2153, "[PA-H]-", "Common"),
+                FragmentRecord(449.2310, "[PA-H]-", "Common"),
+                FragmentRecord(535.2460, "[PA-R1COOH-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(561.2617, "[PA-R2COOH-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(776.4882, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("NAPS")
+
+        one_hg_spectrum = ExperimentalSpectrum(
+            scan_id="scan_naps_one_hg",
+            precursor_mz=776.4882,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (281.2486, 900.0),
+                (535.2460, 700.0),
+            ]),
+        )
+        full_hg_spectrum = ExperimentalSpectrum(
+            scan_id="scan_naps_full_hg",
+            precursor_mz=776.4882,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (281.2486, 900.0),
+                (535.2460, 700.0),
+                (561.2617, 650.0),
+            ]),
+        )
+
+        one_hg_result = score_candidate(one_hg_spectrum, record, rule)
+        full_hg_result = score_candidate(full_hg_spectrum, record, rule)
+
+        self.assertFalse(one_hg_result.passed_required_gates)
+        self.assertIn("hg", one_hg_result.missing_required_groups)
+        self.assertTrue(full_hg_result.passed_required_gates)
+
+    def test_nagps_uses_two_required_hg_fragments_without_fa_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=105,
+            compound_class="NAGPS",
+            lipid_name="NAGPS(16:0)",
+            lipid_chain_name="NAGPS(16:0)",
+            precursor_mz=496.2681,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(78.9591, "[PO3]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(96.9696, "[H2PO4]-", "Common"),
+                FragmentRecord(171.0064, "[C3H8O6P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(496.2681, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("NAGPS")
+
+        missing_hg_spectrum = ExperimentalSpectrum(
+            scan_id="scan_nagps_one_hg",
+            precursor_mz=496.2681,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (78.9591, 1000.0),
+                (496.2681, 300.0),
+            ]),
+        )
+        full_hg_spectrum = ExperimentalSpectrum(
+            scan_id="scan_nagps_full_hg",
+            precursor_mz=496.2681,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (78.9591, 1000.0),
+                (96.9696, 300.0),
+                (171.0064, 800.0),
+                (496.2681, 300.0),
+            ]),
+        )
+
+        missing_hg_result = score_candidate(missing_hg_spectrum, record, rule)
+        full_hg_result = score_candidate(full_hg_spectrum, record, rule)
+
+        self.assertFalse(missing_hg_result.passed_required_gates)
+        self.assertIn("hg", missing_hg_result.missing_required_groups)
+        self.assertTrue(full_hg_result.passed_required_gates)
+
     def test_candidate_hg_gate_uses_candidate_and_precursor_half_rule(self) -> None:
         record = LibraryRecord(
             record_id=69,

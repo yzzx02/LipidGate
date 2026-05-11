@@ -134,6 +134,28 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         require_loss_with_fah_only=False,
         score_profile=default_profile,
     )
+    by_class["NAPS"] = ClassRule(
+        lipid_class="NAPS",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_complete_can_resolve_chain=False,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
+    by_class["NAGPS"] = ClassRule(
+        lipid_class="NAGPS",
+        required_groups={},
+        chain_level_min_fah=1,
+        allow_hg_only_if_no_fah=True,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_complete_can_resolve_chain=False,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
     by_class["APCS"] = ClassRule(
         lipid_class="APCS",
         required_groups={},

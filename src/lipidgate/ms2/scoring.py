@@ -28,6 +28,7 @@ CLASS_SPECIFIC_HG_MZ = {
     "PMEOH": (167.0109,),
     "DMPE": (168.0411, 168.0431),
 }
+STRICT_NEGATIVE_HG_CLASSES = {"NAPS", "NAGPS"}
 NEGATIVE_PC_SIGNATURE_MZ = {
     "pc_168": 168.0431,
     "pc_224": 224.0693,
@@ -310,7 +311,10 @@ def _required_positive_hg_hits(
 def _required_negative_hg_hits(record: LibraryRecord, hg_fragment_count: int) -> int:
     if hg_fragment_count <= 0:
         return 0
-    if _normalized_compound_class(record.compound_class) == "PG":
+    lipid_class = _normalized_compound_class(record.compound_class)
+    if lipid_class in STRICT_NEGATIVE_HG_CLASSES:
+        return hg_fragment_count
+    if lipid_class == "PG":
         return 1
     return min(hg_fragment_count, max(1, math.ceil(hg_fragment_count / 2)))
 
