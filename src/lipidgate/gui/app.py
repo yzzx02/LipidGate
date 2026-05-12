@@ -396,6 +396,12 @@ class MS2Page(WorkflowPage):
         self.msms_tolerance.setRange(0.1, 1000.0)
         self.msms_tolerance.setDecimals(2)
         self.msms_tolerance.setValue(10.0)
+        self.min_total_score = QtWidgets.QDoubleSpinBox()
+        self.min_total_score.setRange(0.0, 100.0)
+        self.min_total_score.setDecimals(1)
+        self.min_total_score.setSingleStep(1.0)
+        self.min_total_score.setValue(20.0)
+        self.min_total_score.setToolTip("按原始 MS2 总分过滤；0 表示关闭过滤")
         self.mode_hint = QtWidgets.QLabel("")
         self.mode_hint.setObjectName("mutedLabel")
         self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
@@ -426,6 +432,7 @@ class MS2Page(WorkflowPage):
         tolerance_row.addWidget(self.ms1_tolerance, 1)
         form.addRow("MS1 tolerance", tolerance_row)
         form.addRow("MS/MS tolerance", self.msms_tolerance)
+        form.addRow("最低总分", self.min_total_score)
         form.addRow("", self.mode_hint)
 
         action_row = QtWidgets.QHBoxLayout()
@@ -516,6 +523,7 @@ class MS2Page(WorkflowPage):
         precursor_da = float(self.ms1_tolerance.value()) if unit == "da" else None
         fragment_ppm = float(self.msms_tolerance.value()) if unit == "ppm" else None
         fragment_da = float(self.msms_tolerance.value()) if unit == "da" else None
+        min_total_score = float(self.min_total_score.value())
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
         self.run_ecn_btn.setEnabled(False)
         self.last_ms2_csv = None
@@ -536,6 +544,7 @@ class MS2Page(WorkflowPage):
                 precursor_tolerance_da=precursor_da,
                 fragment_tolerance_da=fragment_da,
                 fragment_tolerance_ppm=fragment_ppm,
+                min_total_score=min_total_score,
             )
 
         self._start_worker(task, "二级质谱鉴定运行中...", self._on_done, [self.run_btn, self.open_output_btn])

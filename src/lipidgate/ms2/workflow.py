@@ -33,6 +33,7 @@ def run_ms2_search_result(
     precursor_tolerance_da: float | None = None,
     fragment_tolerance_da: float | None = 0.02,
     fragment_tolerance_ppm: float | None = None,
+    min_total_score: float = 20.0,
     export_xlsx: bool = True,
 ) -> MS2SearchResult:
     mode_norm = mode.strip().lower().replace("_", "-")
@@ -58,6 +59,7 @@ def run_ms2_search_result(
         precursor_tolerance_ppm=float(precursor_tolerance_ppm),
         fragment_tolerance_da=float(fragment_tolerance_da) if fragment_tolerance_da is not None else None,
         fragment_tolerance_ppm=float(fragment_tolerance_ppm) if fragment_tolerance_ppm is not None else None,
+        min_total_score=float(min_total_score),
     )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
@@ -77,6 +79,7 @@ def run_ms2_search_result(
                 ("precursor_mz", "0.0000"),
                 ("ppm_error", "0.00"),
                 ("final_score", "0.00"),
+                ("total_score", "0.00"),
             ]:
                 column_index = header_to_index.get(column_name)
                 if column_index is None:
@@ -102,6 +105,7 @@ def run_ms2_search_result(
             "precursor_tolerance_da": precursor_tolerance_da,
             "fragment_tolerance_da": fragment_tolerance_da,
             "fragment_tolerance_ppm": fragment_tolerance_ppm,
+            "min_total_score": min_total_score,
             "export_xlsx": export_xlsx,
         },
         message=f"MS2 search finished: {csv_path} ({len(df)} rows)",
@@ -119,6 +123,7 @@ def run_ms2_search(
     precursor_tolerance_da: float | None = None,
     fragment_tolerance_da: float | None = 0.02,
     fragment_tolerance_ppm: float | None = None,
+    min_total_score: float = 20.0,
     export_xlsx: bool = True,
 ) -> tuple[pd.DataFrame, Path, Path | None]:
     """Return the legacy tuple for compatibility.
@@ -136,6 +141,7 @@ def run_ms2_search(
         precursor_tolerance_da=precursor_tolerance_da,
         fragment_tolerance_da=fragment_tolerance_da,
         fragment_tolerance_ppm=fragment_tolerance_ppm,
+        min_total_score=min_total_score,
         export_xlsx=export_xlsx,
     )
     return result.data, result.csv_path, result.xlsx_path

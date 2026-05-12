@@ -82,6 +82,38 @@ def test_ecn_filter_deduplicates_exact_chain_candidate_but_keeps_chain_alternati
     assert out[RT_RULE_PASS_COLUMN].all()
 
 
+def test_ecn_filter_prefers_total_score_over_normalized_final_score() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "scan_id": "normalized_high_raw_low",
+                "matched_name": "PC(16:0_18:1)",
+                "compound_class": "PC",
+                "adduct": "[M+H]+",
+                "precursor_mz": 760.5800,
+                "rt_minutes": 6.0,
+                "final_score": 99.0,
+                "total_score": 18.0,
+            },
+            {
+                "scan_id": "normalized_lower_raw_high",
+                "matched_name": "PC(18:1_16:0)",
+                "compound_class": "PC",
+                "adduct": "[M+H]+",
+                "precursor_mz": 760.5802,
+                "rt_minutes": 6.001,
+                "final_score": 60.0,
+                "total_score": 42.0,
+            },
+        ]
+    )
+
+    out = apply_ecn_filter(df, config=ECNFilterConfig(rt_cluster_sec=5.0))
+
+    assert len(out) == 1
+    assert out.iloc[0]["scan_id"] == "normalized_lower_raw_high"
+
+
 def test_ecn_filter_marks_groups_with_too_few_total_c_points() -> None:
     df = pd.DataFrame(
         [

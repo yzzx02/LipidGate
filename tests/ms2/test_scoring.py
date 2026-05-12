@@ -81,6 +81,32 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(len(result.matched_fragments), 1)
         self.assertEqual(result.matched_fragments[0].fragment.fragment_type, "Precursor Ion")
 
+    def test_fa_precursor_only_score_tracks_relative_intensity(self) -> None:
+        record = LibraryRecord(
+            record_id=70,
+            compound_class="FA",
+            lipid_name="FA(18:1)",
+            lipid_chain_name="FA(18:1)",
+            precursor_mz=281.2486,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_fa_weak_precursor",
+            precursor_mz=281.2486,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(120.0, 1000.0), (281.2486, 10.0)]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("FA"), fragment_mz_tolerance=0.01)
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.total_score, 10.0)
+
     def test_fragment_ppm_tolerance_matches_all_required_fragments(self) -> None:
         spectrum = build_spectrum(
             [
@@ -243,6 +269,77 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.missing_required_groups, [])
         self.assertEqual(result.resolution_level, "species_level")
 
+    def test_vitamin_d_requires_both_dehydration_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=80,
+            compound_class="VD",
+            lipid_name="VD(Vitamin D3)",
+            lipid_chain_name="VD(Vitamin D3)",
+            precursor_mz=385.3465,
+            adduct="[M+H]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(367.3359, "[M+H-H2O]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(349.3254, "[M+H-2H2O]+", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        one_loss = ExperimentalSpectrum(
+            scan_id="scan_vd_one_loss",
+            precursor_mz=385.3465,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(367.3359, 1000.0)]),
+        )
+        both_losses = ExperimentalSpectrum(
+            scan_id="scan_vd_both_losses",
+            precursor_mz=385.3465,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(367.3359, 1000.0), (349.3254, 900.0)]),
+        )
+
+        failed = score_candidate(one_loss, record, DEFAULT_RULES.get("VD"), fragment_mz_tolerance=0.01)
+        passed = score_candidate(both_losses, record, DEFAULT_RULES.get("VD"), fragment_mz_tolerance=0.01)
+
+        self.assertFalse(failed.passed_required_gates)
+        self.assertIn("hg", failed.missing_required_groups)
+        self.assertTrue(passed.passed_required_gates)
+
+    def test_vitamin_e_negative_requires_163_diagnostic_fragment(self) -> None:
+        record = LibraryRecord(
+            record_id=81,
+            compound_class="VE",
+            lipid_name="VE(alpha-tocopherol)",
+            lipid_chain_name="VE(alpha-tocopherol)",
+            precursor_mz=475.3793,
+            adduct="[M+HCOO]-",
+            polarity="-",
+            fragments=[
+                FragmentRecord(163.0754, "[Vitamin E diagnostic]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        missing = ExperimentalSpectrum(
+            scan_id="scan_ve_missing",
+            precursor_mz=475.3793,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(200.0, 1000.0)]),
+        )
+        with_marker = ExperimentalSpectrum(
+            scan_id="scan_ve_marker",
+            precursor_mz=475.3793,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(163.0754, 1000.0)]),
+        )
+
+        failed = score_candidate(missing, record, DEFAULT_RULES.get("VE"), fragment_mz_tolerance=0.01)
+        passed = score_candidate(with_marker, record, DEFAULT_RULES.get("VE"), fragment_mz_tolerance=0.01)
+
+        self.assertFalse(failed.passed_required_gates)
+        self.assertIn("hg", failed.missing_required_groups)
+        self.assertTrue(passed.passed_required_gates)
+
     def test_negative_pc_can_pass_with_two_of_signature_and_precursor_group(self) -> None:
         record = LibraryRecord(
             record_id=67,
@@ -379,10 +476,10 @@ class ScoringTests(unittest.TestCase):
             fragments=[
                 FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
-                FragmentRecord(423.2153, "[PA-H]-", "Common"),
-                FragmentRecord(449.2310, "[PA-H]-", "Common"),
-                FragmentRecord(535.2460, "[PA-R1COOH-H]-", "Diagnostic_HG", required_group="hg"),
-                FragmentRecord(561.2617, "[PA-R2COOH-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(423.2153, "[PA-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(535.2460, "[PA-R1COOH-H]-", "Neutral_Loss"),
+                FragmentRecord(561.2617, "[PA-R2COOH-H]-", "Neutral_Loss"),
                 FragmentRecord(776.4882, "[M-H]-", "Precursor Ion"),
             ],
         )
@@ -396,7 +493,7 @@ class ScoringTests(unittest.TestCase):
             peaks=normalize_peaks([
                 (255.2329, 1000.0),
                 (281.2486, 900.0),
-                (535.2460, 700.0),
+                (152.9953, 700.0),
             ]),
         )
         full_hg_spectrum = ExperimentalSpectrum(
@@ -408,7 +505,8 @@ class ScoringTests(unittest.TestCase):
                 (255.2329, 1000.0),
                 (281.2486, 900.0),
                 (535.2460, 700.0),
-                (561.2617, 650.0),
+                (152.9953, 650.0),
+                (423.2153, 500.0),
             ]),
         )
 
@@ -465,6 +563,49 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(missing_hg_result.passed_required_gates)
         self.assertIn("hg", missing_hg_result.missing_required_groups)
         self.assertTrue(full_hg_result.passed_required_gates)
+
+    def test_naasp_requires_precursor_ion_and_aspartate_fragment(self) -> None:
+        record = LibraryRecord(
+            record_id=106,
+            compound_class="NAAsp",
+            lipid_name="NAAsp(16:0)",
+            lipid_chain_name="NAAsp(16:0)",
+            precursor_mz=372.2744,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(134.0453, "[C4H8NO4]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(372.2744, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("NAAsp")
+
+        aspartate_only_spectrum = ExperimentalSpectrum(
+            scan_id="scan_naasp_aspartate_only",
+            precursor_mz=372.2744,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (134.0453, 1000.0),
+            ]),
+        )
+        complete_spectrum = ExperimentalSpectrum(
+            scan_id="scan_naasp_complete",
+            precursor_mz=372.2744,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (134.0453, 1000.0),
+                (372.2744, 500.0),
+            ]),
+        )
+
+        aspartate_only_result = score_candidate(aspartate_only_spectrum, record, rule)
+        complete_result = score_candidate(complete_spectrum, record, rule)
+
+        self.assertFalse(aspartate_only_result.passed_required_gates)
+        self.assertIn("precursor", aspartate_only_result.missing_required_groups)
+        self.assertTrue(complete_result.passed_required_gates)
+        self.assertEqual(complete_result.missing_required_groups, [])
 
     def test_candidate_hg_gate_uses_candidate_and_precursor_half_rule(self) -> None:
         record = LibraryRecord(
@@ -591,6 +732,49 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(higher_result.passed_required_gates)
         self.assertGreater(higher_result.matched_intensity_sum, lower_result.matched_intensity_sum)
         self.assertLess(lower_result.pool_scores["fah"].pool_score, 60.0)
+
+    def test_low_intensity_key_fragments_pass_gate_but_score_low(self) -> None:
+        weak_key_spectrum = build_spectrum(
+            [
+                (120.0, 1000.0),
+                (255.2329, 20.0),
+                (281.2486, 18.0),
+                (224.0693, 15.0),
+                (152.9953, 12.0),
+            ]
+        )
+        strong_key_spectrum = build_spectrum(
+            [
+                (120.0, 50.0),
+                (255.2329, 1000.0),
+                (281.2486, 900.0),
+                (224.0693, 800.0),
+                (152.9953, 120.0),
+            ]
+        )
+        weak_result = score_candidate(weak_key_spectrum, self.record, self.rule)
+        strong_result = score_candidate(strong_key_spectrum, self.record, self.rule)
+
+        self.assertTrue(weak_result.passed_required_gates)
+        self.assertTrue(strong_result.passed_required_gates)
+        self.assertLess(weak_result.total_score, 15.0)
+        self.assertGreater(strong_result.total_score, weak_result.total_score * 5)
+
+    def test_key_fragment_intensity_uses_stronger_half(self) -> None:
+        spectrum = build_spectrum(
+            [
+                (120.0, 1000.0),
+                (255.2329, 100.0),
+                (281.2486, 90.0),
+                (224.0693, 10.0),
+                (152.9953, 10.0),
+            ]
+        )
+
+        result = score_candidate(spectrum, self.record, self.rule)
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertGreater(result.total_score, 30.0)
 
     def test_full_fah_coverage_enables_chain_level(self) -> None:
         spectrum = build_spectrum(

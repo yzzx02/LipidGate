@@ -29,6 +29,7 @@ CLASS_SPECIFIC_HG_MZ = {
     "DMPE": (168.0411, 168.0431),
 }
 STRICT_NEGATIVE_HG_CLASSES = {"NAPS", "NAGPS"}
+PRECURSOR_FRAGMENT_REQUIRED_CLASSES = {"NAASP"}
 NEGATIVE_PC_SIGNATURE_MZ = {
     "pc_168": 168.0431,
     "pc_224": 224.0693,
@@ -84,6 +85,14 @@ def _is_class_specific_hg_fragment(record: LibraryRecord, fragment: FragmentReco
 
 def _record_precursor_ion_fragments(record: LibraryRecord) -> List[FragmentRecord]:
     return [fragment for fragment in record.fragments if fragment.fragment_type == "Precursor Ion"]
+
+
+def _requires_precursor_fragment(record: LibraryRecord) -> bool:
+    return _normalized_compound_class(record.compound_class) in PRECURSOR_FRAGMENT_REQUIRED_CLASSES
+
+
+def _matched_precursor_ion_fragment_count(matches: Sequence[FragmentMatch]) -> int:
+    return sum(1 for match in matches if match.fragment.fragment_type == "Precursor Ion")
 
 
 def _empty_pool_scores() -> Dict[str, PoolScore]:
@@ -479,6 +488,39 @@ def _calculate_pool_scores(
     return result
 
 
+def _key_fragment_intensity_multiplier(
+    matches: Sequence[FragmentMatch],
+    record: LibraryRecord,
+    rule: ClassRule,
+) -> float:
+    key_relative_intensities = sorted([
+        match.experimental_peak.relative_intensity
+        for match in matches
+        if _pool_for_fragment(record, match.fragment) in {"fah", "hg"}
+        or (
+            _requires_precursor_fragment(record)
+            and match.fragment.fragment_type == "Precursor Ion"
+        )
+    ], reverse=True)
+    if not key_relative_intensities:
+        return 1.0
+
+    score_profile = rule.score_profile
+    full_score_intensity = max(score_profile.key_intensity_full_score_relative_intensity, 1e-9)
+    min_multiplier = min(max(score_profile.key_intensity_min_multiplier, 0.0), 1.0)
+    top_fraction = min(max(score_profile.key_intensity_top_fraction, 0.0), 1.0)
+    top_weight = min(max(score_profile.key_intensity_top_fraction_weight, 0.0), 1.0)
+    top_count = max(1, math.ceil(len(key_relative_intensities) * top_fraction))
+    key_qualities = [
+        min(relative_intensity / full_score_intensity, 1.0)
+        for relative_intensity in key_relative_intensities
+    ]
+    top_quality = sum(key_qualities[:top_count]) / top_count
+    mean_quality = sum(key_qualities) / len(key_qualities)
+    quality = top_weight * top_quality + (1.0 - top_weight) * mean_quality
+    return max(min_multiplier, min(quality, 1.0))
+
+
 def _missing_required_groups(
     record: LibraryRecord,
     rule: ClassRule,
@@ -503,6 +545,9 @@ def _missing_required_groups(
             if match.fragment.fragment_type == "Diagnostic_FA_Loss"
             or (_fa_frag_counts_as_effective_loss(record) and match.fragment.fragment_type == "FA_Frag")
         )
+
+        if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
+            missing.append("precursor")
 
         if hg_fragment_count > 0 and matched_hg_count < positive_required_hg_hits:
             missing.append("hg")
@@ -538,6 +583,8 @@ def _missing_required_groups(
         matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
         if matched_hg_count < _required_negative_hg_hits(record, hg_fragment_count):
             missing.append("hg")
+    if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
+        missing.append("precursor")
     if _is_cl_double_negative_record(record) and _matched_cl_chain_info_fragment_count(record, matches) < 1:
         missing.append("chain_info")
     if allow_loss_only or require_loss_with_fah_only:
@@ -747,6 +794,7 @@ def _determine_resolution(
 def _score_fa_precursor_only_candidate(
     spectrum: ExperimentalSpectrum,
     record: LibraryRecord,
+    rule: ClassRule,
     precursor_fragments: Sequence[FragmentRecord],
     precursor_ppm_tolerance: float,
     precursor_mz_tolerance_da: float | None,
@@ -798,6 +846,9 @@ def _score_fa_precursor_only_candidate(
 
     matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
     matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
+    max_precursor_relative_intensity = max(match.experimental_peak.relative_intensity for match in matches)
+    full_score_intensity = max(rule.score_profile.key_intensity_full_score_relative_intensity, 1e-9)
+    total_score = FA_PRECURSOR_ONLY_SCORE * min(max_precursor_relative_intensity / full_score_intensity, 1.0)
     total_weight = sum(fragment.weight for fragment in precursor_fragments) or 1.0
     matched_weight = sum(match.fragment.weight for match in matches)
     total_relative_intensity = max(spectrum.total_relative_intensity, 1e-9)
@@ -809,11 +860,11 @@ def _score_fa_precursor_only_candidate(
         count_ratio=len(matches) / len(precursor_fragments),
         intensity_ratio=matched_relative_intensity_sum / total_relative_intensity,
         weight_ratio=matched_weight / total_weight,
-        pool_score=FA_PRECURSOR_ONLY_SCORE,
+        pool_score=total_score,
     )
     return CandidateScore(
         record=record,
-        total_score=FA_PRECURSOR_ONLY_SCORE,
+        total_score=round(total_score, 4),
         passed_required_gates=True,
         missing_required_groups=[],
         ppm_error=ppm_error,
@@ -841,6 +892,7 @@ def score_candidate(
         return _score_fa_precursor_only_candidate(
             spectrum=spectrum,
             record=record,
+            rule=rule,
             precursor_fragments=fa_precursor_fragments,
             precursor_ppm_tolerance=precursor_ppm_tolerance,
             precursor_mz_tolerance_da=precursor_mz_tolerance_da,
@@ -985,6 +1037,8 @@ def score_candidate(
             expected_fah_tokens=expected_fah_tokens,
             positive_loss_can_resolve_chain=positive_loss_can_resolve_chain,
         )
+    if not missing_groups:
+        total_score *= _key_fragment_intensity_multiplier(matches, record, rule)
     return CandidateScore(
         record=record,
         total_score=round(total_score, 4),

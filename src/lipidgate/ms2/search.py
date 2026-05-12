@@ -36,6 +36,7 @@ class LipidMS2Searcher:
     RANK_WEIGHT_MATCH = 0.75
     RANK_WEIGHT_PPM = 0.25
     RANK_PPM_FULL_SCORE = 10.0
+    DEFAULT_MIN_TOTAL_SCORE = 20.0
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
     TENTATIVE_MISSING_HG_RANK_SCORE_CAP = 0.35
 
@@ -48,6 +49,7 @@ class LipidMS2Searcher:
         fragment_tolerance_da: float | None = 0.02,
         fragment_tolerance_ppm: float | None = None,
         min_relative_intensity: float = 0.001,
+        min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
         fragment_prefilter_min_candidates: int = 128,
     ) -> None:
@@ -58,6 +60,7 @@ class LipidMS2Searcher:
         self.fragment_tolerance_da = fragment_tolerance_da
         self.fragment_tolerance_ppm = fragment_tolerance_ppm
         self.min_relative_intensity = min_relative_intensity
+        self.min_total_score = max(0.0, float(min_total_score))
         self.use_fragment_index = bool(use_fragment_index)
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
         self.precursors = [record.precursor_mz for record in self.library]
@@ -359,6 +362,13 @@ class LipidMS2Searcher:
     def _is_fa_result(cls, result: CandidateScore) -> bool:
         return cls._normal_class_key(result.record.compound_class) == "FA"
 
+    def _passes_min_total_score(self, result: CandidateScore) -> bool:
+        min_total_score = max(
+            0.0,
+            float(getattr(self, "min_total_score", self.DEFAULT_MIN_TOTAL_SCORE)),
+        )
+        return result.total_score >= min_total_score
+
     @staticmethod
     def _matched_diagnostic_fa_loss_count(result: CandidateScore) -> int:
         return sum(1 for match in result.matched_fragments if match.fragment.fragment_type == "Diagnostic_FA_Loss")
@@ -499,7 +509,8 @@ class LipidMS2Searcher:
                 )
 
             scored.append(candidate_score)
-        passed_results = [item for item in scored if item.passed_required_gates]
+        eligible_results = [item for item in scored if self._passes_min_total_score(item)]
+        passed_results = [item for item in eligible_results if item.passed_required_gates]
         scoped_results: list[tuple[CandidateScore, str, bool]] = []
         rank_metrics: Dict[int, Dict[str, float]] = {}
         if passed_results:
@@ -514,7 +525,7 @@ class LipidMS2Searcher:
                     for item in self._select_results_for_output(main_results, top_n=top_n)
                 )
             else:
-                tentative_results = self._select_tentative_missing_hg_fallback(scored)
+                tentative_results = self._select_tentative_missing_hg_fallback(eligible_results)
                 tentative_metrics = self._compute_tentative_rank_metrics(tentative_results)
                 rank_metrics.update(tentative_metrics)
                 scoped_results.extend((item, "main", True) for item in tentative_results)
@@ -524,7 +535,7 @@ class LipidMS2Searcher:
                 rank_metrics.update(fa_metrics)
                 scoped_results.extend((item, "fa", False) for item in fa_results[: max(1, top_n)])
         else:
-            selected_results = self._select_tentative_missing_hg_fallback(scored)
+            selected_results = self._select_tentative_missing_hg_fallback(eligible_results)
             rank_metrics = self._compute_tentative_rank_metrics(selected_results)
             scoped_results.extend((item, "main", True) for item in selected_results)
         rows = []
@@ -706,6 +717,7 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
         "result_rank",
         "result_channel",
         "final_score",
+        "total_score",
         "matched_fragment_count",
         "matched_fragments",
     ]
@@ -720,6 +732,8 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
         else:
             export_df["final_score"] = 0.0
     export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").round(2)
+    if "total_score" in export_df.columns:
+        export_df["total_score"] = pd.to_numeric(export_df["total_score"], errors="coerce").round(2)
     if "rt_minutes" in export_df.columns:
         export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
     if "precursor_mz" in export_df.columns:
@@ -742,6 +756,7 @@ def _write_number_formats(worksheet) -> None:
         ("precursor_mz", "0.0000"),
         ("ppm_error", "0.00"),
         ("final_score", "0.00"),
+        ("total_score", "0.00"),
     ]:
         column_index = header_to_index.get(column_name)
         if column_index is None:

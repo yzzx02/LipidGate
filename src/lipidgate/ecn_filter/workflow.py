@@ -16,7 +16,7 @@ SUBCLASS_COLUMN_ALIASES = ("subclass", "compound_class", "lipid_class", "class",
 RT_COLUMN_ALIASES = ("rt_minutes", "RT", "rt", "retention_time", "retention_time_min", "rt_sec", "rt_seconds")
 MZ_COLUMN_ALIASES = ("mz", "m/z", "precursor_mz", "PrecursorMZ")
 ADDUCT_COLUMN_ALIASES = ("adduct", "precursortype", "PrecursorType")
-SCORE_COLUMN_ALIASES = ("score", "final_score", "rank_score", "total_score")
+SCORE_COLUMN_ALIASES = ("score", "total_score", "final_score", "rank_score")
 INTENSITY_COLUMN_ALIASES = ("intensity", "area", "height", "matched_intensity_sum", "peak_area")
 RT_RULE_PASS_COLUMN = "\u662f\u5426\u6ee1\u8db3RT\u89c4\u5f8b"
 

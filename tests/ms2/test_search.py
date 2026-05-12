@@ -259,6 +259,42 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertEqual(rows[0]["resolution_level"], "chain_level")
         self.assertTrue(rows[0]["passed_required_gates"])
 
+    def test_min_total_score_filters_weak_passed_match_before_rank(self) -> None:
+        record = LibraryRecord(
+            record_id=46,
+            compound_class="PE",
+            lipid_name="PE(34:1)",
+            lipid_chain_name="PE(16:0_18:1)",
+            precursor_mz=716.523,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(196.0380, "[C5H11NO4P]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        weak_spectrum = ExperimentalSpectrum(
+            scan_id="scan_weak_pe",
+            precursor_mz=716.523,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (120.0, 1000.0),
+                (255.2329, 20.0),
+                (281.2486, 18.0),
+                (196.0380, 15.0),
+            ]),
+        )
+        searcher = self._build_memory_searcher([record], use_fragment_index=False)
+
+        self.assertEqual(searcher.score_spectrum(weak_spectrum, top_n=1), [])
+
+        searcher.min_total_score = 0.0
+        rows = searcher.score_spectrum(weak_spectrum, top_n=1)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["passed_required_gates"])
+        self.assertLess(rows[0]["total_score"], 20.0)
+
     def test_fa_result_does_not_take_main_top_rank(self) -> None:
         fa_record = LibraryRecord(
             record_id=44,
@@ -512,6 +548,7 @@ class SearchSelectionTests(unittest.TestCase):
         searcher.precursor_tolerance_ppm = 10.0
         searcher.fragment_tolerance_da = 0.02
         searcher.min_relative_intensity = 0.01
+        searcher.min_total_score = LipidMS2Searcher.DEFAULT_MIN_TOTAL_SCORE
         searcher.use_fragment_index = use_fragment_index
         searcher.fragment_prefilter_min_candidates = 0
         searcher.precursors = [record.precursor_mz for record in searcher.library]

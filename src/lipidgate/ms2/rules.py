@@ -16,8 +16,12 @@ class ScoreProfile:
         default_factory=lambda: {"fah": 60.0, "hg": 20.0, "other": 20.0}
     )
     metric_weights: Dict[str, float] = field(
-        default_factory=lambda: {"count": 0.35, "intensity": 0.45, "weight": 0.20}
+        default_factory=lambda: {"count": 0.20, "intensity": 0.70, "weight": 0.10}
     )
+    key_intensity_full_score_relative_intensity: float = 0.10
+    key_intensity_min_multiplier: float = 0.25
+    key_intensity_top_fraction: float = 0.50
+    key_intensity_top_fraction_weight: float = 0.75
     missing_group_penalty_multiplier: float = 0.15
     single_group_fallback_min_matches: int = 2
     single_group_fallback_min_relative_intensity_sum: float = 0.5
@@ -123,6 +127,30 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=default_profile,
         )
+    by_class["VD"] = ClassRule(
+        lipid_class="VD",
+        required_groups={},
+        chain_level_min_fah=1,
+        allow_hg_only_if_no_fah=True,
+        positive_hg_min_matches_if_no_fah=2,
+        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches=2,
+        positive_hg_complete_can_resolve_chain=True,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
+    by_class["VE"] = ClassRule(
+        lipid_class="VE",
+        required_groups={},
+        chain_level_min_fah=1,
+        allow_hg_only_if_no_fah=True,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_complete_can_resolve_chain=True,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
     by_class["HBMP"] = ClassRule(
         lipid_class="HBMP",
         required_groups={},
