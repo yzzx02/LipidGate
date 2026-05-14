@@ -599,7 +599,20 @@ class LipidMS2Searcher:
             return lipid_chain_name
 
         cls = str(compound_class or "").strip().upper()
-        if cls in {"CER", "HEXCER", "LACCER", "HEX2CER", "CER1P", "CERP", "SM", "LSM", "SPB"}:
+        if cls in {
+            "CER",
+            "HEXCER",
+            "LACCER",
+            "HEX2CER",
+            "CER1P",
+            "CERP",
+            "SM",
+            "LSM",
+            "SPB",
+            "DHSPH",
+            "SPH",
+            "PHYTOSPH",
+        }:
             prefix = lipid_chain_name.split("(", 1)[0]
             has_oh = "OH" in lipid_chain_name
             chain_tokens = re.findall(r"[mdt]?\d+:\d+", lipid_chain_name, flags=re.IGNORECASE)

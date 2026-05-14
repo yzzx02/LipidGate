@@ -57,6 +57,7 @@ class RuleSet:
             "BA_CONJUGATED": "BA",
             "BASulfate-ST": "BASulfate",
             "SSulfate-ST": "SSulfate",
+            "NATau": "NAT",
         }
         normalized_class = aliases.get(lipid_class, lipid_class)
         return self.by_class.get(normalized_class, self.default_rule)
@@ -115,7 +116,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=default_profile,
         )
-    for lipid_class in {"BA", "BASulfate", "SSulfate", "MG"}:
+    for lipid_class in {"BA", "BASulfate", "SSulfate", "MG", "NAT"}:
         by_class[lipid_class] = ClassRule(
             lipid_class=lipid_class,
             required_groups={},

@@ -505,6 +505,7 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         required_any_by_series={
             "m": {"M+H-H2O", "M+H-NH3", "M+H-H2O-NH3"},
             "d": {"M+H-H2O", "M+H-2H2O", "M+H-CH2O", "M+H-CH4O2"},
+            "t": {"M+H-H2O", "M+H-2H2O", "M+H-3H2O", "M+H-CH4O2"},
         },
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片"},
@@ -514,3 +515,6 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         only_non_hydroxy_fa=True,
     ),
 }
+
+for _spb_alias in ("DHSph", "Sph", "PhytoSph"):
+    SPHINGOLIPID_RULEBOOK[f"{_spb_alias}_[M+H]+"] = SPHINGOLIPID_RULEBOOK["SPB_[M+H]+"]
