@@ -40,6 +40,16 @@ from lipidgate.paths import default_negative_msp, default_peak_truth_model_dir, 
 from .components import LogPanel, TablePanel, Worker, open_in_file_manager, path_row, read_table
 
 
+def _looks_like_lfs_pointer(path: Path) -> bool:
+    try:
+        if not path.exists() or path.stat().st_size > 1024:
+            return False
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        return "version https://git-lfs.github.com/spec/v1" in text
+    except OSError:
+        return False
+
+
 class WorkflowPage(QtWidgets.QWidget):
     def __init__(self, window: "MainWindow"):
         super().__init__()
@@ -269,7 +279,7 @@ class PeakTruthPage(WorkflowPage):
         self.pred_table = TablePanel("Peak Truth Predictions")
         self.eic_preview = QtWidgets.QLabel("EIC 预览将在运行后显示")
         self.eic_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.eic_preview.setMinimumHeight(260)
+        self.eic_preview.setMinimumHeight(180)
         self.eic_preview.setObjectName("eicPreview")
         self.tabs.addTab(self.attr_table, "峰属性")
         self.tabs.addTab(self.pred_table, "真假峰预测")
@@ -368,6 +378,13 @@ class PeakTruthPage(WorkflowPage):
 
 class MS2Page(WorkflowPage):
     completed = QtCore.Signal(str)
+    PARAM_SPIN_WIDTH = 150
+
+    def _style_parameter_spinbox(self, spinbox: QtWidgets.QAbstractSpinBox, width: int | None = None) -> None:
+        spinbox.setFixedWidth(width or self.PARAM_SPIN_WIDTH)
+        spinbox.setMinimumHeight(30)
+        spinbox.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        spinbox.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
     def __init__(self, window: "MainWindow"):
         super().__init__(window)
@@ -388,6 +405,9 @@ class MS2Page(WorkflowPage):
         self.tolerance_unit = QtWidgets.QComboBox()
         self.tolerance_unit.addItem("ppm", "ppm")
         self.tolerance_unit.addItem("Da", "da")
+        self.tolerance_unit.setFixedWidth(self.PARAM_SPIN_WIDTH)
+        self.tolerance_unit.setMinimumHeight(30)
+        self.tolerance_unit.setToolTip("MS1 和 MS/MS tolerance 共用这个单位")
         self.ms1_tolerance = QtWidgets.QDoubleSpinBox()
         self.ms1_tolerance.setRange(0.1, 1000.0)
         self.ms1_tolerance.setDecimals(2)
@@ -396,12 +416,23 @@ class MS2Page(WorkflowPage):
         self.msms_tolerance.setRange(0.1, 1000.0)
         self.msms_tolerance.setDecimals(2)
         self.msms_tolerance.setValue(10.0)
+        self.ms2_peak_filter_percent = QtWidgets.QDoubleSpinBox()
+        self.ms2_peak_filter_percent.setRange(0.0, 100.0)
+        self.ms2_peak_filter_percent.setDecimals(3)
+        self.ms2_peak_filter_percent.setSingleStep(0.05)
+        self.ms2_peak_filter_percent.setValue(0.10)
+        self.ms2_peak_filter_percent.setToolTip("过滤低于 base peak 指定百分比的 MS/MS 峰；0.10 表示 0.10%")
         self.min_total_score = QtWidgets.QDoubleSpinBox()
         self.min_total_score.setRange(0.0, 100.0)
         self.min_total_score.setDecimals(1)
         self.min_total_score.setSingleStep(1.0)
         self.min_total_score.setValue(20.0)
         self.min_total_score.setToolTip("按原始 MS2 总分过滤；0 表示关闭过滤")
+        self._style_parameter_spinbox(self.top_n, width=80)
+        self._style_parameter_spinbox(self.ms1_tolerance)
+        self._style_parameter_spinbox(self.msms_tolerance)
+        self._style_parameter_spinbox(self.ms2_peak_filter_percent)
+        self._style_parameter_spinbox(self.min_total_score)
         self.mode_hint = QtWidgets.QLabel("")
         self.mode_hint.setObjectName("mutedLabel")
         self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
@@ -413,25 +444,37 @@ class MS2Page(WorkflowPage):
         self.ecn_preview = QtWidgets.QLabel("MS2 鉴定完成后可生成 ECN 等效碳数预览图")
         self.ecn_preview.setObjectName("ecnPreview")
         self.ecn_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.ecn_preview.setMinimumHeight(340)
+        self.ecn_preview.setMinimumHeight(220)
         self.ecn_preview.setScaledContents(False)
+        for widget in (
+            self.mzml,
+            self.output_dir,
+            self.mode,
+            self.library,
+            self.tolerance_unit,
+        ):
+            widget.setMinimumHeight(30)
 
         form = QtWidgets.QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(8)
+        form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         form.addRow("mzML", path_row(self.mzml, [("选择", self._browse_mzml, "选择 mzML 文件")]))
         form.addRow("输出目录", path_row(self.output_dir, [("选择", self._browse_output, "选择输出目录")]))
         form.addRow("模式", self.mode)
         form.addRow("MSP 库", path_row(self.library, [("选择", self._browse_library, "选择 MSP 库")]))
         topn_row = QtWidgets.QHBoxLayout()
+        topn_row.setContentsMargins(0, 0, 0, 0)
+        topn_row.setSpacing(8)
         topn_row.addWidget(self.output_topn)
         topn_row.addWidget(self.top_n)
         topn_row.addStretch(1)
         form.addRow("Top N", topn_row)
-        tolerance_row = QtWidgets.QHBoxLayout()
-        tolerance_row.addWidget(self.tolerance_unit)
-        tolerance_row.addWidget(self.ms1_tolerance, 1)
-        form.addRow("MS1 tolerance", tolerance_row)
+        form.addRow("质量误差单位", self.tolerance_unit)
+        form.addRow("MS1 tolerance", self.ms1_tolerance)
         form.addRow("MS/MS tolerance", self.msms_tolerance)
+        form.addRow("MS/MS peak filter (%)", self.ms2_peak_filter_percent)
         form.addRow("最低总分", self.min_total_score)
         form.addRow("", self.mode_hint)
 
@@ -453,8 +496,9 @@ class MS2Page(WorkflowPage):
         body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         body.addWidget(self.tabs)
         body.addWidget(self.log)
-        body.setStretchFactor(0, 4)
+        body.setStretchFactor(0, 5)
         body.setStretchFactor(1, 1)
+        body.setSizes([500, 90])
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(parameter_box)
@@ -518,11 +562,21 @@ class MS2Page(WorkflowPage):
         library = self._require_path(self.library, "MSP 库")
         if None in {mzml, output_dir, library}:
             return
+        if _looks_like_lfs_pointer(library):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "MSP 库尚未下载",
+                "当前 MSP 文件看起来只是 Git LFS 指针，不是完整数据库。\n\n"
+                "请在 LipidGate 项目目录运行:\n"
+                "git lfs pull",
+            )
+            return
         unit = str(self.tolerance_unit.currentData() or "ppm")
         precursor_ppm = float(self.ms1_tolerance.value()) if unit == "ppm" else 10.0
         precursor_da = float(self.ms1_tolerance.value()) if unit == "da" else None
         fragment_ppm = float(self.msms_tolerance.value()) if unit == "ppm" else None
         fragment_da = float(self.msms_tolerance.value()) if unit == "da" else None
+        min_relative_intensity = float(self.ms2_peak_filter_percent.value()) / 100.0
         min_total_score = float(self.min_total_score.value())
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
         self.run_ecn_btn.setEnabled(False)
@@ -544,6 +598,7 @@ class MS2Page(WorkflowPage):
                 precursor_tolerance_da=precursor_da,
                 fragment_tolerance_da=fragment_da,
                 fragment_tolerance_ppm=fragment_ppm,
+                min_relative_intensity=min_relative_intensity,
                 min_total_score=min_total_score,
             )
 
@@ -556,12 +611,9 @@ class MS2Page(WorkflowPage):
         self.last_ms2_csv = result.csv_path
         self.run_ecn_btn.setEnabled(True)
         self.log.append(result.message)
+        self.log.append("MS2 鉴定完成。可点击“生成 ECN 预览”查看 ECN 图。")
         self.window.status.showMessage(result.message, 8000)
         self.completed.emit(str(result.csv_path))
-        if self._thread is not None:
-            self._thread.finished.connect(self.run_ecn_preview)
-        else:
-            self.run_ecn_preview()
 
     def run_ecn_preview(self) -> None:
         if self.last_ms2_csv is None or not self.last_ms2_csv.exists():
@@ -645,8 +697,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LipidGate")
-        self.resize(1320, 820)
         self.settings = QtCore.QSettings("LipidGate", "LipidGate")
+        screen = QtGui.QGuiApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else QtCore.QRect(0, 0, 1280, 800)
+        default_width = min(1120, int(available.width() * 0.88))
+        default_height = min(700, int(available.height() * 0.88))
+        self.resize(default_width, default_height)
+        self.setMinimumSize(900, 560)
+        geometry = self.settings.value("main/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
         self.status = self.statusBar()
         self.progress = QtWidgets.QProgressBar()
         self.progress.setFixedWidth(180)
@@ -681,6 +741,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.peak_page.completed.connect(lambda _attrs, pred: self.results_page.set_path(pred))
         self.ms2_page.completed.connect(self.results_page.set_path)
         self._apply_style()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self.settings.setValue("main/geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def _apply_style(self) -> None:
         self.setStyleSheet(
@@ -732,28 +796,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: #ffffff;
                 border: 1px solid #d7dde5;
                 border-radius: 8px;
-                margin-top: 14px;
-                padding: 12px 10px 10px 10px;
+                margin-top: 10px;
+                padding: 12px;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 12px;
-                padding: 0 4px;
-                color: #334155;
+                padding: 0 6px;
+                color: #0f172a;
                 font-weight: 600;
             }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
                 border: 1px solid #cbd5e1;
                 border-radius: 6px;
                 background: #ffffff;
-                min-height: 27px;
+                min-height: 30px;
                 padding: 2px 6px;
             }
             QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus {
                 border: 1px solid #2563eb;
             }
             QPushButton, QToolButton {
-                min-height: 28px;
+                min-height: 30px;
                 border: 1px solid #cbd5e1;
                 border-radius: 6px;
                 background: #ffffff;

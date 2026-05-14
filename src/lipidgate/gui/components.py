@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -21,8 +22,8 @@ class Worker(QtCore.QObject):
     def run(self) -> None:
         try:
             self.finished.emit(self.fn())
-        except Exception as exc:
-            self.failed.emit(str(exc))
+        except Exception:
+            self.failed.emit(traceback.format_exc())
 
 
 class TablePanel(QtWidgets.QWidget):

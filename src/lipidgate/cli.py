@@ -64,6 +64,7 @@ def _ms2_search(args: argparse.Namespace) -> int:
         precursor_tolerance_da=precursor_da,
         fragment_tolerance_da=fragment_da,
         fragment_tolerance_ppm=fragment_ppm,
+        min_relative_intensity=args.min_relative_intensity,
         min_total_score=args.min_total_score,
     )
     print(f"csv: {result.csv_path}")
@@ -155,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fragment-da", type=float, default=0.02)
     p.add_argument("--fragment-ppm", type=float)
     p.add_argument("--min-total-score", type=float, default=20.0, help="Filter candidates below this raw MS2 total score; use 0 to disable")
+    p.add_argument(
+        "--min-relative-intensity",
+        type=float,
+        default=0.001,
+        help="Filter MS/MS peaks below this relative intensity to base peak. Example: 0.001 = 0.1%.",
+    )
     p.set_defaults(func=_ms2_search)
 
     p = sub.add_parser("ecn-filter", help="Evaluate lipid annotation RT consistency with ECN-style models")

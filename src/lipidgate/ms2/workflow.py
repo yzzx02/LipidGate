@@ -33,6 +33,7 @@ def run_ms2_search_result(
     precursor_tolerance_da: float | None = None,
     fragment_tolerance_da: float | None = 0.02,
     fragment_tolerance_ppm: float | None = None,
+    min_relative_intensity: float = 0.001,
     min_total_score: float = 20.0,
     export_xlsx: bool = True,
 ) -> MS2SearchResult:
@@ -59,6 +60,7 @@ def run_ms2_search_result(
         precursor_tolerance_ppm=float(precursor_tolerance_ppm),
         fragment_tolerance_da=float(fragment_tolerance_da) if fragment_tolerance_da is not None else None,
         fragment_tolerance_ppm=float(fragment_tolerance_ppm) if fragment_tolerance_ppm is not None else None,
+        min_relative_intensity=float(min_relative_intensity),
         min_total_score=float(min_total_score),
     )
 
@@ -105,6 +107,7 @@ def run_ms2_search_result(
             "precursor_tolerance_da": precursor_tolerance_da,
             "fragment_tolerance_da": fragment_tolerance_da,
             "fragment_tolerance_ppm": fragment_tolerance_ppm,
+            "min_relative_intensity": min_relative_intensity,
             "min_total_score": min_total_score,
             "export_xlsx": export_xlsx,
         },
@@ -123,6 +126,7 @@ def run_ms2_search(
     precursor_tolerance_da: float | None = None,
     fragment_tolerance_da: float | None = 0.02,
     fragment_tolerance_ppm: float | None = None,
+    min_relative_intensity: float = 0.001,
     min_total_score: float = 20.0,
     export_xlsx: bool = True,
 ) -> tuple[pd.DataFrame, Path, Path | None]:
@@ -141,6 +145,7 @@ def run_ms2_search(
         precursor_tolerance_da=precursor_tolerance_da,
         fragment_tolerance_da=fragment_tolerance_da,
         fragment_tolerance_ppm=fragment_tolerance_ppm,
+        min_relative_intensity=min_relative_intensity,
         min_total_score=min_total_score,
         export_xlsx=export_xlsx,
     )
