@@ -38,7 +38,7 @@ def _peak_truth(args: argparse.Namespace) -> int:
 
 
 def _ms2_search(args: argparse.Namespace) -> int:
-    from lipidgate.ms2 import run_ms2_search_result
+    from lipidgate.ms2 import run_ms2_feature_annotation_result, run_ms2_search_result
 
     precursor_ppm = args.precursor_ppm
     precursor_da = args.precursor_da
@@ -54,20 +54,42 @@ def _ms2_search(args: argparse.Namespace) -> int:
         fragment_da = args.msms_tolerance if args.msms_tolerance is not None else args.fragment_da
         fragment_ppm = None
 
-    result = run_ms2_search_result(
-        mzml_path=args.mzml,
-        output_dir=args.output,
-        mode=args.mode,
-        library_path=args.library,
-        top_n=args.top_n,
-        precursor_tolerance_ppm=precursor_ppm,
-        precursor_tolerance_da=precursor_da,
-        fragment_tolerance_da=fragment_da,
-        fragment_tolerance_ppm=fragment_ppm,
-        min_relative_intensity=args.min_relative_intensity,
-        min_total_score=args.min_total_score,
-    )
-    print(f"csv: {result.csv_path}")
+    if args.feature_table or args.map_features:
+        result = run_ms2_feature_annotation_result(
+            mzml_input=args.mzml,
+            feature_table=args.feature_table,
+            output_dir=args.output,
+            mode=args.mode,
+            library_path=args.library,
+            top_n=args.top_n,
+            precursor_tolerance_ppm=precursor_ppm,
+            precursor_tolerance_da=precursor_da,
+            fragment_tolerance_da=fragment_da,
+            fragment_tolerance_ppm=fragment_ppm,
+            min_relative_intensity=args.min_relative_intensity,
+            min_total_score=args.min_total_score,
+            rt_window_sec=args.rt_window_sec,
+            map_to_features=bool(args.feature_table),
+        )
+    else:
+        result = run_ms2_search_result(
+            mzml_path=args.mzml,
+            output_dir=args.output,
+            mode=args.mode,
+            library_path=args.library,
+            top_n=args.top_n,
+            precursor_tolerance_ppm=precursor_ppm,
+            precursor_tolerance_da=precursor_da,
+            fragment_tolerance_da=fragment_da,
+            fragment_tolerance_ppm=fragment_ppm,
+            min_relative_intensity=args.min_relative_intensity,
+            min_total_score=args.min_total_score,
+        )
+    if result.csv_path:
+        print(f"csv: {result.csv_path}")
+    annotations_csv_path = getattr(result, "annotations_csv_path", None)
+    if annotations_csv_path:
+        print(f"annotations_csv: {annotations_csv_path}")
     if result.xlsx_path:
         print(f"xlsx: {result.xlsx_path}")
     print(f"rows: {result.row_count}")
@@ -139,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("ms2-search", help="Run MS2 rule-based MSP search")
     p.add_argument("--mzml", required=True, type=Path)
+    p.add_argument("--feature-table", type=Path, help="Optional MS1 feature table CSV/XLSX for MS2-to-feature mapping")
     p.add_argument("--output", required=True, type=Path)
     p.add_argument(
         "--mode",
@@ -153,14 +176,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--msms-tolerance", type=float, help="MS/MS tolerance in --tolerance-unit")
     p.add_argument("--precursor-ppm", type=float, default=10.0)
     p.add_argument("--precursor-da", type=float)
-    p.add_argument("--fragment-da", type=float, default=0.02)
-    p.add_argument("--fragment-ppm", type=float)
+    p.add_argument("--fragment-da", type=float)
+    p.add_argument("--fragment-ppm", type=float, default=10.0)
     p.add_argument("--min-total-score", type=float, default=20.0, help="Filter candidates below this raw MS2 total score; use 0 to disable")
+    p.add_argument("--rt-window-sec", type=float, default=30.0)
+    p.add_argument("--map-features", action="store_true", help="Use the multi-file MS2 workflow even without a feature table")
     p.add_argument(
         "--min-relative-intensity",
         type=float,
-        default=0.001,
-        help="Filter MS/MS peaks below this relative intensity to base peak. Example: 0.001 = 0.1%.",
+        default=0.005,
+        help="Filter MS/MS peaks below this relative intensity to base peak. Example: 0.005 = 0.5 percent.",
     )
     p.set_defaults(func=_ms2_search)
 

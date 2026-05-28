@@ -224,7 +224,7 @@ def extract_pyopenms_params(config):
     peak_picking = pyopenms_params.get("peak_picking", {}) if isinstance(pyopenms_params, dict) else {}
     common_params = config.get("common_params", {})
     mz_tol = peak_picking.get("mz_tol", pyopenms_params.get("mz_tol", common_params.get("mz_tolerance_ppm", 10.0)))
-    min_fwhm = peak_picking.get("min_fwhm", pyopenms_params.get("min_fwhm", 2.5))
+    min_fwhm = peak_picking.get("min_fwhm", pyopenms_params.get("min_fwhm", 5.0))
     max_fwhm = peak_picking.get("max_fwhm", pyopenms_params.get("max_fwhm", 60.0))
     noise = peak_picking.get("noise", pyopenms_params.get("noise", 1000))
     sn = peak_picking.get("sn", pyopenms_params.get("sn", 5))
