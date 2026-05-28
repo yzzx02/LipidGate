@@ -12,11 +12,13 @@ from .library import load_library
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
 from .rules import DEFAULT_RULES, RuleSet
 from .scoring import (
+    _calculate_pool_scores,
     _empty_pool_scores,
     _fragment_counts_as_effective_loss,
     _matched_fah_tokens,
     _record_fa_loss_fragment_count,
     _record_expected_fah_tokens,
+    _total_score_from_pool_scores,
     score_candidate,
 )
 from .sphingolipid_rules import SPHINGOLIPID_RULEBOOK, validate_rule
@@ -36,7 +38,7 @@ class LipidMS2Searcher:
     RANK_WEIGHT_MATCH = 0.75
     RANK_WEIGHT_PPM = 0.25
     RANK_PPM_FULL_SCORE = 10.0
-    DEFAULT_MIN_TOTAL_SCORE = 20.0
+    DEFAULT_MIN_TOTAL_SCORE = 50.0
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
     TENTATIVE_MISSING_HG_RANK_SCORE_CAP = 0.35
 
@@ -46,9 +48,9 @@ class LipidMS2Searcher:
         rules: RuleSet | None = None,
         precursor_tolerance_da: float | None = None,
         precursor_tolerance_ppm: float = 10.0,
-        fragment_tolerance_da: float | None = 0.02,
-        fragment_tolerance_ppm: float | None = None,
-        min_relative_intensity: float = 0.001,
+        fragment_tolerance_da: float | None = None,
+        fragment_tolerance_ppm: float | None = 10.0,
+        min_relative_intensity: float = 0.005,
         min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
         fragment_prefilter_min_candidates: int = 128,
@@ -73,7 +75,7 @@ class LipidMS2Searcher:
             return float(fragment_tolerance_da)
         if fragment_tolerance_ppm is not None:
             return abs(float(fragment_mz)) * float(fragment_tolerance_ppm) * 1e-6
-        return 0.02
+        return abs(float(fragment_mz)) * 10.0 * 1e-6
 
     @staticmethod
     def _sphingo_rule_key(record: LibraryRecord) -> str:
@@ -202,7 +204,9 @@ class LipidMS2Searcher:
         passed = name_gate_passed and type_gate_passed
         matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
         matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
-        total_score = matched_relative_intensity_sum * 100.0
+        rules = getattr(self, "rules", DEFAULT_RULES)
+        pool_scores = _calculate_pool_scores(matches, record, rules.get(record.compound_class))
+        total_score = _total_score_from_pool_scores(pool_scores)
 
         return CandidateScore(
             record=record,
@@ -212,7 +216,7 @@ class LipidMS2Searcher:
             ppm_error=ppm_error,
             resolution_level="chain_level" if passed else "class_level",
             matched_fragments=list(matches),
-            pool_scores=_empty_pool_scores(),
+            pool_scores=pool_scores,
             matched_intensity_sum=matched_intensity_sum,
             matched_relative_intensity_sum=matched_relative_intensity_sum,
             downgrade_reason="" if passed else "sphingo_rule_failed",
@@ -703,7 +707,11 @@ class LipidMS2Searcher:
     def search_directory(self, directory: str | Path, output_path: str | Path | None = None, top_n: int = 5) -> pd.DataFrame:
         directory = Path(directory)
         all_rows = []
-        for mzml_path in sorted(directory.glob("*.mzML")):
+        mzml_paths = sorted(
+            [path for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".mzml"],
+            key=lambda path: path.name.lower(),
+        )
+        for mzml_path in mzml_paths:
             result_df = self.search_mzml(mzml_path, top_n=top_n)
             if result_df.empty:
                 continue
@@ -744,9 +752,9 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
             export_df["final_score"] = export_df["total_score"]
         else:
             export_df["final_score"] = 0.0
-    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").round(2)
+    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
     if "total_score" in export_df.columns:
-        export_df["total_score"] = pd.to_numeric(export_df["total_score"], errors="coerce").round(2)
+        export_df["total_score"] = pd.to_numeric(export_df["total_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
     if "rt_minutes" in export_df.columns:
         export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
     if "precursor_mz" in export_df.columns:

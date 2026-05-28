@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+import pandas as pd
+
 from lipidgate.ms2.models import (
     CandidateScore,
     ExperimentalPeak,
@@ -13,7 +15,7 @@ from lipidgate.ms2.models import (
     normalize_peaks,
 )
 from lipidgate.ms2.rules import DEFAULT_RULES
-from lipidgate.ms2.search import LipidMS2Searcher
+from lipidgate.ms2.search import LipidMS2Searcher, prepare_ms2_result_export_df
 
 
 def build_candidate(
@@ -293,7 +295,7 @@ class SearchSelectionTests(unittest.TestCase):
         rows = searcher.score_spectrum(weak_spectrum, top_n=1)
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]["passed_required_gates"])
-        self.assertLess(rows[0]["total_score"], 20.0)
+        self.assertLess(rows[0]["total_score"], 50.0)
 
     def test_fa_result_does_not_take_main_top_rank(self) -> None:
         fa_record = LibraryRecord(
@@ -485,6 +487,27 @@ class SearchSelectionTests(unittest.TestCase):
         ]
         formatted = self.searcher._format_matched_fragments(matches)
         self.assertEqual(formatted, "86.0971 [C5H12N]+; 184.0724 [C5H15NO4P]+")
+
+    def test_export_preserves_total_score_separately_from_rank_score(self) -> None:
+        export = prepare_ms2_result_export_df(pd.DataFrame([{
+            "source_file": "example.mzML",
+            "scan_id": "scan_1",
+            "rt_minutes": 1.23456,
+            "precursor_mz": 700.12345,
+            "ppm_error": 1.234,
+            "compound_class": "TG",
+            "matched_name": "TG(16:0_18:1_18:1)",
+            "adduct": "[M+NH4]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 88.888,
+            "total_score": 62.346,
+            "matched_fragment_count": 4,
+            "matched_fragments": "x",
+        }]))
+
+        self.assertEqual(export.loc[0, "final_score"], 88.89)
+        self.assertEqual(export.loc[0, "total_score"], 62.35)
 
     def test_fragment_index_prunes_no_fragment_candidates_without_changing_output(self) -> None:
         matching_record = LibraryRecord(

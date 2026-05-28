@@ -11,13 +11,15 @@ from .rules import ClassRule
 
 
 POOL_NAMES = ("fah", "hg", "other")
-FA_PRECURSOR_ONLY_SCORE = 100.0
+FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
+SCORE_MIN = 0.0
+SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
-POSITIVE_UNRESOLVED_CHAIN_EVIDENCE_PENALTY = 0.5
-POSITIVE_UNRESOLVED_ETHER_PC_PENALTY = 0.25
 CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
+POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG"}
+POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
 NEGATIVE_PC_RELAXED_CLASSES = {"PC", "PC-O"}
 CANDIDATE_HG_FRAGMENT_TYPE = "Candidate_HG"
 POSITIVE_PC_CHAIN_LOSS_STRICT_CLASSES = {"PC", "PCO", "PCP"}
@@ -60,6 +62,30 @@ def _normalized_compound_class(compound_class: str) -> str:
 
 def _is_fa_record(record: LibraryRecord) -> bool:
     return _normalized_compound_class(record.compound_class) == "FA"
+
+
+def _is_positive_glyceride_rco_gate_record(record: LibraryRecord) -> bool:
+    cls = _normalized_compound_class(record.compound_class).replace("-", "")
+    return _is_positive_adduct(record.adduct) and cls in POSITIVE_GLYCERIDE_RCO_GATE_CLASSES
+
+
+def _is_rco_fragment_name(fragment_name: str) -> bool:
+    name = str(fragment_name or "").strip().upper()
+    return (
+        name.startswith("(R=O)+(")
+        or "RCO" in name
+        or "R1C=O" in name
+        or "R2C=O" in name
+        or "R3C=O" in name
+    )
+
+
+def _is_positive_glyceride_rco_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    return (
+        _is_positive_glyceride_rco_gate_record(record)
+        and fragment.fragment_type == "FA_Frag"
+        and _is_rco_fragment_name(fragment.name)
+    )
 
 
 def _is_pe_o_record(record: LibraryRecord) -> bool:
@@ -167,6 +193,8 @@ def _pool_for_fragment(record: LibraryRecord, fragment: FragmentRecord) -> str:
         return "fah"
     if _fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag":
         return "fah"
+    if _is_positive_glyceride_rco_fragment(record, fragment):
+        return "fah"
     if _fragment_counts_as_hg(record, fragment):
         return "hg"
     return "other"
@@ -221,6 +249,28 @@ def _record_fa_loss_fragment_count(record: LibraryRecord) -> int:
         for fragment in record.fragments
         if fragment.fragment_type == "Diagnostic_FA_Loss"
         or (_fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag")
+    )
+
+
+def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
+    return sum(1 for fragment in record.fragments if _is_positive_glyceride_rco_fragment(record, fragment))
+
+
+def _positive_glyceride_rco_gate_available(record: LibraryRecord) -> bool:
+    return _record_positive_glyceride_rco_fragment_count(record) >= POSITIVE_GLYCERIDE_RCO_MIN_HITS
+
+
+def _matched_positive_glyceride_rco_fragment_count(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+) -> int:
+    return sum(1 for match in matches if _is_positive_glyceride_rco_fragment(record, match.fragment))
+
+
+def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence[FragmentMatch]) -> bool:
+    return (
+        _positive_glyceride_rco_gate_available(record)
+        and _matched_positive_glyceride_rco_fragment_count(record, matches) >= POSITIVE_GLYCERIDE_RCO_MIN_HITS
     )
 
 
@@ -350,6 +400,7 @@ def _derive_required_groups(
     loss_fragment_count = _record_loss_fragment_count(record)
     fa_loss_fragment_count = _record_fa_loss_fragment_count(record)
     is_positive_mode = _is_positive_adduct(record.adduct)
+    positive_rco_gate_available = _positive_glyceride_rco_gate_available(record)
     positive_hg_or_loss_gate = is_positive_mode and (hg_fragment_count > 0 or loss_fragment_count > 0)
     allow_lyso_hg_only = rule.allow_hg_only_if_no_fah and not fah_tokens and hg_fragment_count > 0
     allow_loss_only = (
@@ -368,7 +419,7 @@ def _derive_required_groups(
     if positive_hg_or_loss_gate:
         supports_required_groups = True
     else:
-        supports_required_groups = bool(fah_tokens) or allow_lyso_hg_only or allow_loss_only
+        supports_required_groups = bool(fah_tokens) or allow_lyso_hg_only or allow_loss_only or positive_rco_gate_available
     if _is_negative_pc_relaxed_record(record) and _negative_pc_signature_library_groups(record):
         supports_required_groups = True
     required_groups: List[str] = []
@@ -377,6 +428,8 @@ def _derive_required_groups(
             required_groups.append("hg")
         elif loss_fragment_count > 0:
             required_groups.append("loss")
+    elif positive_rco_gate_available:
+        required_groups.append("rco")
     else:
         if fah_tokens:
             required_groups.append("fah")
@@ -437,88 +490,82 @@ def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tole
         return float(mz_tolerance)
     if ppm_tolerance is not None:
         return abs(float(fragment_mz)) * float(ppm_tolerance) * 1e-6
-    return 0.02
+    return abs(float(fragment_mz)) * 10.0 * 1e-6
 
 
 def _calculate_pool_scores(
     matches: Sequence[FragmentMatch],
     record: LibraryRecord,
     rule: ClassRule,
-    total_experimental_intensity: float,
+    fragments: Sequence[FragmentRecord] | None = None,
 ) -> Dict[str, PoolScore]:
     matched_by_pool: Dict[str, List[FragmentMatch]] = defaultdict(list)
     total_fragments_by_pool: Dict[str, List[FragmentRecord]] = defaultdict(list)
-    total_spectrum_intensity = max(total_experimental_intensity, 1e-9)
-    for fragment in record.fragments:
+    library_fragments = list(record.fragments if fragments is None else fragments)
+    for fragment in library_fragments:
         total_fragments_by_pool[_pool_for_fragment(record, fragment)].append(fragment)
     for match in matches:
         matched_by_pool[_pool_for_fragment(record, match.fragment)].append(match)
     score_profile = rule.score_profile
+    active_pools = [
+        pool_name
+        for pool_name in POOL_NAMES
+        if total_fragments_by_pool.get(pool_name)
+    ]
+    original_active_weight_sum = sum(
+        max(float(score_profile.pool_weights.get(pool_name, 0.0)), 0.0)
+        for pool_name in active_pools
+    )
+    equal_active_weight = 100.0 / len(active_pools) if active_pools else 0.0
+    coverage_weight = float(score_profile.metric_weights.get("coverage", score_profile.metric_weights.get("count", 0.35)))
+    intensity_weight = float(score_profile.metric_weights.get("intensity", 0.65))
     result: Dict[str, PoolScore] = {}
     for pool_name in POOL_NAMES:
         pool_fragments = total_fragments_by_pool.get(pool_name, [])
         pool_matches = matched_by_pool.get(pool_name, [])
         total_count = len(pool_fragments)
         matched_count = len(pool_matches)
-        total_weight = sum(fragment.weight for fragment in pool_fragments) or 1.0
-        matched_weight = sum(match.fragment.weight for match in pool_matches)
         count_ratio = matched_count / total_count if total_count else 0.0
-        intensity_ratio = (
-            sum(match.experimental_peak.relative_intensity for match in pool_matches) / total_spectrum_intensity
-            if pool_matches
-            else 0.0
-        )
-        weight_ratio = matched_weight / total_weight if total_weight else 0.0
-        metric_weights = score_profile.metric_weights
-        raw_ratio = (
-            metric_weights["count"] * count_ratio
-            + metric_weights["intensity"] * intensity_ratio
-            + metric_weights["weight"] * weight_ratio
-        )
-        pool_score = score_profile.pool_weights[pool_name] * raw_ratio
+        matched_by_fragment_id = {id(match.fragment): match for match in pool_matches}
+        intensity_ratio = 0.0
+        if total_count:
+            intensity_ratio = sum(
+                _fragment_quality(matched_by_fragment_id.get(id(fragment)))
+                for fragment in pool_fragments
+            ) / total_count
+        pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
+        if total_count and original_active_weight_sum > 0.0:
+            dynamic_pool_weight = (
+                max(float(score_profile.pool_weights.get(pool_name, 0.0)), 0.0)
+                / original_active_weight_sum
+                * 100.0
+            )
+        elif total_count:
+            dynamic_pool_weight = equal_active_weight
+        else:
+            dynamic_pool_weight = 0.0
+        pool_score = dynamic_pool_weight * pool_quality
         result[pool_name] = PoolScore(
             pool_name=pool_name,
             matched_count=matched_count,
             total_count=total_count,
             count_ratio=count_ratio,
             intensity_ratio=intensity_ratio,
-            weight_ratio=weight_ratio,
+            weight_ratio=0.0,
             pool_score=pool_score,
         )
     return result
 
 
-def _key_fragment_intensity_multiplier(
-    matches: Sequence[FragmentMatch],
-    record: LibraryRecord,
-    rule: ClassRule,
-) -> float:
-    key_relative_intensities = sorted([
-        match.experimental_peak.relative_intensity
-        for match in matches
-        if _pool_for_fragment(record, match.fragment) in {"fah", "hg"}
-        or (
-            _requires_precursor_fragment(record)
-            and match.fragment.fragment_type == "Precursor Ion"
-        )
-    ], reverse=True)
-    if not key_relative_intensities:
-        return 1.0
+def _fragment_quality(match: FragmentMatch | None) -> float:
+    if match is None:
+        return 0.0
+    relative_intensity = max(float(match.experimental_peak.relative_intensity), 0.0)
+    return min(relative_intensity / FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
 
-    score_profile = rule.score_profile
-    full_score_intensity = max(score_profile.key_intensity_full_score_relative_intensity, 1e-9)
-    min_multiplier = min(max(score_profile.key_intensity_min_multiplier, 0.0), 1.0)
-    top_fraction = min(max(score_profile.key_intensity_top_fraction, 0.0), 1.0)
-    top_weight = min(max(score_profile.key_intensity_top_fraction_weight, 0.0), 1.0)
-    top_count = max(1, math.ceil(len(key_relative_intensities) * top_fraction))
-    key_qualities = [
-        min(relative_intensity / full_score_intensity, 1.0)
-        for relative_intensity in key_relative_intensities
-    ]
-    top_quality = sum(key_qualities[:top_count]) / top_count
-    mean_quality = sum(key_qualities) / len(key_qualities)
-    quality = top_weight * top_quality + (1.0 - top_weight) * mean_quality
-    return max(min_multiplier, min(quality, 1.0))
+
+def _total_score_from_pool_scores(pool_scores: Dict[str, PoolScore]) -> float:
+    return min(SCORE_MAX, max(SCORE_MIN, sum(pool.pool_score for pool in pool_scores.values())))
 
 
 def _missing_required_groups(
@@ -548,6 +595,18 @@ def _missing_required_groups(
 
         if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
             missing.append("precursor")
+
+        if _positive_glyceride_rco_gate_passes(record, matches):
+            return missing
+
+        if (
+            _positive_glyceride_rco_gate_available(record)
+            and hg_fragment_count == 0
+            and loss_fragment_count == 0
+            and not expected_fah_tokens
+        ):
+            missing.append("rco")
+            return missing
 
         if hg_fragment_count > 0 and matched_hg_count < positive_required_hg_hits:
             missing.append("hg")
@@ -685,31 +744,6 @@ def _matched_positive_signature_fragment_count(matches: Sequence[FragmentMatch])
     )
 
 
-def _resolution_score_multiplier(
-    record: LibraryRecord,
-    resolution_level: str,
-    downgrade_reason: str,
-    is_positive_mode: bool,
-    expected_fah_tokens: Sequence[str],
-    positive_loss_can_resolve_chain: bool,
-) -> float:
-    if not is_positive_mode:
-        return 1.0
-    if resolution_level != "species_level":
-        return 1.0
-    if downgrade_reason != CHAIN_LEVEL_INFO_MISSING_REASON:
-        return 1.0
-    if not expected_fah_tokens and not positive_loss_can_resolve_chain:
-        return 1.0
-    chain_tokens = _extract_chain_tokens(record.lipid_chain_name)
-    if _count_positive_nonzero_chains(chain_tokens) <= 1:
-        return 1.0
-    cls = _normalized_compound_class(record.compound_class).replace("-", "")
-    if cls in {"PCO", "PCP"}:
-        return POSITIVE_UNRESOLVED_ETHER_PC_PENALTY
-    return POSITIVE_UNRESOLVED_CHAIN_EVIDENCE_PENALTY
-
-
 def _positive_single_chain_species_hg_only(
     chain_tokens: Sequence[str],
     is_positive_mode: bool,
@@ -751,6 +785,8 @@ def _determine_resolution(
         )
         required_fah_hits = _required_chain_level_fah_hits(record, expected_fah_tokens, chain_tokens, rule)
         if expected_fah_tokens and _matched_required_fah_count(matches, expected_fah_tokens) >= required_fah_hits:
+            return "chain_level", ""
+        if _positive_glyceride_rco_gate_passes(record, matches):
             return "chain_level", ""
         if positive_loss_can_resolve_chain:
             required_loss_hits = _positive_required_loss_hits(chain_tokens, _record_fa_loss_fragment_count(record))
@@ -846,22 +882,8 @@ def _score_fa_precursor_only_candidate(
 
     matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
     matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
-    max_precursor_relative_intensity = max(match.experimental_peak.relative_intensity for match in matches)
-    full_score_intensity = max(rule.score_profile.key_intensity_full_score_relative_intensity, 1e-9)
-    total_score = FA_PRECURSOR_ONLY_SCORE * min(max_precursor_relative_intensity / full_score_intensity, 1.0)
-    total_weight = sum(fragment.weight for fragment in precursor_fragments) or 1.0
-    matched_weight = sum(match.fragment.weight for match in matches)
-    total_relative_intensity = max(spectrum.total_relative_intensity, 1e-9)
-    pool_scores = _empty_pool_scores()
-    pool_scores["other"] = PoolScore(
-        pool_name="other",
-        matched_count=len(matches),
-        total_count=len(precursor_fragments),
-        count_ratio=len(matches) / len(precursor_fragments),
-        intensity_ratio=matched_relative_intensity_sum / total_relative_intensity,
-        weight_ratio=matched_weight / total_weight,
-        pool_score=total_score,
-    )
+    pool_scores = _calculate_pool_scores(matches, record, rule, fragments=precursor_fragments)
+    total_score = _total_score_from_pool_scores(pool_scores)
     return CandidateScore(
         record=record,
         total_score=round(total_score, 4),
@@ -883,8 +905,8 @@ def score_candidate(
     rule: ClassRule,
     precursor_ppm_tolerance: float = 10.0,
     precursor_mz_tolerance_da: float | None = None,
-    fragment_mz_tolerance: float | None = 0.02,
-    fragment_ppm_tolerance: float | None = None,
+    fragment_mz_tolerance: float | None = None,
+    fragment_ppm_tolerance: float | None = 10.0,
     experimental_mz: Sequence[float] | None = None,
 ) -> CandidateScore:
     fa_precursor_fragments = _record_precursor_ion_fragments(record) if _is_fa_record(record) else []
@@ -919,7 +941,7 @@ def score_candidate(
         expected_fah_tokens=expected_fah_tokens,
         hg_fragment_count=hg_fragment_count,
     )
-    if not supports_required_groups:
+    if not supports_required_groups and required_group_names:
         return CandidateScore(
             record=record,
             total_score=0.0,
@@ -989,19 +1011,17 @@ def score_candidate(
     )
     if _negative_pc_relaxed_gate_passes(record, matches):
         missing_groups = []
-    pool_scores = _calculate_pool_scores(matches, record, rule, spectrum.total_relative_intensity)
+    pool_scores = _calculate_pool_scores(matches, record, rule)
     matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
     matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
     matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
-    total_score = sum(pool.pool_score for pool in pool_scores.values())
+    total_score = _total_score_from_pool_scores(pool_scores)
     positive_single_chain_species_hg_only = _positive_single_chain_species_hg_only(
         chain_tokens=chain_tokens,
         is_positive_mode=is_positive_mode,
         allow_lyso_hg_only=allow_lyso_hg_only,
         expected_fah_tokens=expected_fah_tokens,
     )
-    if missing_groups:
-        total_score *= rule.score_profile.missing_group_penalty_multiplier ** len(missing_groups)
     resolution_level, downgrade_reason = _determine_resolution(
         record,
         matches,
@@ -1028,17 +1048,6 @@ def score_candidate(
         else:
             resolution_level = "class_level"
             downgrade_reason = "lyso_hg_only_fallback"
-    else:
-        total_score *= _resolution_score_multiplier(
-            record=record,
-            resolution_level=resolution_level,
-            downgrade_reason=downgrade_reason,
-            is_positive_mode=is_positive_mode,
-            expected_fah_tokens=expected_fah_tokens,
-            positive_loss_can_resolve_chain=positive_loss_can_resolve_chain,
-        )
-    if not missing_groups:
-        total_score *= _key_fragment_intensity_multiplier(matches, record, rule)
     return CandidateScore(
         record=record,
         total_score=round(total_score, 4),

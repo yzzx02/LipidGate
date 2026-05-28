@@ -42,6 +42,7 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
+        self.assertLessEqual(result.total_score, 100.0)
 
     def test_cer_fails_without_lcb_evidence(self) -> None:
         record = LibraryRecord(
@@ -117,6 +118,28 @@ class SphingolipidRuleTests(unittest.TestCase):
         )
 
         result = _score(record, [(228.2322, 1000.0), (81.0699, 600.0)])
+
+        self.assertTrue(result.passed_required_gates)
+
+    def test_phytosphingosine_uses_spb_structural_rule(self) -> None:
+        record = LibraryRecord(
+            record_id=50,
+            compound_class="PhytoSph",
+            lipid_name="PhytoSph(t18:0)",
+            lipid_chain_name="PhytoSph(t18:0)",
+            precursor_mz=318.3003,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(318.3003, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(300.2897, "M+H-H2O", "C类碎片"),
+                FragmentRecord(282.2791, "M+H-2H2O", "C类碎片"),
+                FragmentRecord(264.2686, "M+H-3H2O", "C类碎片"),
+                FragmentRecord(270.2791, "M+H-CH4O2", "C类碎片"),
+                FragmentRecord(81.0699, "SPB-Diagnostic-1", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(300.2897, 1000.0), (282.2791, 1000.0), (81.0699, 600.0)])
 
         self.assertTrue(result.passed_required_gates)
 

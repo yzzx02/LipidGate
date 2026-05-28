@@ -16,13 +16,8 @@ class ScoreProfile:
         default_factory=lambda: {"fah": 60.0, "hg": 20.0, "other": 20.0}
     )
     metric_weights: Dict[str, float] = field(
-        default_factory=lambda: {"count": 0.20, "intensity": 0.70, "weight": 0.10}
+        default_factory=lambda: {"coverage": 0.35, "intensity": 0.65}
     )
-    key_intensity_full_score_relative_intensity: float = 0.10
-    key_intensity_min_multiplier: float = 0.25
-    key_intensity_top_fraction: float = 0.50
-    key_intensity_top_fraction_weight: float = 0.75
-    missing_group_penalty_multiplier: float = 0.15
     single_group_fallback_min_matches: int = 2
     single_group_fallback_min_relative_intensity_sum: float = 0.5
 

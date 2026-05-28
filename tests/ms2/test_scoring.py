@@ -39,7 +39,19 @@ class ScoringTests(unittest.TestCase):
         self.record = build_record()
         self.rule = DEFAULT_RULES.get("PC")
 
-    def test_missing_required_hg_triggers_penalty(self) -> None:
+    def test_normalize_peaks_filters_acetonitrile_ammonium_before_scaling(self) -> None:
+        normalized = normalize_peaks([
+            (59.0604, 10000.0),
+            (59.0609, 9000.0),
+            (100.0, 125.0),
+            (184.0733, 250.0),
+        ])
+
+        self.assertEqual([round(peak.mz, 4) for peak in normalized], [100.0, 184.0733])
+        self.assertEqual(normalized[0].relative_intensity, 0.5)
+        self.assertEqual(normalized[1].relative_intensity, 1.0)
+
+    def test_missing_required_hg_blocks_strict_result_without_score_penalty(self) -> None:
         spectrum = build_spectrum(
             [
                 (255.2329, 1000.0),
@@ -50,7 +62,7 @@ class ScoringTests(unittest.TestCase):
         result = score_candidate(spectrum, self.record, self.rule)
         self.assertFalse(result.passed_required_gates)
         self.assertIn("hg", result.missing_required_groups)
-        self.assertLess(result.total_score, 20.0)
+        self.assertGreater(result.total_score, 50.0)
 
     def test_fa_precursor_ion_can_pass_as_only_gate(self) -> None:
         record = LibraryRecord(
@@ -105,7 +117,7 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
-        self.assertEqual(result.total_score, 10.0)
+        self.assertEqual(result.total_score, 41.5)
 
     def test_fragment_ppm_tolerance_matches_all_required_fragments(self) -> None:
         spectrum = build_spectrum(
@@ -709,7 +721,7 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(missing_plain_result.passed_required_gates)
         self.assertIn("fah", missing_plain_result.missing_required_groups)
 
-    def test_stronger_and_more_complete_evidence_scores_higher(self) -> None:
+    def test_complete_evidence_scores_full_after_intensity_saturation(self) -> None:
         lower_intensity_spectrum = build_spectrum(
             [
                 (255.2329, 500.0),
@@ -731,9 +743,10 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(lower_result.passed_required_gates)
         self.assertTrue(higher_result.passed_required_gates)
         self.assertGreater(higher_result.matched_intensity_sum, lower_result.matched_intensity_sum)
-        self.assertLess(lower_result.pool_scores["fah"].pool_score, 60.0)
+        self.assertEqual(lower_result.total_score, 100.0)
+        self.assertEqual(higher_result.total_score, 100.0)
 
-    def test_low_intensity_key_fragments_pass_gate_but_score_low(self) -> None:
+    def test_low_intensity_fragments_pass_gate_but_score_below_default_threshold(self) -> None:
         weak_key_spectrum = build_spectrum(
             [
                 (120.0, 1000.0),
@@ -757,10 +770,10 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(weak_result.passed_required_gates)
         self.assertTrue(strong_result.passed_required_gates)
-        self.assertLess(weak_result.total_score, 15.0)
-        self.assertGreater(strong_result.total_score, weak_result.total_score * 5)
+        self.assertLess(weak_result.total_score, 50.0)
+        self.assertEqual(strong_result.total_score, 100.0)
 
-    def test_key_fragment_intensity_uses_stronger_half(self) -> None:
+    def test_fragment_quality_uses_all_matched_fragments_without_key_multiplier(self) -> None:
         spectrum = build_spectrum(
             [
                 (120.0, 1000.0),
@@ -774,7 +787,8 @@ class ScoringTests(unittest.TestCase):
         result = score_candidate(spectrum, self.record, self.rule)
 
         self.assertTrue(result.passed_required_gates)
-        self.assertGreater(result.total_score, 30.0)
+        self.assertGreater(result.total_score, 50.0)
+        self.assertLessEqual(result.total_score, 100.0)
 
     def test_full_fah_coverage_enables_chain_level(self) -> None:
         spectrum = build_spectrum(
@@ -800,7 +814,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.missing_required_groups, [])
         self.assertEqual(result.resolution_level, "species_level")
 
-    def test_library_without_required_fragments_has_no_match(self) -> None:
+    def test_library_without_required_fragments_treats_gate_as_not_applicable(self) -> None:
         incomplete_record = LibraryRecord(
             record_id=3,
             compound_class="PC",
@@ -816,8 +830,9 @@ class ScoringTests(unittest.TestCase):
         spectrum.precursor_mz = 760.585
         rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, incomplete_record, rule)
-        self.assertFalse(result.passed_required_gates)
-        self.assertEqual(result.downgrade_reason, "library_missing_required_fragments")
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.total_score, 100.0)
 
     def test_positive_bmp_requires_both_mag_fragments_for_chain_level(self) -> None:
         hg_only_record = LibraryRecord(
@@ -1068,7 +1083,7 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(result.passed_required_gates)
         self.assertIn("loss", result.missing_required_groups)
 
-    def test_positive_dg_fa_frag_still_does_not_count_as_diagnostic_fa_loss(self) -> None:
+    def test_positive_dg_can_use_two_rco_fragments_as_alternative_gate(self) -> None:
         dg_record = LibraryRecord(
             record_id=49,
             compound_class="DG",
@@ -1093,8 +1108,9 @@ class ScoringTests(unittest.TestCase):
             ]),
         )
         result = score_candidate(spectrum, dg_record, DEFAULT_RULES.get("DG"))
-        self.assertFalse(result.passed_required_gates)
-        self.assertEqual(result.downgrade_reason, "library_missing_required_fragments")
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
 
     def test_positive_pc_o_neutral_loss_does_not_resolve_two_chains(self) -> None:
         pc_o_record = LibraryRecord(
@@ -1136,7 +1152,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(diagnostic_result.resolution_level, "chain_level")
         self.assertGreater(diagnostic_result.total_score, neutral_result.total_score)
 
-    def test_positive_species_fallback_is_penalized_against_valid_lyso_hg_only_match(self) -> None:
+    def test_positive_species_fallback_score_keeps_resolution_as_output_only(self) -> None:
         pc_p_record = LibraryRecord(
             record_id=43,
             compound_class="PC-P",
@@ -1846,6 +1862,117 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
+
+    def test_positive_tg_can_pass_with_two_rco_fragments_without_fa_loss(self) -> None:
+        record = LibraryRecord(
+            record_id=105,
+            compound_class="TG",
+            lipid_name="TG(52:2)",
+            lipid_chain_name="TG(16:0_18:1_18:1)",
+            precursor_mz=876.8014,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(239.2375, "(R=O)+(16:0)", "FA_Frag"),
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(603.5352, "[M-R1COOH+NH4]+", "Diagnostic_FA_Loss"),
+                FragmentRecord(577.5195, "[M-R2COOH+NH4]+", "Diagnostic_FA_Loss"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_tg_rco_pair",
+            precursor_mz=876.8014,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (239.2375, 800.0),
+                (265.2526, 700.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("TG"), fragment_mz_tolerance=0.01)
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
+
+    def test_positive_dg_single_rco_still_needs_original_gate(self) -> None:
+        record = LibraryRecord(
+            record_id=106,
+            compound_class="DG",
+            lipid_name="DG(34:1)",
+            lipid_chain_name="DG(16:0_18:1)",
+            precursor_mz=612.5541,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(239.2375, "(R=O)+(16:0)", "FA_Frag"),
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(355.2843, "[M-R1COOH+NH4]+", "Diagnostic_FA_Loss"),
+                FragmentRecord(329.2686, "[M-R2COOH+NH4]+", "Diagnostic_FA_Loss"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_dg_single_rco",
+            precursor_mz=612.5541,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(239.2375, 1000.0)]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("DG"), fragment_mz_tolerance=0.01)
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("loss", result.missing_required_groups)
+
+    def test_nat_requires_all_taurine_headgroup_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=104,
+            compound_class="NAT",
+            lipid_name="NAT(22:0)",
+            lipid_chain_name="NAT(22:0)",
+            precursor_mz=446.3310,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(79.9568, "[SO3]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(106.9803, "[C2H3SO3]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(124.0068, "[C2H6NO3S]- / [Taurine-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(446.3310, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("NAT")
+
+        missing_one = ExperimentalSpectrum(
+            scan_id="scan_nat_missing_one",
+            precursor_mz=446.3310,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (79.9568, 1000.0),
+                (106.9803, 800.0),
+                (446.3310, 200.0),
+            ]),
+        )
+        complete = ExperimentalSpectrum(
+            scan_id="scan_nat_complete",
+            precursor_mz=446.3310,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (79.9568, 1000.0),
+                (106.9803, 800.0),
+                (124.0068, 600.0),
+                (446.3310, 200.0),
+            ]),
+        )
+
+        missing_result = score_candidate(missing_one, record, rule)
+        complete_result = score_candidate(complete, record, rule)
+
+        self.assertFalse(missing_result.passed_required_gates)
+        self.assertIn("hg", missing_result.missing_required_groups)
+        self.assertTrue(complete_result.passed_required_gates)
+        self.assertEqual(DEFAULT_RULES.get("NATau"), DEFAULT_RULES.get("NAT"))
 
     def test_rules_normalize_legacy_ether_lpi_name(self) -> None:
         self.assertEqual(

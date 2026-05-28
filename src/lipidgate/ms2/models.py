@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
+BACKGROUND_ION_MZ = 59.0604
+BACKGROUND_ION_PPM_TOLERANCE = 10.0
+
+
 @dataclass(frozen=True)
 class FragmentRecord:
     mz: float
@@ -100,14 +104,31 @@ class CandidateScore:
     downgrade_reason: str = ""
 
 
+def _within_ppm(mz: float, reference_mz: float, ppm_tolerance: float) -> bool:
+    return abs(float(mz) - float(reference_mz)) <= abs(float(reference_mz)) * float(ppm_tolerance) * 1e-6
+
+
+def filter_background_ions(
+    peaks: Sequence[Tuple[float, float]],
+    background_mz: float = BACKGROUND_ION_MZ,
+    ppm_tolerance: float = BACKGROUND_ION_PPM_TOLERANCE,
+) -> List[Tuple[float, float]]:
+    return [
+        (float(mz), float(intensity))
+        for mz, intensity in peaks
+        if not _within_ppm(mz, background_mz, ppm_tolerance)
+    ]
+
+
 def normalize_peaks(peaks: Sequence[Tuple[float, float]]) -> List[ExperimentalPeak]:
-    if not peaks:
+    filtered_peaks = filter_background_ions(peaks)
+    if not filtered_peaks:
         return []
-    max_intensity = max(intensity for _, intensity in peaks)
+    max_intensity = max(intensity for _, intensity in filtered_peaks)
     if max_intensity <= 0:
         return []
     normalized = []
-    for mz, intensity in sorted(peaks, key=lambda item: item[0]):
+    for mz, intensity in sorted(filtered_peaks, key=lambda item: item[0]):
         rel = intensity / max_intensity
         normalized.append(ExperimentalPeak(mz=float(mz), intensity=float(intensity), relative_intensity=rel))
     return normalized
