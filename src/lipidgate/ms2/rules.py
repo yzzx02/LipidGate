@@ -111,6 +111,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=default_profile,
         )
+    mg_profile = ScoreProfile(pool_weights={"fah": 0.0, "hg": 75.0, "other": 25.0})
     for lipid_class in {"BA", "BASulfate", "SSulfate", "MG", "NAT"}:
         by_class[lipid_class] = ClassRule(
             lipid_class=lipid_class,
@@ -121,7 +122,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             positive_hg_complete_can_resolve_chain=lipid_class == "MG",
             allow_loss_only_if_no_fah=False,
             require_loss_with_fah_only=False,
-            score_profile=default_profile,
+            score_profile=mg_profile if lipid_class == "MG" else default_profile,
         )
     by_class["VD"] = ClassRule(
         lipid_class="VD",

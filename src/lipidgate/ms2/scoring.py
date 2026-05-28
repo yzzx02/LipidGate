@@ -3,8 +3,8 @@ from __future__ import annotations
 import bisect
 import math
 import re
-from collections import defaultdict
-from typing import Dict, Iterable, List, Sequence, Tuple
+from collections import Counter, defaultdict
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 from .models import CandidateScore, ExperimentalPeak, ExperimentalSpectrum, FragmentMatch, FragmentRecord, LibraryRecord, PoolScore
 from .rules import ClassRule
@@ -17,8 +17,12 @@ SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
 CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
+CHARACTERISTIC_POOL_NAMES = {"fah", "hg"}
+CHARACTERISTIC_POOL_COVERAGE_WEIGHT = 0.35
+CHARACTERISTIC_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
+CHARACTERISTIC_POOL_ANCHOR_WEIGHT = 0.35
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
-POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG"}
+POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "DGO", "OXTG"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
 NEGATIVE_PC_RELAXED_CLASSES = {"PC", "PC-O"}
 CANDIDATE_HG_FRAGMENT_TYPE = "Candidate_HG"
@@ -71,13 +75,7 @@ def _is_positive_glyceride_rco_gate_record(record: LibraryRecord) -> bool:
 
 def _is_rco_fragment_name(fragment_name: str) -> bool:
     name = str(fragment_name or "").strip().upper()
-    return (
-        name.startswith("(R=O)+(")
-        or "RCO" in name
-        or "R1C=O" in name
-        or "R2C=O" in name
-        or "R3C=O" in name
-    )
+    return name.startswith("(R=O)+(") or name.startswith("RCO(") or name.startswith("[RCO]+")
 
 
 def _is_positive_glyceride_rco_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
@@ -86,6 +84,19 @@ def _is_positive_glyceride_rco_fragment(record: LibraryRecord, fragment: Fragmen
         and fragment.fragment_type == "FA_Frag"
         and _is_rco_fragment_name(fragment.name)
     )
+
+
+def _is_positive_glyceride_rco_c3h6o2_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if not _is_positive_glyceride_rco_gate_record(record):
+        return False
+    if fragment.fragment_type != "Diagnostic_FA_Loss":
+        return False
+    name = str(fragment.name or "").strip().upper()
+    return "C3H6O2" in name and "ROOH" not in name and "M-NH3" not in name
+
+
+def _is_positive_mg_record(record: LibraryRecord) -> bool:
+    return _is_positive_adduct(record.adduct) and _normalized_compound_class(record.compound_class) == "MG"
 
 
 def _is_pe_o_record(record: LibraryRecord) -> bool:
@@ -100,10 +111,10 @@ def _is_pe_o_non_gate_hg_fragment(record: LibraryRecord, fragment: FragmentRecor
 
 def _is_class_specific_hg_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
     cls = _normalized_compound_class(record.compound_class).replace("-", "")
-    if fragment.fragment_type not in {"Common", CANDIDATE_HG_FRAGMENT_TYPE}:
-        return False
     if cls == "MG" and _is_positive_adduct(record.adduct):
         return str(fragment.name or "").strip() == "[M-H2O+H]+"
+    if fragment.fragment_type not in {"Common", CANDIDATE_HG_FRAGMENT_TYPE}:
+        return False
     if _is_positive_adduct(record.adduct):
         return False
     return any(abs(float(fragment.mz) - target_mz) <= 0.02 for target_mz in CLASS_SPECIFIC_HG_MZ.get(cls, ()))
@@ -144,8 +155,20 @@ def _fa_frag_counts_as_effective_loss(record: LibraryRecord) -> bool:
 
 
 def _fragment_counts_as_effective_loss(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment):
+        return False
     return (
         fragment.fragment_type in LOSS_FRAGMENT_TYPES
+        or (_fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag")
+    )
+
+
+def _fragment_counts_as_fa_loss_gate(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    return (
+        (
+            fragment.fragment_type == "Diagnostic_FA_Loss"
+            and not _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment)
+        )
         or (_fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag")
     )
 
@@ -177,6 +200,8 @@ def _record_has_candidate_hg(record: LibraryRecord) -> bool:
 
 
 def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if _is_positive_mg_record(record):
+        return _is_class_specific_hg_fragment(record, fragment)
     if fragment.fragment_type == "Diagnostic_HG":
         return not _is_pe_o_non_gate_hg_fragment(record, fragment)
     if _is_class_specific_hg_fragment(record, fragment):
@@ -189,11 +214,17 @@ def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> b
 
 
 def _pool_for_fragment(record: LibraryRecord, fragment: FragmentRecord) -> str:
+    return _pool_for_scoring_fragment(record, fragment, matched=False)
+
+
+def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
+    if _is_positive_glyceride_rco_fragment(record, fragment):
+        return "fah" if matched else "other"
+    if _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment):
+        return "other"
     if fragment.fragment_type in {"Diagnostic_FA", "Diagnostic_FA_Loss"}:
         return "fah"
     if _fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag":
-        return "fah"
-    if _is_positive_glyceride_rco_fragment(record, fragment):
         return "fah"
     if _fragment_counts_as_hg(record, fragment):
         return "hg"
@@ -221,6 +252,50 @@ def _extract_fragment_chain_token(fragment_name: str) -> str | None:
     return _canonical_fa_chain_match(matched)
 
 
+def _chain_token_multiplicity(record: LibraryRecord) -> Counter[str]:
+    return Counter(
+        token
+        for token in _extract_chain_tokens(record.lipid_chain_name)
+        if token and token != "0:0"
+    )
+
+
+def _chain_evidence_count_for_fragments(
+    record: LibraryRecord,
+    fragments: Sequence[FragmentRecord],
+    predicate: Callable[[LibraryRecord, FragmentRecord], bool],
+) -> int:
+    multiplicity = _chain_token_multiplicity(record)
+    if not multiplicity:
+        return sum(1 for fragment in fragments if predicate(record, fragment))
+
+    matched_tokens = set()
+    unassigned_count = 0
+    for fragment in fragments:
+        if not predicate(record, fragment):
+            continue
+        token = _extract_fragment_chain_token(fragment.name)
+        if token is not None and token in multiplicity:
+            matched_tokens.add(token)
+        else:
+            unassigned_count += 1
+
+    evidence_count = sum(multiplicity[token] for token in matched_tokens) + unassigned_count
+    return min(evidence_count, sum(multiplicity.values()))
+
+
+def _chain_evidence_count_for_matches(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+    predicate: Callable[[LibraryRecord, FragmentRecord], bool],
+) -> int:
+    return _chain_evidence_count_for_fragments(
+        record,
+        [match.fragment for match in matches],
+        predicate,
+    )
+
+
 def _record_expected_fah_tokens(record: LibraryRecord) -> List[str]:
     tokens: List[str] = []
     seen = set()
@@ -244,16 +319,13 @@ def _record_loss_fragment_count(record: LibraryRecord) -> int:
 
 
 def _record_fa_loss_fragment_count(record: LibraryRecord) -> int:
-    return sum(
-        1
-        for fragment in record.fragments
-        if fragment.fragment_type == "Diagnostic_FA_Loss"
-        or (_fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag")
-    )
+    if _is_positive_adduct(record.adduct):
+        return _chain_evidence_count_for_fragments(record, record.fragments, _fragment_counts_as_fa_loss_gate)
+    return sum(1 for fragment in record.fragments if _fragment_counts_as_fa_loss_gate(record, fragment))
 
 
 def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
-    return sum(1 for fragment in record.fragments if _is_positive_glyceride_rco_fragment(record, fragment))
+    return _chain_evidence_count_for_fragments(record, record.fragments, _is_positive_glyceride_rco_fragment)
 
 
 def _positive_glyceride_rco_gate_available(record: LibraryRecord) -> bool:
@@ -264,7 +336,7 @@ def _matched_positive_glyceride_rco_fragment_count(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
 ) -> int:
-    return sum(1 for match in matches if _is_positive_glyceride_rco_fragment(record, match.fragment))
+    return _chain_evidence_count_for_matches(record, matches, _is_positive_glyceride_rco_fragment)
 
 
 def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence[FragmentMatch]) -> bool:
@@ -502,10 +574,13 @@ def _calculate_pool_scores(
     matched_by_pool: Dict[str, List[FragmentMatch]] = defaultdict(list)
     total_fragments_by_pool: Dict[str, List[FragmentRecord]] = defaultdict(list)
     library_fragments = list(record.fragments if fragments is None else fragments)
+    matched_fragment_ids = {id(match.fragment) for match in matches}
     for fragment in library_fragments:
-        total_fragments_by_pool[_pool_for_fragment(record, fragment)].append(fragment)
+        total_fragments_by_pool[
+            _pool_for_scoring_fragment(record, fragment, matched=id(fragment) in matched_fragment_ids)
+        ].append(fragment)
     for match in matches:
-        matched_by_pool[_pool_for_fragment(record, match.fragment)].append(match)
+        matched_by_pool[_pool_for_scoring_fragment(record, match.fragment, matched=True)].append(match)
     score_profile = rule.score_profile
     active_pools = [
         pool_name
@@ -533,7 +608,15 @@ def _calculate_pool_scores(
                 _fragment_quality(matched_by_fragment_id.get(id(fragment)))
                 for fragment in pool_fragments
             ) / total_count
-        pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
+        anchor_quality = max((_fragment_quality(match) for match in pool_matches), default=0.0)
+        if pool_name in CHARACTERISTIC_POOL_NAMES:
+            pool_quality = (
+                CHARACTERISTIC_POOL_COVERAGE_WEIGHT * count_ratio
+                + CHARACTERISTIC_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
+                + CHARACTERISTIC_POOL_ANCHOR_WEIGHT * anchor_quality
+            )
+        else:
+            pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
         if total_count and original_active_weight_sum > 0.0:
             dynamic_pool_weight = (
                 max(float(score_profile.pool_weights.get(pool_name, 0.0)), 0.0)
@@ -585,13 +668,8 @@ def _missing_required_groups(
     missing = []
     if is_positive_mode:
         matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
-        matched_loss_count = sum(1 for match in matches if _fragment_counts_as_effective_loss(record, match.fragment))
-        matched_fa_loss_count = sum(
-            1
-            for match in matches
-            if match.fragment.fragment_type == "Diagnostic_FA_Loss"
-            or (_fa_frag_counts_as_effective_loss(record) and match.fragment.fragment_type == "FA_Frag")
-        )
+        matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
+        matched_fa_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_fa_loss_gate)
 
         if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
             missing.append("precursor")
@@ -630,13 +708,13 @@ def _missing_required_groups(
 
         if hg_fragment_count == 0 and loss_fragment_count == 0 and expected_fah_tokens:
             required_fah_hits = _required_fah_gate_hits(record, expected_fah_tokens)
-            if _matched_required_fah_count(matches, expected_fah_tokens) < required_fah_hits:
+            if _matched_required_fah_count(record, matches, expected_fah_tokens) < required_fah_hits:
                 missing.append("fah")
         return missing
 
     if expected_fah_tokens:
         required_fah_hits = _required_fah_gate_hits(record, expected_fah_tokens)
-        if _matched_required_fah_count(matches, expected_fah_tokens) < required_fah_hits:
+        if _matched_required_fah_count(record, matches, expected_fah_tokens) < required_fah_hits:
             missing.append("fah")
     if hg_fragment_count > 0:
         matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
@@ -717,11 +795,21 @@ def _required_chain_level_fah_hits(
     return min(max(token_count, 1), rule.chain_level_min_fah)
 
 
-def _matched_required_fah_count(matches: Sequence[FragmentMatch], expected_fah_tokens: Sequence[str]) -> int:
+def _matched_required_fah_count(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+    expected_fah_tokens: Sequence[str],
+) -> int:
     matched_fah = set(_matched_fah_tokens(matches))
     expected_fah = set(expected_fah_tokens)
+    multiplicity = _chain_token_multiplicity(record)
     if expected_fah:
-        return len(matched_fah.intersection(expected_fah))
+        matched_expected = matched_fah.intersection(expected_fah)
+        if multiplicity:
+            return sum(multiplicity.get(token, 1) for token in matched_expected)
+        return len(matched_expected)
+    if multiplicity:
+        return sum(multiplicity.get(token, 1) for token in matched_fah)
     return len(matched_fah)
 
 
@@ -771,9 +859,11 @@ def _determine_resolution(
         return "species_level", "missing_chain_annotation"
     if is_positive_mode:
         matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
-        matched_loss_count = sum(1 for match in matches if _fragment_counts_as_effective_loss(record, match.fragment))
-        matched_chain_loss_count = sum(
-            1 for match in matches if _fragment_counts_as_chain_resolving_loss(record, match.fragment)
+        matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
+        matched_chain_loss_count = _chain_evidence_count_for_matches(
+            record,
+            matches,
+            _fragment_counts_as_chain_resolving_loss,
         )
         matched_hg_max = max(
             (
@@ -784,7 +874,10 @@ def _determine_resolution(
             default=0.0,
         )
         required_fah_hits = _required_chain_level_fah_hits(record, expected_fah_tokens, chain_tokens, rule)
-        if expected_fah_tokens and _matched_required_fah_count(matches, expected_fah_tokens) >= required_fah_hits:
+        if (
+            expected_fah_tokens
+            and _matched_required_fah_count(record, matches, expected_fah_tokens) >= required_fah_hits
+        ):
             return "chain_level", ""
         if _positive_glyceride_rco_gate_passes(record, matches):
             return "chain_level", ""
@@ -822,7 +915,7 @@ def _determine_resolution(
             return "chain_level", ""
         return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
     required_fah_hits = _required_chain_level_fah_hits(record, expected_fah_tokens, chain_tokens, rule)
-    if _matched_required_fah_count(matches, expected_fah_tokens) >= required_fah_hits:
+    if _matched_required_fah_count(record, matches, expected_fah_tokens) >= required_fah_hits:
         return "chain_level", ""
     return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
 
@@ -905,8 +998,8 @@ def score_candidate(
     rule: ClassRule,
     precursor_ppm_tolerance: float = 10.0,
     precursor_mz_tolerance_da: float | None = None,
-    fragment_mz_tolerance: float | None = None,
-    fragment_ppm_tolerance: float | None = 10.0,
+    fragment_mz_tolerance: float | None = 0.01,
+    fragment_ppm_tolerance: float | None = None,
     experimental_mz: Sequence[float] | None = None,
 ) -> CandidateScore:
     fa_precursor_fragments = _record_precursor_ion_fragments(record) if _is_fa_record(record) else []

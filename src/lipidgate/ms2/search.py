@@ -48,8 +48,8 @@ class LipidMS2Searcher:
         rules: RuleSet | None = None,
         precursor_tolerance_da: float | None = None,
         precursor_tolerance_ppm: float = 10.0,
-        fragment_tolerance_da: float | None = None,
-        fragment_tolerance_ppm: float | None = 10.0,
+        fragment_tolerance_da: float | None = 0.01,
+        fragment_tolerance_ppm: float | None = None,
         min_relative_intensity: float = 0.005,
         min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
@@ -69,13 +69,13 @@ class LipidMS2Searcher:
         self.last_output_path: Path | None = None
 
     def _fragment_window_da(self, fragment_mz: float) -> float:
-        fragment_tolerance_da = getattr(self, "fragment_tolerance_da", 0.02)
+        fragment_tolerance_da = getattr(self, "fragment_tolerance_da", 0.01)
         fragment_tolerance_ppm = getattr(self, "fragment_tolerance_ppm", None)
         if fragment_tolerance_da is not None:
             return float(fragment_tolerance_da)
         if fragment_tolerance_ppm is not None:
             return abs(float(fragment_mz)) * float(fragment_tolerance_ppm) * 1e-6
-        return abs(float(fragment_mz)) * 10.0 * 1e-6
+        return 0.01
 
     @staticmethod
     def _sphingo_rule_key(record: LibraryRecord) -> str:

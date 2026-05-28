@@ -176,9 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--msms-tolerance", type=float, help="MS/MS tolerance in --tolerance-unit")
     p.add_argument("--precursor-ppm", type=float, default=10.0)
     p.add_argument("--precursor-da", type=float)
-    p.add_argument("--fragment-da", type=float)
-    p.add_argument("--fragment-ppm", type=float, default=10.0)
-    p.add_argument("--min-total-score", type=float, default=20.0, help="Filter candidates below this raw MS2 total score; use 0 to disable")
+    p.add_argument("--fragment-da", type=float, default=0.01)
+    p.add_argument("--fragment-ppm", type=float)
+    p.add_argument("--min-total-score", type=float, default=50.0, help="Filter candidates below this raw MS2 total score; use 0 to disable")
     p.add_argument("--rt-window-sec", type=float, default=30.0)
     p.add_argument("--map-features", action="store_true", help="Use the multi-file MS2 workflow even without a feature table")
     p.add_argument(
