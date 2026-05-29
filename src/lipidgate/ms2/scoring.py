@@ -12,6 +12,7 @@ from .rules import ClassRule
 
 POOL_NAMES = ("fah", "hg", "other")
 FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
+HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.01
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
@@ -605,10 +606,10 @@ def _calculate_pool_scores(
         intensity_ratio = 0.0
         if total_count:
             intensity_ratio = sum(
-                _fragment_quality(matched_by_fragment_id.get(id(fragment)))
+                _fragment_quality_for_pool(pool_name, matched_by_fragment_id.get(id(fragment)))
                 for fragment in pool_fragments
             ) / total_count
-        anchor_quality = max((_fragment_quality(match) for match in pool_matches), default=0.0)
+        anchor_quality = max((_fragment_quality_for_pool(pool_name, match) for match in pool_matches), default=0.0)
         if pool_name in CHARACTERISTIC_POOL_NAMES:
             pool_quality = (
                 CHARACTERISTIC_POOL_COVERAGE_WEIGHT * count_ratio
@@ -645,6 +646,15 @@ def _fragment_quality(match: FragmentMatch | None) -> float:
         return 0.0
     relative_intensity = max(float(match.experimental_peak.relative_intensity), 0.0)
     return min(relative_intensity / FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
+
+
+def _fragment_quality_for_pool(pool_name: str, match: FragmentMatch | None) -> float:
+    if match is None:
+        return 0.0
+    if pool_name == "hg":
+        relative_intensity = max(float(match.experimental_peak.relative_intensity), 0.0)
+        return min(relative_intensity / HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
+    return _fragment_quality(match)
 
 
 def _total_score_from_pool_scores(pool_scores: Dict[str, PoolScore]) -> float:

@@ -996,7 +996,7 @@ class ScoringTests(unittest.TestCase):
                 (120.0, 1000.0),
                 (255.2329, 20.0),
                 (281.2486, 18.0),
-                (224.0693, 15.0),
+                (224.0693, 2.0),
                 (152.9953, 12.0),
             ]
         )
@@ -1016,6 +1016,38 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(strong_result.passed_required_gates)
         self.assertLess(weak_result.total_score, 50.0)
         self.assertEqual(strong_result.total_score, 100.0)
+
+    def test_low_relative_hg_anchor_supports_phospholipid_score(self) -> None:
+        pe_record = LibraryRecord(
+            record_id=81,
+            compound_class="PE",
+            lipid_name="PE(34:1)",
+            lipid_chain_name="PE(16:0_18:1)",
+            precursor_mz=716.523,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(196.0380, "[C5H11NO4P]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pe_low_hg_anchor",
+            precursor_mz=716.523,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (120.0, 1000.0),
+                (255.2329, 20.0),
+                (281.2486, 18.0),
+                (196.0380, 5.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, pe_record, DEFAULT_RULES.get("PE"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertGreaterEqual(result.total_score, 50.0)
 
     def test_fragment_quality_uses_all_matched_fragments_without_key_multiplier(self) -> None:
         spectrum = build_spectrum(
