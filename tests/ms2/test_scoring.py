@@ -994,10 +994,10 @@ class ScoringTests(unittest.TestCase):
         weak_key_spectrum = build_spectrum(
             [
                 (120.0, 1000.0),
-                (255.2329, 20.0),
-                (281.2486, 18.0),
+                (255.2329, 5.0),
+                (281.2486, 5.0),
                 (224.0693, 2.0),
-                (152.9953, 12.0),
+                (152.9953, 2.0),
             ]
         )
         strong_key_spectrum = build_spectrum(
@@ -1016,6 +1016,23 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(strong_result.passed_required_gates)
         self.assertLess(weak_result.total_score, 50.0)
         self.assertEqual(strong_result.total_score, 100.0)
+
+    def test_very_low_hg_does_not_dominate_score_when_fah_is_strong(self) -> None:
+        spectrum = build_spectrum(
+            [
+                (120.0, 1000.0),
+                (255.2329, 1000.0),
+                (281.2486, 900.0),
+                (224.0693, 2.0),
+                (152.9953, 50.0),
+            ]
+        )
+
+        result = score_candidate(spectrum, self.record, self.rule)
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertGreater(result.total_score, 70.0)
+        self.assertLess(result.pool_scores["hg"].pool_score, 20.0)
 
     def test_low_relative_hg_anchor_supports_phospholipid_score(self) -> None:
         pe_record = LibraryRecord(

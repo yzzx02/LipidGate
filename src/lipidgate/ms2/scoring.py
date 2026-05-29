@@ -18,10 +18,12 @@ SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
 CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
-CHARACTERISTIC_POOL_NAMES = {"fah", "hg"}
-CHARACTERISTIC_POOL_COVERAGE_WEIGHT = 0.35
-CHARACTERISTIC_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
-CHARACTERISTIC_POOL_ANCHOR_WEIGHT = 0.35
+FAH_POOL_COVERAGE_WEIGHT = 0.35
+FAH_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
+FAH_POOL_ANCHOR_WEIGHT = 0.35
+HG_POOL_COVERAGE_WEIGHT = 0.80
+HG_POOL_AVERAGE_INTENSITY_WEIGHT = 0.10
+HG_POOL_ANCHOR_WEIGHT = 0.10
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
 POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "DGO", "OXTG"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
@@ -610,11 +612,17 @@ def _calculate_pool_scores(
                 for fragment in pool_fragments
             ) / total_count
         anchor_quality = max((_fragment_quality_for_pool(pool_name, match) for match in pool_matches), default=0.0)
-        if pool_name in CHARACTERISTIC_POOL_NAMES:
+        if pool_name == "fah":
             pool_quality = (
-                CHARACTERISTIC_POOL_COVERAGE_WEIGHT * count_ratio
-                + CHARACTERISTIC_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
-                + CHARACTERISTIC_POOL_ANCHOR_WEIGHT * anchor_quality
+                FAH_POOL_COVERAGE_WEIGHT * count_ratio
+                + FAH_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
+                + FAH_POOL_ANCHOR_WEIGHT * anchor_quality
+            )
+        elif pool_name == "hg":
+            pool_quality = (
+                HG_POOL_COVERAGE_WEIGHT * count_ratio
+                + HG_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
+                + HG_POOL_ANCHOR_WEIGHT * anchor_quality
             )
         else:
             pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio

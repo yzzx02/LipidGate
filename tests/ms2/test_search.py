@@ -282,9 +282,9 @@ class SearchSelectionTests(unittest.TestCase):
             polarity="-",
             peaks=normalize_peaks([
                 (120.0, 1000.0),
-                (255.2329, 5.0),
-                (281.2486, 5.0),
-                (196.0380, 5.0),
+                (255.2329, 2.0),
+                (281.2486, 2.0),
+                (196.0380, 2.0),
             ]),
         )
         searcher = self._build_memory_searcher([record], use_fragment_index=False)
