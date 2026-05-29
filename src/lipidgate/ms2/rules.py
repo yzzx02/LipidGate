@@ -16,13 +16,8 @@ class ScoreProfile:
         default_factory=lambda: {"fah": 60.0, "hg": 20.0, "other": 20.0}
     )
     metric_weights: Dict[str, float] = field(
-        default_factory=lambda: {"count": 0.20, "intensity": 0.70, "weight": 0.10}
+        default_factory=lambda: {"coverage": 0.35, "intensity": 0.65}
     )
-    key_intensity_full_score_relative_intensity: float = 0.10
-    key_intensity_min_multiplier: float = 0.25
-    key_intensity_top_fraction: float = 0.50
-    key_intensity_top_fraction_weight: float = 0.75
-    missing_group_penalty_multiplier: float = 0.15
     single_group_fallback_min_matches: int = 2
     single_group_fallback_min_relative_intensity_sum: float = 0.5
 
@@ -116,6 +111,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=default_profile,
         )
+    mg_profile = ScoreProfile(pool_weights={"fah": 0.0, "hg": 75.0, "other": 25.0})
     for lipid_class in {"BA", "BASulfate", "SSulfate", "MG", "NAT"}:
         by_class[lipid_class] = ClassRule(
             lipid_class=lipid_class,
@@ -126,7 +122,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             positive_hg_complete_can_resolve_chain=lipid_class == "MG",
             allow_loss_only_if_no_fah=False,
             require_loss_with_fah_only=False,
-            score_profile=default_profile,
+            score_profile=mg_profile if lipid_class == "MG" else default_profile,
         )
     by_class["VD"] = ClassRule(
         lipid_class="VD",

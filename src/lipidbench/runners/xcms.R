@@ -7,13 +7,13 @@ option_list <- list(
   make_option(c("-d", "--dir"), type = "character", help = "mzML 文件夹路径"),
   make_option(c("-o", "--output"), type = "character", help = "输出文件路径"),
   make_option(c("--polarity"), type = "character", default = "positive"),
-  make_option(c("--mz_tol"), type = "numeric", default = 15),
-  make_option(c("--minwidth"), type = "numeric", default = 10),
+  make_option(c("--mz_tol"), type = "numeric", default = 10),
+  make_option(c("--minwidth"), type = "numeric", default = 5),
   make_option(c("--maxwidth"), type = "numeric", default = 60),
   make_option(c("--noise"), type = "numeric", default = 1000),
-  make_option(c("--sn"), type = "numeric", default = 10),
+  make_option(c("--sn"), type = "numeric", default = 3),
   make_option(c("--prefilter"), type = "numeric", default = 3),
-  make_option(c("--frac"), type = "numeric", default = 0.5),
+  make_option(c("--frac"), type = "numeric", default = 0.2),
     make_option(c("--mzdiff"), type = "numeric", default = 0.001),
     make_option(c("--min_maxo"), type = "numeric", default = NA)
 )

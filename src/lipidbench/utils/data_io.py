@@ -193,10 +193,30 @@ def load_pyopenms_results(
     needs_rt_bounds = force_recompute_bounds or ("RTmin" not in df.columns or "RTmax" not in df.columns)
     needs_mz_bounds = force_recompute_bounds or ("mzmin" not in df.columns or "mzmax" not in df.columns)
 
+    if needs_rt_bounds and not has_rt_bounds and "RT" in df.columns:
+        rt_numeric = pd.to_numeric(df["RT"], errors="coerce")
+        if rt_in_seconds is False:
+            rt_numeric = rt_numeric * rt_to_seconds_factor
+        half_width_sec = max(float(min_fwhm or 0.0), 0.0) / 2.0
+        df["RTstart"] = rt_numeric - half_width_sec
+        df["RTend"] = rt_numeric + half_width_sec
+        df["RTmin"] = rt_numeric - half_width_sec
+        df["RTmax"] = rt_numeric + half_width_sec
+        has_rt_bounds = True
+
+    if needs_mz_bounds and not has_mz_bounds and "mz" in df.columns:
+        mz_numeric = pd.to_numeric(df["mz"], errors="coerce")
+        mz_window = mz_numeric.abs() * float(mz_tol or 0.0) * 1e-6
+        df["MZstart"] = mz_numeric - mz_window
+        df["MZend"] = mz_numeric + mz_window
+        df["mzmin"] = mz_numeric - mz_window
+        df["mzmax"] = mz_numeric + mz_window
+        has_mz_bounds = True
+
     if needs_rt_bounds and not has_rt_bounds:
-        raise ValueError("pyOpenMS CSV missing RTstart/RTend")
+        raise ValueError("pyOpenMS CSV missing RT/RTstart/RTend")
     if needs_mz_bounds and not has_mz_bounds:
-        raise ValueError("pyOpenMS CSV missing MZstart/MZend")
+        raise ValueError("pyOpenMS CSV missing mz/MZstart/MZend")
 
     if has_rt_bounds and needs_rt_bounds:
         valid_rt = df["RTstart"].notna() & df["RTend"].notna() & (df["RTstart"] <= df["RTend"])

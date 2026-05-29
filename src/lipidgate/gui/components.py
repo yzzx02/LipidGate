@@ -45,9 +45,13 @@ class TablePanel(QtWidgets.QWidget):
         self.table = QtWidgets.QTableView()
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
+        self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.table.verticalHeader().setDefaultSectionSize(22)
         self.table.horizontalHeader().setDefaultSectionSize(140)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setStretchLastSection(False)
         self.model = PandasTableModel(pd.DataFrame())
         self.table.setModel(self.model)
 
@@ -90,6 +94,9 @@ class LogPanel(QtWidgets.QWidget):
 def tool_button(text: str, slot: Callable[[], None], tooltip: str = "") -> QtWidgets.QToolButton:
     button = QtWidgets.QToolButton()
     button.setText(text)
+    button.setMinimumHeight(32)
+    button.setFixedWidth(72)
+    button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
     if tooltip:
         button.setToolTip(tooltip)
     button.clicked.connect(slot)
@@ -104,6 +111,7 @@ def path_row(
     layout = QtWidgets.QHBoxLayout(widget)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(6)
+    edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
     layout.addWidget(edit, 1)
     for text, slot, tooltip in buttons:
         layout.addWidget(tool_button(text, slot, tooltip))

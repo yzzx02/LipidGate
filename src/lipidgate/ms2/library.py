@@ -407,27 +407,38 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
     fragments: List[FragmentRecord] = []
     next_id = 0
     reading_peaks = False
+
+    def flush_current() -> None:
+        nonlocal current, fragments, next_id, reading_peaks
+        if not current:
+            return
+        if "precursormz" not in current:
+            current = {}
+            fragments = []
+            reading_peaks = False
+            return
+        records.append(
+            LibraryRecord(
+                record_id=next_id,
+                compound_class=current.get("compoundclass", ""),
+                lipid_name=current.get("ms1_name", current.get("name", "")),
+                lipid_chain_name=current.get("name", ""),
+                precursor_mz=float(current["precursormz"]),
+                adduct=current.get("precursortype", ""),
+                formula=current.get("formula", ""),
+                polarity=current.get("polarity", "-"),
+                fragments=list(sorted(fragments, key=lambda fragment: fragment.mz)),
+            )
+        )
+        next_id += 1
+        current = {}
+        fragments = []
+        reading_peaks = False
+
     for raw_line in msp_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
-            if current:
-                records.append(
-                    LibraryRecord(
-                        record_id=next_id,
-                        compound_class=current.get("compoundclass", ""),
-                        lipid_name=current.get("ms1_name", current.get("name", "")),
-                        lipid_chain_name=current.get("name", ""),
-                        precursor_mz=float(current["precursormz"]),
-                        adduct=current.get("precursortype", ""),
-                        formula=current.get("formula", ""),
-                        polarity=current.get("polarity", "-"),
-                        fragments=list(sorted(fragments, key=lambda fragment: fragment.mz)),
-                    )
-                )
-                next_id += 1
-                current = {}
-                fragments = []
-                reading_peaks = False
+            flush_current()
             continue
         if ":" in line and not reading_peaks:
             key, value = line.split(":", 1)
@@ -441,7 +452,22 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
                 reading_peaks = True
             continue
         if reading_peaks:
-            parsed_fragment = _parse_fragment_payload(line)
+            try:
+                parsed_fragment = _parse_fragment_payload(line)
+            except ValueError:
+                if ":" in line:
+                    flush_current()
+                    key, value = line.split(":", 1)
+                    normalized_key = key.strip().lower()
+                    value = value.strip()
+                    if normalized_key == "comment":
+                        current.update(_decode_record_comment(value))
+                    else:
+                        current[normalized_key] = value
+                    if normalized_key == "num peaks":
+                        reading_peaks = True
+                    continue
+                continue
             if parsed_fragment is None:
                 continue
             mz, intensity, payload = parsed_fragment
@@ -466,20 +492,7 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
                     weight=float(payload.get("weight", 1.0)),
                 )
             )
-    if current:
-        records.append(
-            LibraryRecord(
-                record_id=next_id,
-                compound_class=current.get("compoundclass", ""),
-                lipid_name=current.get("ms1_name", current.get("name", "")),
-                lipid_chain_name=current.get("name", ""),
-                precursor_mz=float(current["precursormz"]),
-                adduct=current.get("precursortype", ""),
-                formula=current.get("formula", ""),
-                polarity=current.get("polarity", "-"),
-                fragments=list(sorted(fragments, key=lambda fragment: fragment.mz)),
-            )
-        )
+    flush_current()
     return records
 
 
