@@ -43,6 +43,12 @@ def test_gui_main_window_instantiates() -> None:
         assert window.ms2_page.tolerance_unit.currentData() == "ppm"
         assert window.ms2_page.ms1_tolerance.value() == 10.0
         assert window.ms2_page.msms_tolerance.value() == 10.0
+        assert window.ms2_page.ms2_peak_filter_percent.value() == 0.50
+        assert window.ms2_page.map_to_features.isChecked()
+        assert window.ms2_page.feature_table.text() == ""
+        assert window.feature_page.ms1_noise.value() == 1000.0
+        assert window.feature_page.ms1_min_fwhm.value() == 5.0
+        assert window.feature_page.ms1_min_fraction.value() == 0.20
         window.ms2_page.mode.setCurrentIndex(positive_index)
         assert window.ms2_page._mode_value() == "positive"
         assert "MS1 和 MS/MS tolerance 均使用 ppm" in window.ms2_page.mode_hint.text()

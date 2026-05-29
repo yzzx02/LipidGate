@@ -12,15 +12,16 @@ def extract_xcms_params(config):
 
     polarity = xcms_params.get("polarity", "positive")
     mz_tol = peak_picking.get("ppm", common_params.get("mz_tolerance_ppm", 10))
-    peakwidth = peak_picking.get("peakwidth", [5, 50])
+    peakwidth = peak_picking.get("peakwidth", [5, 60])
     if len(peakwidth) != 2:
-        peakwidth = [5, 50]
+        peakwidth = [5, 60]
     minwidth, maxwidth = peakwidth
     noise = peak_picking.get("noise", 1000)
     sn = peak_picking.get("snthresh", 3)
     prefilter = peak_picking.get("prefilter_val", 3)
     mzdiff = peak_picking.get("mzdiff", 0.001)
     min_maxo = peak_picking.get("min_maxo", None)
+    frac = peak_picking.get("minFraction", peak_picking.get("frac", 0.2))
 
     return {
         "polarity": polarity,
@@ -32,10 +33,24 @@ def extract_xcms_params(config):
         "sn": sn,
         "prefilter": prefilter,
         "min_maxo": min_maxo,
+        "frac": frac,
     }
 
 
-def run_xcms(input_dir, output_file, polarity, mz_tol, minwidth, maxwidth, noise=1000, sn=3, prefilter=3, mzdiff=0.001, min_maxo=None):
+def run_xcms(
+    input_dir,
+    output_file,
+    polarity,
+    mz_tol,
+    minwidth,
+    maxwidth,
+    noise=1000,
+    sn=3,
+    prefilter=3,
+    mzdiff=0.001,
+    min_maxo=None,
+    frac=0.2,
+):
     r_script_path = os.path.join(os.path.dirname(__file__), "xcms.R")
     cmd = [
         "Rscript", str(r_script_path),
@@ -49,6 +64,7 @@ def run_xcms(input_dir, output_file, polarity, mz_tol, minwidth, maxwidth, noise
         "--sn", str(sn),
         "--prefilter", str(prefilter),
         "--mzdiff", str(mzdiff),
+        "--frac", str(frac),
     ]
     if min_maxo is not None:
         cmd.extend(["--min_maxo", str(min_maxo)])
