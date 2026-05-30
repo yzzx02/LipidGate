@@ -344,6 +344,50 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertEqual([row["compound_class"] for row in fa_only_rows], ["FA"])
         self.assertGreaterEqual(rows[1]["final_score"], 99.0)
 
+    def test_low_confidence_hg_only_is_suppressed_when_chain_candidate_passes(self) -> None:
+        chain_record = LibraryRecord(
+            record_id=70,
+            compound_class="PC",
+            lipid_name="PC(34:1)",
+            lipid_chain_name="PC(16:0_18:1)",
+            precursor_mz=760.585,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(577.5194, "[M-(ROOH)+H]+(16:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(603.5351, "[M-(R=O)+H]+(18:1)", "Diagnostic_FA_Loss"),
+            ],
+        )
+        hg_only_record = LibraryRecord(
+            record_id=71,
+            compound_class="PC-P",
+            lipid_name="PC(P-34:1)",
+            lipid_chain_name="PC(P-16:0/18:1)",
+            precursor_mz=760.585,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(500.3000, "[M-(ROOH)+H]+(18:1)", "Diagnostic_FA_Loss"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pc_chain_and_hg_only",
+            precursor_mz=760.585,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (184.0733, 1000.0),
+                (577.5194, 120.0),
+            ]),
+        )
+        searcher = self._build_memory_searcher([chain_record, hg_only_record], use_fragment_index=False)
+        searcher.min_total_score = 45.0
+
+        rows = searcher.score_spectrum(spectrum, top_n=5)
+
+        self.assertEqual([row["matched_name"] for row in rows], ["PC(16:0_18:1)"])
+        self.assertEqual(rows[0]["resolution_level"], "chain_level")
+
     def test_secondary_result_requires_hg_for_pe_o(self) -> None:
         result = build_candidate(
             5,

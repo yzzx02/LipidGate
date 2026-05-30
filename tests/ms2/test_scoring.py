@@ -347,6 +347,38 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertLess(result.total_score, 50.0)
 
+    def test_positive_glyceride_precursor_dominance_does_not_penalize_visible_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=81,
+            compound_class="DG",
+            lipid_name="DG(37:6)",
+            lipid_chain_name="DG(15:0_22:6)",
+            precursor_mz=644.5249,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(311.2369, "(R=O)+(22:6)", "FA_Frag"),
+                FragmentRecord(385.2737, "[M-NH3-(ROOH)+NH4]+(15:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(644.5249, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_precursor_dominant_dg",
+            precursor_mz=644.5249,
+            rt_minutes=12.34,
+            polarity="+",
+            peaks=normalize_peaks([
+                (311.2369, 450.0),
+                (385.2737, 650.0),
+                (644.5249, 33000.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("DG"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertGreater(result.total_score, 50.0)
+
     def test_positive_mg_only_dehydration_fragment_counts_as_hg(self) -> None:
         record = LibraryRecord(
             record_id=76,
@@ -524,6 +556,71 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
         self.assertEqual(result.resolution_level, "species_level")
+
+    def test_strong_fah_pool_can_pass_missing_hg_as_low_confidence(self) -> None:
+        record = LibraryRecord(
+            record_id=67,
+            compound_class="PE",
+            lipid_name="PE(34:1)",
+            lipid_chain_name="PE(16:0_18:1)",
+            precursor_mz=718.5390,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA"),
+                FragmentRecord(142.0266, "[C2H8NO4P+H]+", "Diagnostic_HG"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_pe_fah_only",
+            precursor_mz=718.5390,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (281.2486, 850.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PE"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "tentative_chain_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_fah_only")
+        self.assertGreaterEqual(result.pool_scores["fah"].pool_score, 20.0)
+
+    def test_weak_fah_pool_does_not_pass_missing_hg_as_low_confidence(self) -> None:
+        record = LibraryRecord(
+            record_id=68,
+            compound_class="PE",
+            lipid_name="PE(34:1)",
+            lipid_chain_name="PE(16:0_18:1)",
+            precursor_mz=718.5390,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA"),
+                FragmentRecord(142.0266, "[C2H8NO4P+H]+", "Diagnostic_HG"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_pe_weak_fah",
+            precursor_mz=718.5390,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (100.0, 1000.0),
+                (255.2329, 20.0),
+                (281.2486, 15.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PE"))
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, ["hg"])
+        self.assertEqual(result.downgrade_reason, "missing_required_hg")
 
     def test_vitamin_d_requires_both_dehydration_fragments(self) -> None:
         record = LibraryRecord(
@@ -1245,8 +1342,69 @@ class ScoringTests(unittest.TestCase):
         rule = DEFAULT_RULES.get("PC")
         result = score_candidate(spectrum, positive_record, rule)
         self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.resolution_level, "species_level")
-        self.assertEqual(result.downgrade_reason, "missing_chain_level_information")
+        self.assertEqual(result.resolution_level, "tentative_species_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_hg_only")
+
+    def test_positive_phospholipid_hg_only_requires_ten_percent_hg(self) -> None:
+        positive_record = LibraryRecord(
+            record_id=82,
+            compound_class="PC",
+            lipid_name="PC(34:1)",
+            lipid_chain_name="PC(16:0_18:1)",
+            precursor_mz=760.585,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(577.5194, "[M+H]-sn1", "Diagnostic_FA_Loss", required_group="fah"),
+                FragmentRecord(742.5744, "[M-H2O+H]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pc_weak_hg_only",
+            precursor_mz=760.585,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (184.0733, 90.0),
+                (742.5744, 1000.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, positive_record, DEFAULT_RULES.get("PC"))
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, ["hg"])
+        self.assertEqual(result.downgrade_reason, "missing_required_hg")
+
+    def test_positive_phospholipid_hg_pool_weight_dominates_fah_pool(self) -> None:
+        positive_record = LibraryRecord(
+            record_id=83,
+            compound_class="PC-P",
+            lipid_name="PC(P-34:1)",
+            lipid_chain_name="PC(P-16:0/18:1)",
+            precursor_mz=760.585,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(577.5194, "[M-(ROOH)+H]+(18:1)", "Diagnostic_FA_Loss", required_group="fah"),
+                FragmentRecord(603.5351, "[M-(R=O)+H]+(18:1)", "Diagnostic_FA_Loss", required_group="fah"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pc_p_hg_only",
+            precursor_mz=760.585,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(184.0733, 1000.0)]),
+        )
+
+        result = score_candidate(spectrum, positive_record, DEFAULT_RULES.get("PC-P"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "tentative_species_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_hg_only")
+        self.assertGreaterEqual(result.pool_scores["hg"].pool_score, 70.0)
+        self.assertEqual(result.pool_scores["fah"].pool_score, 0.0)
 
     def test_positive_pi_fa_frag_counts_as_diagnostic_fa_loss(self) -> None:
         positive_record = LibraryRecord(
@@ -1439,11 +1597,11 @@ class ScoringTests(unittest.TestCase):
         diagnostic_result = score_candidate(diagnostic_loss, pc_o_record, DEFAULT_RULES.get("PC-O"))
 
         self.assertTrue(neutral_result.passed_required_gates)
-        self.assertEqual(neutral_result.resolution_level, "species_level")
-        self.assertEqual(neutral_result.downgrade_reason, "missing_chain_level_information")
+        self.assertEqual(neutral_result.resolution_level, "tentative_species_level")
+        self.assertEqual(neutral_result.downgrade_reason, "low_confidence_hg_only")
         self.assertTrue(diagnostic_result.passed_required_gates)
         self.assertEqual(diagnostic_result.resolution_level, "chain_level")
-        self.assertGreater(diagnostic_result.total_score, neutral_result.total_score)
+        self.assertEqual(diagnostic_result.downgrade_reason, "")
 
     def test_positive_species_fallback_score_keeps_resolution_as_output_only(self) -> None:
         pc_p_record = LibraryRecord(
@@ -1497,12 +1655,12 @@ class ScoringTests(unittest.TestCase):
         pc_p_result = score_candidate(spectrum, pc_p_record, DEFAULT_RULES.get("PC-P"))
         lpc_result = score_candidate(spectrum, lpc_record, DEFAULT_RULES.get("LPC"))
         self.assertTrue(pc_p_result.passed_required_gates)
-        self.assertEqual(pc_p_result.resolution_level, "species_level")
-        self.assertEqual(pc_p_result.downgrade_reason, "missing_chain_level_information")
+        self.assertEqual(pc_p_result.resolution_level, "tentative_species_level")
+        self.assertEqual(pc_p_result.downgrade_reason, "low_confidence_hg_only")
         self.assertTrue(lpc_result.passed_required_gates)
         self.assertEqual(lpc_result.resolution_level, "species_level")
         self.assertEqual(lpc_result.downgrade_reason, "lyso_hg_only_fallback")
-        self.assertGreater(lpc_result.total_score, pc_p_result.total_score)
+        self.assertGreater(pc_p_result.pool_scores["hg"].pool_score, pc_p_result.pool_scores["fah"].pool_score)
 
     def test_positive_single_chain_lyso_hg_only_is_species_level(self) -> None:
         lpc_record = LibraryRecord(

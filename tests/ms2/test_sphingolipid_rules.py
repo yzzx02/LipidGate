@@ -44,6 +44,139 @@ class SphingolipidRuleTests(unittest.TestCase):
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertLessEqual(result.total_score, 100.0)
 
+    def test_cer_key_fragments_score_as_chain_evidence_after_gate_passes(self) -> None:
+        record = LibraryRecord(
+            record_id=10,
+            compound_class="Cer",
+            lipid_name="Cer(d30:0)",
+            lipid_chain_name="Cer(d14:0/16:0)",
+            precursor_mz=484.4724,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(484.4724, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(466.4619, "M+H-H2O", "C类碎片"),
+                FragmentRecord(228.2322, "LCB-H2O", "LCB碎片"),
+                FragmentRecord(210.2216, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(198.2216, "LCB-CH2O-H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(466.4619, 200.0), (228.2322, 100.0), (210.2216, 100.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertGreaterEqual(result.total_score, 50.0)
+        self.assertGreaterEqual(result.pool_scores["fah"].pool_score, result.pool_scores["other"].pool_score)
+        self.assertEqual(result.pool_scores["fah"].matched_count, 2)
+        self.assertEqual(result.pool_scores["other"].matched_count, 1)
+
+    def test_ceramide_fragment_u_counts_as_lcb_rule_evidence(self) -> None:
+        record = LibraryRecord(
+            record_id=11,
+            compound_class="Cer",
+            lipid_name="Cer(m30:1)",
+            lipid_chain_name="Cer(m14:1/16:0)",
+            precursor_mz=484.4724,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(484.4724, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(466.4619, "M+H-H2O", "C类碎片"),
+                FragmentRecord(250.2529, "Ceramide fragment U", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(466.4619, 1000.0), (250.2529, 700.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "chain_level")
+
+    def test_fah_only_low_confidence_gate_passes_for_strong_cer_backbone_series(self) -> None:
+        record = LibraryRecord(
+            record_id=12,
+            compound_class="Cer",
+            lipid_name="Cer(d42:1)",
+            lipid_chain_name="Cer(d18:1/24:0)",
+            precursor_mz=650.6422,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(650.6422, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(632.6316, "M+H-H2O", "C类碎片"),
+                FragmentRecord(252.2686, "LCB-CH2O-H2O", "LCB碎片"),
+                FragmentRecord(264.2686, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(282.2791, "LCB-H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(252.2686, 140.0), (264.2686, 1000.0), (282.2791, 160.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "tentative_chain_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_fah_only")
+        self.assertGreaterEqual(result.total_score, 50.0)
+
+    def test_fah_only_low_confidence_gate_rejects_weak_backbone_evidence(self) -> None:
+        record = LibraryRecord(
+            record_id=13,
+            compound_class="Cer",
+            lipid_name="Cer(d42:1)",
+            lipid_chain_name="Cer(d18:1/24:0)",
+            precursor_mz=650.6422,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(650.6422, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(632.6316, "M+H-H2O", "C类碎片"),
+                FragmentRecord(252.2686, "LCB-CH2O-H2O", "LCB碎片"),
+                FragmentRecord(264.2686, "LCB-2H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(100.0, 1000.0), (252.2686, 20.0), (264.2686, 15.0)])
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.downgrade_reason, "sphingo_rule_failed")
+
+    def test_spb_can_pass_with_precursor_and_diagnostic_without_series_loss(self) -> None:
+        record = LibraryRecord(
+            record_id=14,
+            compound_class="SPB",
+            lipid_name="SPB(m17:1)",
+            lipid_chain_name="SPB(m17:1)",
+            precursor_mz=270.2584,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(270.2584, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(252.2478, "M+H-H2O", "C类碎片"),
+                FragmentRecord(82.0651, "SPB-Diagnostic-1", "LCB碎片"),
+                FragmentRecord(264.2686, "SPB-Diagnostic-2", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(270.2584, 1000.0), (82.0651, 220.0), (264.2686, 180.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "chain_level")
+        self.assertEqual(result.downgrade_reason, "")
+
+    def test_fah_only_low_confidence_gate_does_not_relax_asm_headgroup_requirement(self) -> None:
+        record = LibraryRecord(
+            record_id=15,
+            compound_class="ASM",
+            lipid_name="ASM(d18:1/16:0)",
+            lipid_chain_name="ASM(d18:1/16:0)",
+            precursor_mz=703.5752,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(447.3474, "M+H-ROOH(head-acyl)", "Diagnostic_FA_Loss"),
+                FragmentRecord(264.2686, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(282.2791, "LCB-H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(264.2686, 1000.0), (282.2791, 900.0)])
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.downgrade_reason, "sphingo_rule_failed")
+
     def test_cer_fails_without_lcb_evidence(self) -> None:
         record = LibraryRecord(
             record_id=2,
@@ -102,7 +235,54 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
 
-    def test_spb_requires_structural_loss_and_diagnostic_evidence(self) -> None:
+    def test_hexcer_headgroup_only_can_pass_as_tentative_species(self) -> None:
+        record = LibraryRecord(
+            record_id=40,
+            compound_class="HexCer",
+            lipid_name="HexCer(t42:3)",
+            lipid_chain_name="HexCer(t26:0/16:3)",
+            precursor_mz=824.6610,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(626.5871, "M+H-C6H10O5-2H2O", "Diagnostic_HG"),
+                FragmentRecord(644.5976, "M+H-C6H10O5-H2O", "Diagnostic_HG"),
+                FragmentRecord(662.6082, "M+H-C6H10O5", "Diagnostic_HG"),
+                FragmentRecord(806.6504, "M+H-H2O", "C类碎片"),
+                FragmentRecord(824.6610, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(394.4043, "LCB-2H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(626.5871, 200.0), (644.5976, 600.0), (806.6504, 1000.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "tentative_species_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_hg_only")
+
+    def test_hexcer_headgroup_only_rejects_hg_below_ten_percent(self) -> None:
+        record = LibraryRecord(
+            record_id=41,
+            compound_class="HexCer",
+            lipid_name="HexCer(t42:3)",
+            lipid_chain_name="HexCer(t26:0/16:3)",
+            precursor_mz=824.6610,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(626.5871, "M+H-C6H10O5-2H2O", "Diagnostic_HG"),
+                FragmentRecord(644.5976, "M+H-C6H10O5-H2O", "Diagnostic_HG"),
+                FragmentRecord(662.6082, "M+H-C6H10O5", "Diagnostic_HG"),
+                FragmentRecord(806.6504, "M+H-H2O", "C类碎片"),
+                FragmentRecord(824.6610, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(394.4043, "LCB-2H2O", "LCB碎片"),
+            ],
+        )
+
+        result = _score(record, [(626.5871, 90.0), (644.5976, 80.0), (806.6504, 1000.0)])
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.downgrade_reason, "sphingo_rule_failed")
+
+    def test_spb_can_pass_with_structural_loss_without_diagnostic_evidence(self) -> None:
         record = LibraryRecord(
             record_id=5,
             compound_class="SPB",
@@ -117,9 +297,27 @@ class SphingolipidRuleTests(unittest.TestCase):
             ],
         )
 
-        result = _score(record, [(228.2322, 1000.0), (81.0699, 600.0)])
+        result = _score(record, [(246.2428, 900.0), (228.2322, 1000.0)])
 
         self.assertTrue(result.passed_required_gates)
+
+    def test_spb_rejects_precursor_only(self) -> None:
+        record = LibraryRecord(
+            record_id=51,
+            compound_class="SPB",
+            lipid_name="SPB(m18:1)",
+            lipid_chain_name="SPB(m18:1)",
+            precursor_mz=284.2948,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(284.2948, "[M+H]+", "Precursor Ion"),
+                FragmentRecord(266.2842, "M+H-H2O", "C类碎片"),
+            ],
+        )
+
+        result = _score(record, [(284.2948, 1000.0)])
+
+        self.assertFalse(result.passed_required_gates)
 
     def test_phytosphingosine_uses_spb_structural_rule(self) -> None:
         record = LibraryRecord(

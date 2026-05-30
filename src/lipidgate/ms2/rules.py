@@ -60,7 +60,7 @@ class RuleSet:
 
 def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
     classes = list(classes or [
-        "PC", "PE", "PG", "PI", "PS",
+        "PC", "PC-P", "PE", "PG", "PI", "PS",
         "LPC", "LPE", "LPG", "LPI", "LPS",
         "PC-O", "PE-O", "PI-O", "PS-O",
         "LPC-O", "LPE-O", "LPG-O", "LPI-O", "Ether-LPG", "Ether-PG",

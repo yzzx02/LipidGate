@@ -12,8 +12,12 @@ from .library import load_library
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
 from .rules import DEFAULT_RULES, RuleSet
 from .scoring import (
+    FAH_ONLY_FALLBACK_REASON,
+    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as SCORING_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
+    HG_ONLY_FALLBACK_REASON as SCORING_HG_ONLY_FALLBACK_REASON,
     _calculate_pool_scores,
     _empty_pool_scores,
+    _fah_only_low_confidence_gate_passes,
     _fragment_counts_as_effective_loss,
     _matched_fah_tokens,
     _record_fa_loss_fragment_count,
@@ -40,7 +44,25 @@ class LipidMS2Searcher:
     RANK_PPM_FULL_SCORE = 10.0
     DEFAULT_MIN_TOTAL_SCORE = 50.0
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
+    SPHINGO_HG_ONLY_FALLBACK_CLASSES = {
+        "HEXCER",
+        "AHEXCER",
+        "AHEXCERO",
+        "LACCER",
+        "HEX2CER",
+        "HEX3CER",
+        "SHEXCER",
+        "SHEXCERO",
+        "SM",
+        "LSM",
+        "CER1P",
+        "CERP",
+    }
     TENTATIVE_MISSING_HG_RANK_SCORE_CAP = 0.35
+    HG_ONLY_FALLBACK_REASON = SCORING_HG_ONLY_FALLBACK_REASON
+    HG_ONLY_FALLBACK_MIN_TOTAL_SCORE = 30.0
+    HG_ONLY_FALLBACK_MIN_HG_SCORE = 8.0
+    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = SCORING_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
 
     def __init__(
         self,
@@ -201,12 +223,52 @@ class LipidMS2Searcher:
             if "LCB碎片" in library_types and "LCB碎片" not in matched_types:
                 type_gate_passed = False
 
-        passed = name_gate_passed and type_gate_passed
         matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
         matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
         rules = getattr(self, "rules", DEFAULT_RULES)
         pool_scores = _calculate_pool_scores(matches, record, rules.get(record.compound_class))
         total_score = _total_score_from_pool_scores(pool_scores)
+        standard_gate_passed = name_gate_passed and type_gate_passed
+        has_library_hg_or_structural = bool(library_types & {"Diagnostic_HG", "C类碎片"})
+        matched_hg_or_structural = bool(matched_types & {"Diagnostic_HG", "C类碎片"})
+        hg_only_low_confidence_gate = (
+            not standard_gate_passed
+            and self._normal_class_key(record.compound_class) in self.SPHINGO_HG_ONLY_FALLBACK_CLASSES
+            and "Diagnostic_HG" in library_types
+            and "Diagnostic_HG" in matched_types
+            and "LCB碎片" not in matched_types
+            and len(matches) >= 2
+            and pool_scores["hg"].pool_score >= self.HG_ONLY_FALLBACK_MIN_HG_SCORE
+            and any(
+                match.fragment.fragment_type == "Diagnostic_HG"
+                and match.experimental_peak.relative_intensity >= self.HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
+                for match in matches
+            )
+        )
+        fah_only_low_confidence_gate = (
+            not standard_gate_passed
+            and has_library_hg_or_structural
+            and not matched_hg_or_structural
+            and _fah_only_low_confidence_gate_passes(
+                record,
+                pool_scores,
+                missing_groups=["sphingo_rule"],
+                has_hg_or_structural_pool=has_library_hg_or_structural,
+            )
+        )
+        passed = standard_gate_passed or fah_only_low_confidence_gate or hg_only_low_confidence_gate
+        if standard_gate_passed:
+            resolution_level = "chain_level"
+            downgrade_reason = ""
+        elif fah_only_low_confidence_gate:
+            resolution_level = "tentative_chain_level"
+            downgrade_reason = FAH_ONLY_FALLBACK_REASON
+        elif hg_only_low_confidence_gate:
+            resolution_level = "tentative_species_level"
+            downgrade_reason = self.HG_ONLY_FALLBACK_REASON
+        else:
+            resolution_level = "class_level"
+            downgrade_reason = "sphingo_rule_failed"
 
         return CandidateScore(
             record=record,
@@ -214,12 +276,12 @@ class LipidMS2Searcher:
             passed_required_gates=passed,
             missing_required_groups=[] if passed else ["sphingo_rule"],
             ppm_error=ppm_error,
-            resolution_level="chain_level" if passed else "class_level",
+            resolution_level=resolution_level,
             matched_fragments=list(matches),
             pool_scores=pool_scores,
             matched_intensity_sum=matched_intensity_sum,
             matched_relative_intensity_sum=matched_relative_intensity_sum,
-            downgrade_reason="" if passed else "sphingo_rule_failed",
+            downgrade_reason=downgrade_reason,
         )
 
     def find_candidates(self, precursor_mz: float) -> List[LibraryRecord]:
@@ -366,11 +428,26 @@ class LipidMS2Searcher:
     def _is_fa_result(cls, result: CandidateScore) -> bool:
         return cls._normal_class_key(result.record.compound_class) == "FA"
 
+    @staticmethod
+    def _is_chain_info_result(result: CandidateScore) -> bool:
+        return result.resolution_level in {"chain_level", "tentative_chain_level"}
+
+    def _is_low_confidence_hg_only_result(self, result: CandidateScore) -> bool:
+        return (
+            result.resolution_level == "tentative_species_level"
+            and result.downgrade_reason == self.HG_ONLY_FALLBACK_REASON
+        )
+
     def _passes_min_total_score(self, result: CandidateScore) -> bool:
         min_total_score = max(
             0.0,
             float(getattr(self, "min_total_score", self.DEFAULT_MIN_TOTAL_SCORE)),
         )
+        if (
+            result.resolution_level == "tentative_species_level"
+            and result.downgrade_reason == self.HG_ONLY_FALLBACK_REASON
+        ):
+            min_total_score = min(min_total_score, self.HG_ONLY_FALLBACK_MIN_TOTAL_SCORE)
         return result.total_score >= min_total_score
 
     @staticmethod
@@ -422,14 +499,28 @@ class LipidMS2Searcher:
     def _compute_rank_metrics(cls, passed_results) -> Dict[int, Dict[str, float]]:
         if not passed_results:
             return {}
-        max_raw_score = max((max(item.total_score, 0.0) for item in passed_results), default=0.0)
+        strict_raw_scores = [
+            max(item.total_score, 0.0)
+            for item in passed_results
+            if not str(item.resolution_level).startswith("tentative_")
+        ]
+        raw_scores = strict_raw_scores or [max(item.total_score, 0.0) for item in passed_results]
+        max_raw_score = max(raw_scores, default=0.0)
         if max_raw_score <= 0.0:
             max_raw_score = 1.0
         metrics: Dict[int, Dict[str, float]] = {}
         for item in passed_results:
-            normalized_match_score = max(item.total_score, 0.0) / max_raw_score
+            if str(item.resolution_level).startswith("tentative_"):
+                normalized_match_score = max(
+                    0.0,
+                    min(item.total_score / 100.0, cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP),
+                )
+            else:
+                normalized_match_score = max(item.total_score, 0.0) / max_raw_score
             ppm_score = max(0.0, 1.0 - min(abs(item.ppm_error), cls.RANK_PPM_FULL_SCORE) / cls.RANK_PPM_FULL_SCORE)
             rank_score = cls.RANK_WEIGHT_MATCH * normalized_match_score + cls.RANK_WEIGHT_PPM * ppm_score
+            if str(item.resolution_level).startswith("tentative_"):
+                rank_score = min(cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP, rank_score)
             metrics[id(item)] = {
                 "normalized_match_score": normalized_match_score,
                 "ppm_score": ppm_score,
@@ -520,6 +611,12 @@ class LipidMS2Searcher:
         if passed_results:
             fa_results = [item for item in passed_results if self._is_fa_result(item)]
             main_results = [item for item in passed_results if not self._is_fa_result(item)]
+            if any(self._is_chain_info_result(item) for item in main_results):
+                main_results = [
+                    item
+                    for item in main_results
+                    if not self._is_low_confidence_hg_only_result(item)
+                ]
             if main_results:
                 main_metrics = self._compute_rank_metrics(main_results)
                 self._sort_by_rank_metrics(main_results, main_metrics)
@@ -560,7 +657,11 @@ class LipidMS2Searcher:
                 if result.resolution_level in {"chain_level", "tentative_chain_level"}
                 else result.record.lipid_name
             )
-            evidence_status = "tentative_missing_hg" if result.resolution_level == "tentative_chain_level" else "strict"
+            evidence_status = (
+                result.downgrade_reason or "tentative"
+                if str(result.resolution_level).startswith("tentative_")
+                else "strict"
+            )
             rows.append(
                 {
                     "scan_id": spectrum.scan_id,

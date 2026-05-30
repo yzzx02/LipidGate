@@ -101,9 +101,17 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
             {"[M+H]+", "M+H-H2O", "M+H-2H2O", "M+H-CH2O-H2O", "M+H-3H2O", "M+H-CH2O-3H2O"},
         ],
         required_any_by_series={
-            "m": {"LCB", "LCB-H2O"},
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-CH2O-H2O"},
-            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O", "LCB-C1H4O2", "LCB-C1H6O3"},
+            "m": {"LCB", "LCB-H2O", "Ceramide fragment U"},
+            "d": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-CH2O-H2O", "Ceramide fragment U"},
+            "t": {
+                "LCB",
+                "LCB-H2O",
+                "LCB-2H2O",
+                "LCB-3H2O",
+                "LCB-C1H4O2",
+                "LCB-C1H6O3",
+                "Ceramide fragment U",
+            },
         },
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片"},
@@ -259,8 +267,8 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
             },
         ],
         required_any_by_series={
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-CH4O2"},
-            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O", "LCB-CH6O3"},
+            "d": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-CH4O2", "Ceramide fragment U"},
+            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O", "LCB-CH6O3", "Ceramide fragment U"},
         },
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片", "Diagnostic_HG"},
@@ -499,17 +507,24 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         lipid_class="SPB",
         adduct="[M+H]+",
         required_any_groups=[
-            {"[M+H]+", "M+H-H2O", "M+H-2H2O", "M+H-CH2O", "M+H-CH4O2", "M+H-NH3", "M+H-H2O-NH3"},
-            {"SPB-Diagnostic-1", "SPB-Diagnostic-2"},
+            {
+                "[M+H]+",
+                "M+H-H2O",
+                "M+H-2H2O",
+                "M+H-3H2O",
+                "M+H-CH2O",
+                "M+H-CH4O2",
+                "M+H-NH3",
+                "M+H-H2O-NH3",
+                "SPB-Diagnostic-1",
+                "SPB-Diagnostic-2",
+            },
         ],
-        required_any_by_series={
-            "m": {"M+H-H2O", "M+H-NH3", "M+H-H2O-NH3"},
-            "d": {"M+H-H2O", "M+H-2H2O", "M+H-CH2O", "M+H-CH4O2"},
-            "t": {"M+H-H2O", "M+H-2H2O", "M+H-3H2O", "M+H-CH4O2"},
-        },
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片"},
-            {"LCB碎片"},
+        ],
+        required_type_count_groups=[
+            ({"Precursor Ion", "C类碎片", "LCB碎片"}, 2),
         ],
         optional={"M+H-CH2O", "M+H-3H2O"},
         only_non_hydroxy_fa=True,
