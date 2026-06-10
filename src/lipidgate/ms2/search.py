@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import bisect
 import re
@@ -11,10 +11,14 @@ import pandas as pd
 from .library import load_library
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
 from .rules import DEFAULT_RULES, RuleSet
-from .scoring import (
+from .scoring_policy import (
     FAH_ONLY_FALLBACK_REASON,
-    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as SCORING_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
-    HG_ONLY_FALLBACK_REASON as SCORING_HG_ONLY_FALLBACK_REASON,
+    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
+    HG_ONLY_FALLBACK_REASON as POLICY_HG_ONLY_FALLBACK_REASON,
+    SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE,
+    SPHINGO_HG_ONLY_FALLBACK_MIN_TOTAL_SCORE,
+)
+from .scoring import (
     _calculate_pool_scores,
     _empty_pool_scores,
     _fah_only_low_confidence_gate_passes,
@@ -26,6 +30,33 @@ from .scoring import (
     score_candidate,
 )
 from .sphingolipid_rules import SPHINGOLIPID_RULEBOOK, validate_rule
+
+
+MS2_RESULT_EXPORT_COLUMNS = (
+    "source_file",
+    "scan_id",
+    "rt_minutes",
+    "precursor_mz",
+    "ppm_error",
+    "compound_class",
+    "matched_name",
+    "adduct",
+    "total_C",
+    "total_DB",
+    "result_rank",
+    "result_channel",
+    "final_score",
+    "total_score",
+    "matched_fragment_count",
+    "matched_fragments",
+)
+MS2_RESULT_NUMBER_FORMATS = (
+    ("rt_minutes", "0.000"),
+    ("precursor_mz", "0.0000"),
+    ("ppm_error", "0.00"),
+    ("final_score", "0.00"),
+    ("total_score", "0.00"),
+)
 
 try:
     import pyopenms
@@ -59,10 +90,10 @@ class LipidMS2Searcher:
         "CERP",
     }
     TENTATIVE_MISSING_HG_RANK_SCORE_CAP = 0.35
-    HG_ONLY_FALLBACK_REASON = SCORING_HG_ONLY_FALLBACK_REASON
-    HG_ONLY_FALLBACK_MIN_TOTAL_SCORE = 30.0
-    HG_ONLY_FALLBACK_MIN_HG_SCORE = 8.0
-    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = SCORING_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
+    HG_ONLY_FALLBACK_REASON = POLICY_HG_ONLY_FALLBACK_REASON
+    HG_ONLY_FALLBACK_MIN_TOTAL_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_TOTAL_SCORE
+    HG_ONLY_FALLBACK_MIN_HG_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE
+    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
 
     def __init__(
         self,
@@ -825,26 +856,8 @@ class LipidMS2Searcher:
 
 
 def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
-    result_columns = [
-        "source_file",
-        "scan_id",
-        "rt_minutes",
-        "precursor_mz",
-        "ppm_error",
-        "compound_class",
-        "matched_name",
-        "adduct",
-        "total_C",
-        "total_DB",
-        "result_rank",
-        "result_channel",
-        "final_score",
-        "total_score",
-        "matched_fragment_count",
-        "matched_fragments",
-    ]
     if combined.empty:
-        return pd.DataFrame(columns=[column for column in result_columns if column in combined.columns])
+        return pd.DataFrame(columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in combined.columns])
     export_df = combined.copy()
     if "final_score" not in export_df.columns:
         if "rank_score" in export_df.columns:
@@ -868,18 +881,12 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
         export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
     if "result_rank_scope" in export_df.columns:
         export_df["result_channel"] = export_df["result_rank_scope"]
-    return pd.DataFrame(export_df, columns=[column for column in result_columns if column in export_df.columns])
+    return pd.DataFrame(export_df, columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in export_df.columns])
 
 
 def _write_number_formats(worksheet) -> None:
     header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-    for column_name, number_format in [
-        ("rt_minutes", "0.000"),
-        ("precursor_mz", "0.0000"),
-        ("ppm_error", "0.00"),
-        ("final_score", "0.00"),
-        ("total_score", "0.00"),
-    ]:
+    for column_name, number_format in MS2_RESULT_NUMBER_FORMATS:
         column_index = header_to_index.get(column_name)
         if column_index is None:
             continue

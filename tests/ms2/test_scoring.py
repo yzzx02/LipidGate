@@ -500,6 +500,83 @@ class ScoringTests(unittest.TestCase):
         self.assertIn("chain_info", failed.missing_required_groups)
         self.assertTrue(passed.passed_required_gates)
 
+    def test_cl_mono_negative_duplicate_fa_hit_counts_all_repeated_chains(self) -> None:
+        record = LibraryRecord(
+            record_id=82,
+            compound_class="CL",
+            lipid_name="CL(72:4)",
+            lipid_chain_name="CL(18:1_18:1/18:1_18:1)",
+            precursor_mz=1457.9857,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(697.4814, "[PA1-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_cl_mh_all_repeated_chain",
+            precursor_mz=1457.9857,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (281.2486, 1000.0),
+                (697.4814, 700.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("CL"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
+
+    def test_cl_mono_negative_requires_all_fa_chain_multiplicity(self) -> None:
+        record = LibraryRecord(
+            record_id=83,
+            compound_class="CL",
+            lipid_name="CL(74:9)",
+            lipid_chain_name="CL(18:2_18:2/18:2_20:3)",
+            precursor_mz=1473.9806,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(279.2330, "[RCOO]-(18:2)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(305.2486, "[RCOO]-(20:3)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(721.4814, "[PA1-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(695.4657, "[PA2-H]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        only_repeated_chain = ExperimentalSpectrum(
+            scan_id="scan_cl_mh_missing_unique_chain",
+            precursor_mz=1473.9806,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (279.2330, 1000.0),
+                (721.4814, 700.0),
+            ]),
+        )
+        all_chains = ExperimentalSpectrum(
+            scan_id="scan_cl_mh_all_chain_multiplicity",
+            precursor_mz=1473.9806,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (279.2330, 1000.0),
+                (305.2486, 900.0),
+                (721.4814, 700.0),
+            ]),
+        )
+
+        failed = score_candidate(only_repeated_chain, record, DEFAULT_RULES.get("CL"))
+        passed = score_candidate(all_chains, record, DEFAULT_RULES.get("CL"))
+
+        self.assertFalse(failed.passed_required_gates)
+        self.assertIn("fah", failed.missing_required_groups)
+        self.assertTrue(passed.passed_required_gates)
+        self.assertEqual(passed.missing_required_groups, [])
+        self.assertEqual(passed.resolution_level, "chain_level")
+
     def test_fa_precursor_ion_gate_requires_matching_peak(self) -> None:
         record = LibraryRecord(
             record_id=71,

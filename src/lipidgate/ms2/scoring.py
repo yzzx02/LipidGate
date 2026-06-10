@@ -8,6 +8,14 @@ from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 from .models import CandidateScore, ExperimentalPeak, ExperimentalSpectrum, FragmentMatch, FragmentRecord, LibraryRecord, PoolScore
 from .rules import ClassRule
+from .scoring_policy import (
+    FAH_ONLY_FALLBACK_HG_DOMINANT_MIN_POOL_SCORE,
+    FAH_ONLY_FALLBACK_MIN_MATCHES,
+    FAH_ONLY_FALLBACK_MIN_POOL_SCORE,
+    FAH_ONLY_FALLBACK_REASON,
+    HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
+    HG_ONLY_FALLBACK_REASON,
+)
 
 
 POOL_NAMES = ("fah", "hg", "other")
@@ -15,12 +23,6 @@ FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
 HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.01
 PRECURSOR_DOMINANCE_EXCLUSION_DA = 2.0
 PRECURSOR_DOMINANCE_MIN_RATIO = 5.0
-FAH_ONLY_FALLBACK_REASON = "low_confidence_fah_only"
-FAH_ONLY_FALLBACK_MIN_MATCHES = 2
-FAH_ONLY_FALLBACK_MIN_POOL_SCORE = 40.0
-FAH_ONLY_FALLBACK_HG_DOMINANT_MIN_POOL_SCORE = 20.0
-HG_ONLY_FALLBACK_REASON = "low_confidence_hg_only"
-HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = 0.10
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
@@ -1011,6 +1013,8 @@ def _matched_required_fah_count(
     multiplicity = _chain_token_multiplicity(record)
     if expected_fah:
         matched_expected = matched_fah.intersection(expected_fah)
+        if not _is_positive_adduct(record.adduct) and not _is_cl_double_negative_record(record):
+            return len(matched_expected)
         if multiplicity:
             return sum(multiplicity.get(token, 1) for token in matched_expected)
         return len(matched_expected)
