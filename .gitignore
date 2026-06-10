@@ -35,3 +35,4 @@ libraries/ms2/.library_cache/
 # Local editor state
 .vscode/
 .idea/
+libraries/ms2/*.msp
