@@ -46,7 +46,6 @@ MS2_RESULT_EXPORT_COLUMNS = (
     "result_rank",
     "result_channel",
     "final_score",
-    "total_score",
     "matched_fragment_count",
     "matched_fragments",
 )
@@ -55,7 +54,6 @@ MS2_RESULT_NUMBER_FORMATS = (
     ("precursor_mz", "0.0000"),
     ("ppm_error", "0.00"),
     ("final_score", "0.00"),
-    ("total_score", "0.00"),
 )
 
 try:
@@ -70,8 +68,6 @@ except ImportError:  # pragma: no cover
 
 
 class LipidMS2Searcher:
-    RANK_WEIGHT_MATCH = 0.75
-    RANK_WEIGHT_PPM = 0.25
     RANK_PPM_FULL_SCORE = 10.0
     DEFAULT_MIN_TOTAL_SCORE = 50.0
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
@@ -89,7 +85,6 @@ class LipidMS2Searcher:
         "CER1P",
         "CERP",
     }
-    TENTATIVE_MISSING_HG_RANK_SCORE_CAP = 0.35
     HG_ONLY_FALLBACK_REASON = POLICY_HG_ONLY_FALLBACK_REASON
     HG_ONLY_FALLBACK_MIN_TOTAL_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_TOTAL_SCORE
     HG_ONLY_FALLBACK_MIN_HG_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE
@@ -530,51 +525,20 @@ class LipidMS2Searcher:
     def _compute_rank_metrics(cls, passed_results) -> Dict[int, Dict[str, float]]:
         if not passed_results:
             return {}
-        strict_raw_scores = [
-            max(item.total_score, 0.0)
-            for item in passed_results
-            if not str(item.resolution_level).startswith("tentative_")
-        ]
-        raw_scores = strict_raw_scores or [max(item.total_score, 0.0) for item in passed_results]
-        max_raw_score = max(raw_scores, default=0.0)
-        if max_raw_score <= 0.0:
-            max_raw_score = 1.0
         metrics: Dict[int, Dict[str, float]] = {}
         for item in passed_results:
-            if str(item.resolution_level).startswith("tentative_"):
-                normalized_match_score = max(
-                    0.0,
-                    min(item.total_score / 100.0, cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP),
-                )
-            else:
-                normalized_match_score = max(item.total_score, 0.0) / max_raw_score
+            normalized_match_score = max(0.0, min(item.total_score / 100.0, 1.0))
             ppm_score = max(0.0, 1.0 - min(abs(item.ppm_error), cls.RANK_PPM_FULL_SCORE) / cls.RANK_PPM_FULL_SCORE)
-            rank_score = cls.RANK_WEIGHT_MATCH * normalized_match_score + cls.RANK_WEIGHT_PPM * ppm_score
-            if str(item.resolution_level).startswith("tentative_"):
-                rank_score = min(cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP, rank_score)
             metrics[id(item)] = {
                 "normalized_match_score": normalized_match_score,
                 "ppm_score": ppm_score,
-                "rank_score": rank_score,
+                "rank_score": normalized_match_score,
             }
         return metrics
 
     @classmethod
     def _compute_tentative_rank_metrics(cls, tentative_results) -> Dict[int, Dict[str, float]]:
-        metrics: Dict[int, Dict[str, float]] = {}
-        for item in tentative_results:
-            normalized_match_score = max(0.0, min(item.total_score / 100.0, cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP))
-            ppm_score = max(0.0, 1.0 - min(abs(item.ppm_error), cls.RANK_PPM_FULL_SCORE) / cls.RANK_PPM_FULL_SCORE)
-            rank_score = min(
-                cls.TENTATIVE_MISSING_HG_RANK_SCORE_CAP,
-                cls.RANK_WEIGHT_MATCH * normalized_match_score + cls.RANK_WEIGHT_PPM * ppm_score,
-            )
-            metrics[id(item)] = {
-                "normalized_match_score": normalized_match_score,
-                "ppm_score": ppm_score,
-                "rank_score": rank_score,
-            }
-        return metrics
+        return cls._compute_rank_metrics(tentative_results)
 
     @classmethod
     def _sort_by_rank_metrics(cls, results, rank_metrics) -> None:
@@ -706,7 +670,7 @@ class LipidMS2Searcher:
                     "result_rank": rank,
                     "result_rank_scope": rank_scope,
                     "counts_toward_topn": counts_toward_topn,
-                    "final_score": round(metric["rank_score"] * 100.0, 4),
+                    "final_score": result.total_score,
                     "rank_score": round(metric["rank_score"] * 100.0, 4),
                     "normalized_match_score": round(metric["normalized_match_score"] * 100.0, 4),
                     "ppm_score": round(metric["ppm_score"] * 100.0, 4),
@@ -859,16 +823,11 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     if combined.empty:
         return pd.DataFrame(columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in combined.columns])
     export_df = combined.copy()
-    if "final_score" not in export_df.columns:
-        if "rank_score" in export_df.columns:
-            export_df["final_score"] = export_df["rank_score"]
-        elif "total_score" in export_df.columns:
-            export_df["final_score"] = export_df["total_score"]
-        else:
-            export_df["final_score"] = 0.0
-    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
     if "total_score" in export_df.columns:
-        export_df["total_score"] = pd.to_numeric(export_df["total_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
+        export_df["final_score"] = export_df["total_score"]
+    elif "final_score" not in export_df.columns:
+        export_df["final_score"] = 0.0
+    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
     if "rt_minutes" in export_df.columns:
         export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
     if "precursor_mz" in export_df.columns:

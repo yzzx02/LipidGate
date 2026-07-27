@@ -31,7 +31,7 @@ ANNOTATION_COLUMNS = [
     "selected_scan_id",
     "precursor_mz",
     "ppm_error",
-    "total_score",
+    "final_score",
     "matched_fragment_count",
     "matched_fragments",
 ]
@@ -282,7 +282,8 @@ def _text_key(value: object) -> str:
 
 def _best_ms2_row(df: pd.DataFrame, prefer_rt_delta: bool = True) -> pd.Series:
     work = df.copy()
-    work["_total_score_sort"] = pd.to_numeric(work.get("total_score", 0.0), errors="coerce").fillna(0.0)
+    score_values = work["final_score"] if "final_score" in work.columns else work.get("total_score", 0.0)
+    work["_final_score_sort"] = pd.to_numeric(score_values, errors="coerce").fillna(0.0)
     work["_fragment_count_sort"] = pd.to_numeric(work.get("matched_fragment_count", 0), errors="coerce").fillna(0)
     work["_ppm_error_abs_sort"] = pd.to_numeric(work.get("ppm_error", 0.0), errors="coerce").abs().fillna(float("inf"))
     if prefer_rt_delta and "rt_delta_sec" in work.columns:
@@ -290,7 +291,7 @@ def _best_ms2_row(df: pd.DataFrame, prefer_rt_delta: bool = True) -> pd.Series:
     else:
         work["_rt_delta_sort"] = 0.0
     work.sort_values(
-        ["_total_score_sort", "_rt_delta_sort", "_fragment_count_sort", "_ppm_error_abs_sort"],
+        ["_final_score_sort", "_rt_delta_sort", "_fragment_count_sort", "_ppm_error_abs_sort"],
         ascending=[False, True, False, True],
         inplace=True,
     )
@@ -312,7 +313,7 @@ def _annotation_row(group: pd.DataFrame, best: pd.Series) -> dict[str, object]:
         "selected_ms2_rt": best.get("rt_minutes", pd.NA),
         "precursor_mz": best.get("precursor_mz", pd.NA),
         "ppm_error": best.get("ppm_error", pd.NA),
-        "total_score": best.get("total_score", pd.NA),
+        "final_score": best.get("final_score", best.get("total_score", pd.NA)),
         "matched_fragment_count": best.get("matched_fragment_count", pd.NA),
         "matched_fragments": best.get("matched_fragments", ""),
         "n_ms2_spectra": int(len(group)),

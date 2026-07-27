@@ -117,6 +117,8 @@ def test_summarize_feature_annotations_allows_multiple_names_per_feature() -> No
     selected = summary[summary["matched_name"] == "PE(16:0_18:1)"].iloc[0]
     assert selected["selected_scan_id"] == "scan_2"
     assert selected["feature_rt"] == 5.0
+    assert selected["final_score"] == 80.0
+    assert "total_score" not in summary.columns
     assert "n_ms2_spectra" not in summary.columns
     assert "supporting_files" not in summary.columns
 
@@ -220,4 +222,5 @@ def test_summarize_orphan_annotations_merges_across_files_and_uses_eic(monkeypat
     assert row["Feature_ID"] == "ORPHAN_001"
     assert row["selected_source_file"] == "b.mzML"
     assert row["selected_scan_id"] == "scan_2"
+    assert row["final_score"] == 90.0
     assert row["feature_rt"] == 5.05

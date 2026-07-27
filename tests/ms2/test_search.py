@@ -296,6 +296,7 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]["passed_required_gates"])
         self.assertLess(rows[0]["total_score"], 50.0)
+        self.assertEqual(rows[0]["final_score"], rows[0]["total_score"])
 
     def test_fa_result_does_not_take_main_top_rank(self) -> None:
         fa_record = LibraryRecord(
@@ -532,7 +533,7 @@ class SearchSelectionTests(unittest.TestCase):
         formatted = self.searcher._format_matched_fragments(matches)
         self.assertEqual(formatted, "86.0971 [C5H12N]+; 184.0724 [C5H15NO4P]+")
 
-    def test_export_preserves_total_score_separately_from_rank_score(self) -> None:
+    def test_export_exposes_one_absolute_final_score(self) -> None:
         export = prepare_ms2_result_export_df(pd.DataFrame([{
             "source_file": "example.mzML",
             "scan_id": "scan_1",
@@ -550,8 +551,8 @@ class SearchSelectionTests(unittest.TestCase):
             "matched_fragments": "x",
         }]))
 
-        self.assertEqual(export.loc[0, "final_score"], 88.89)
-        self.assertEqual(export.loc[0, "total_score"], 62.35)
+        self.assertEqual(export.loc[0, "final_score"], 62.35)
+        self.assertNotIn("total_score", export.columns)
 
     def test_fragment_index_prunes_no_fragment_candidates_without_changing_output(self) -> None:
         matching_record = LibraryRecord(

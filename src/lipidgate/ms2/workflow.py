@@ -99,7 +99,6 @@ def run_ms2_search_result(
                 ("precursor_mz", "0.0000"),
                 ("ppm_error", "0.00"),
                 ("final_score", "0.00"),
-                ("total_score", "0.00"),
             ]:
                 column_index = header_to_index.get(column_name)
                 if column_index is None:
@@ -218,7 +217,6 @@ def _format_workbook_sheet(worksheet) -> None:
         ("mz_error_to_feature_ppm", "0.00"),
         ("rt_delta_sec", "0.0"),
         ("final_score", "0.00"),
-        ("total_score", "0.00"),
     ]:
         column_index = header_to_index.get(column_name)
         if column_index is None:

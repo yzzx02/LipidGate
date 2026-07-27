@@ -20,7 +20,6 @@ from .scoring_policy import (
 
 POOL_NAMES = ("fah", "hg", "other")
 FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
-HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.01
 PRECURSOR_DOMINANCE_EXCLUSION_DA = 2.0
 PRECURSOR_DOMINANCE_MIN_RATIO = 5.0
 SCORE_MIN = 0.0
@@ -32,9 +31,6 @@ CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
 FAH_POOL_COVERAGE_WEIGHT = 0.35
 FAH_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
 FAH_POOL_ANCHOR_WEIGHT = 0.35
-HG_POOL_COVERAGE_WEIGHT = 0.80
-HG_POOL_AVERAGE_INTENSITY_WEIGHT = 0.10
-HG_POOL_ANCHOR_WEIGHT = 0.10
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
 POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "DGO", "OXTG"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
@@ -668,11 +664,9 @@ def _calculate_pool_scores(
                 + FAH_POOL_ANCHOR_WEIGHT * anchor_quality
             )
         elif pool_name == "hg":
-            pool_quality = (
-                HG_POOL_COVERAGE_WEIGHT * count_ratio
-                + HG_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
-                + HG_POOL_ANCHOR_WEIGHT * anchor_quality
-            )
+            # Each library HG contributes sqrt(relative intensity); an unmatched
+            # HG contributes zero through the average over total_count.
+            pool_quality = intensity_ratio
         else:
             pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
         if total_count and original_active_weight_sum > 0.0:
@@ -724,8 +718,8 @@ def _fragment_quality_for_pool(
     else:
         relative_intensity = match.experimental_peak.relative_intensity
     if pool_name == "hg":
-        relative_intensity = max(float(relative_intensity), 0.0)
-        return min(relative_intensity / HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
+        relative_intensity = min(max(float(relative_intensity), 0.0), 1.0)
+        return math.sqrt(relative_intensity)
     return _fragment_quality(
         match,
         quality_relative_intensity_overrides=quality_relative_intensity_overrides,
