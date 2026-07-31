@@ -1355,6 +1355,86 @@ class ScoringTests(unittest.TestCase):
         self.assertGreater(result.total_score, 50.0)
         self.assertLessEqual(result.total_score, 100.0)
 
+    def test_positive_hg_and_support_pools_use_separate_saturation_curves(self) -> None:
+        record = LibraryRecord(
+            record_id=85,
+            compound_class="PC",
+            lipid_name="PC(34:1)",
+            lipid_chain_name="PC(16:0_18:1)",
+            precursor_mz=760.585,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(577.5194, "[M-(ROOH)+H]+(18:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(86.0964, "[C5H12N]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_separate_curves",
+            precursor_mz=760.585,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (760.585, 1000.0),
+                (184.0733, 100.0),
+                (577.5194, 100.0),
+                (86.0964, 100.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
+
+        self.assertAlmostEqual(result.pool_scores["hg"].pool_score, 33.0, places=4)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 18.8, places=4)
+        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 18.8, places=4)
+
+    def test_positive_support_pool_is_eighty_percent_coverage_and_twenty_percent_intensity(self) -> None:
+        record = LibraryRecord(
+            record_id=86,
+            compound_class="SM",
+            lipid_name="SM(d34:1)",
+            lipid_chain_name="SM(d18:1/16:0)",
+            precursor_mz=703.5749,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(264.2686, "LCB-H2O", "Diagnostic_FA"),
+                FragmentRecord(282.2791, "LCB", "Diagnostic_FA"),
+                FragmentRecord(246.2580, "LCB-2H2O", "Diagnostic_FA"),
+                FragmentRecord(300.2897, "LCB+H2O", "Diagnostic_FA"),
+                FragmentRecord(86.0964, "[C5H12N]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_support_formula",
+            precursor_mz=703.5749,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (703.5749, 1000.0),
+                (184.0733, 1000.0),
+                (264.2686, 20.0),
+                (282.2791, 20.0),
+                (86.0964, 1000.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("SM"))
+
+        # At 2% relative intensity the support curve quality is 30%; with
+        # two of four FAH fragments hit, pool quality is 0.8*0.5 + 0.2*0.3.
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 9.2, places=4)
+
+    def test_negative_mode_keeps_existing_hg_quality_curve(self) -> None:
+        spectrum = build_spectrum([
+            (120.0, 1000.0),
+            (224.0693, 100.0),
+        ])
+
+        result = score_candidate(spectrum, self.record, self.rule)
+
+        self.assertAlmostEqual(result.pool_scores["hg"].intensity_ratio, 10.0 ** -0.5, places=6)
+
     def test_full_fah_coverage_enables_chain_level(self) -> None:
         spectrum = build_spectrum(
             [
