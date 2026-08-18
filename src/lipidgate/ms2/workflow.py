@@ -99,7 +99,6 @@ def run_ms2_search_result(
                 ("precursor_mz", "0.0000"),
                 ("ppm_error", "0.00"),
                 ("final_score", "0.00"),
-                ("total_score", "0.00"),
             ]:
                 column_index = header_to_index.get(column_name)
                 if column_index is None:
@@ -218,7 +217,6 @@ def _format_workbook_sheet(worksheet) -> None:
         ("mz_error_to_feature_ppm", "0.00"),
         ("rt_delta_sec", "0.0"),
         ("final_score", "0.00"),
-        ("total_score", "0.00"),
     ]:
         column_index = header_to_index.get(column_name)
         if column_index is None:
@@ -255,6 +253,7 @@ def run_ms2_feature_annotation_result(
         collect_mzml_paths,
         link_ms2_to_features,
         rescue_orphan_annotations_to_features,
+        remove_feature_supported_fa_orphans,
         summarize_feature_annotations,
         summarize_orphan_annotations,
     )
@@ -323,6 +322,7 @@ def run_ms2_feature_annotation_result(
             mz_tol_ppm=float(precursor_tolerance_ppm),
             rt_window_sec=float(rt_window_sec),
         )
+        linked_df = remove_feature_supported_fa_orphans(linked_df)
         matched = summarize_feature_annotations(linked_df)
         orphan_df = linked_df[linked_df["Feature_ID"].isna()].copy()
         orphan = summarize_orphan_annotations(

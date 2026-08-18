@@ -1139,7 +1139,7 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(missing_plain_result.passed_required_gates)
         self.assertIn("fah", missing_plain_result.missing_required_groups)
 
-    def test_complete_evidence_scores_full_after_intensity_saturation(self) -> None:
+    def test_complete_evidence_score_still_tracks_hg_strength(self) -> None:
         lower_intensity_spectrum = build_spectrum(
             [
                 (255.2329, 500.0),
@@ -1161,8 +1161,9 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(lower_result.passed_required_gates)
         self.assertTrue(higher_result.passed_required_gates)
         self.assertGreater(higher_result.matched_intensity_sum, lower_result.matched_intensity_sum)
-        self.assertEqual(lower_result.total_score, 100.0)
-        self.assertEqual(higher_result.total_score, 100.0)
+        self.assertGreater(higher_result.total_score, lower_result.total_score)
+        self.assertLess(lower_result.total_score, 100.0)
+        self.assertLess(higher_result.total_score, 100.0)
 
     def test_low_intensity_fragments_pass_gate_but_score_below_default_threshold(self) -> None:
         weak_key_spectrum = build_spectrum(
@@ -1189,7 +1190,7 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(weak_result.passed_required_gates)
         self.assertTrue(strong_result.passed_required_gates)
         self.assertLess(weak_result.total_score, 50.0)
-        self.assertEqual(strong_result.total_score, 100.0)
+        self.assertGreater(strong_result.total_score, 95.0)
 
     def test_very_low_hg_does_not_dominate_score_when_fah_is_strong(self) -> None:
         spectrum = build_spectrum(
@@ -1208,7 +1209,7 @@ class ScoringTests(unittest.TestCase):
         self.assertGreater(result.total_score, 70.0)
         self.assertLess(result.pool_scores["hg"].pool_score, 20.0)
 
-    def test_low_relative_hg_anchor_supports_phospholipid_score(self) -> None:
+    def test_low_relative_hg_passes_gate_without_inflating_score(self) -> None:
         pe_record = LibraryRecord(
             record_id=81,
             compound_class="PE",
@@ -1238,7 +1239,104 @@ class ScoringTests(unittest.TestCase):
         result = score_candidate(spectrum, pe_record, DEFAULT_RULES.get("PE"))
 
         self.assertTrue(result.passed_required_gates)
-        self.assertGreaterEqual(result.total_score, 50.0)
+        self.assertLess(result.total_score, 50.0)
+
+    def test_sparse_hg_library_can_reach_full_score_only_with_strong_hg(self) -> None:
+        lnape_record = LibraryRecord(
+            record_id=82,
+            compound_class="LNAPE",
+            lipid_name="LNAPE(36:5)",
+            lipid_chain_name="LNAPE(20:5-N-16:0)",
+            precursor_mz=738.5068,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(282.2810, "[RCONH-CH=CH2]+", "Diagnostic_HG"),
+                FragmentRecord(738.5068, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+        weak_spectrum = ExperimentalSpectrum(
+            scan_id="scan_lnape_weak_hg",
+            precursor_mz=738.5068,
+            rt_minutes=12.33375,
+            polarity="+",
+            peaks=normalize_peaks([
+                (597.4871, 1000.0),
+                (282.2810, 21.538),
+                (738.5068, 217.783),
+            ]),
+        )
+        strong_spectrum = ExperimentalSpectrum(
+            scan_id="scan_lnape_strong_hg",
+            precursor_mz=738.5068,
+            rt_minutes=12.33375,
+            polarity="+",
+            peaks=normalize_peaks([
+                (282.2810, 1000.0),
+                (738.5068, 1000.0),
+            ]),
+        )
+
+        weak_result = score_candidate(weak_spectrum, lnape_record, DEFAULT_RULES.get("LNAPE"))
+        strong_result = score_candidate(strong_spectrum, lnape_record, DEFAULT_RULES.get("LNAPE"))
+
+        self.assertTrue(weak_result.passed_required_gates)
+        self.assertTrue(strong_result.passed_required_gates)
+        self.assertGreater(weak_result.total_score, 50.0)
+        self.assertLess(weak_result.total_score, 60.0)
+        self.assertEqual(strong_result.total_score, 100.0)
+
+    def test_representative_strong_pe_outranks_weak_lnape_on_same_spectrum(self) -> None:
+        lnape_record = LibraryRecord(
+            record_id=83,
+            compound_class="LNAPE",
+            lipid_name="LNAPE(36:5)",
+            lipid_chain_name="LNAPE(20:5-N-16:0)",
+            precursor_mz=738.5068,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(282.2810, "[RCONH-CH=CH2]+", "Diagnostic_HG"),
+                FragmentRecord(738.5068, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+        pe_record = LibraryRecord(
+            record_id=84,
+            compound_class="PE",
+            lipid_name="PE(36:5)",
+            lipid_chain_name="PE(16:0_20:5)",
+            precursor_mz=738.5068,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(597.4871, "[M-C2H8O4NP+H]+", "Diagnostic_HG"),
+                FragmentRecord(313.2730, "[M-(R=O)-C2H8NO4P+H]+(16:0)", "Diagnostic_FA"),
+                FragmentRecord(285.2204, "(R=O)+(20:5)", "FA_Frag"),
+                FragmentRecord(359.2594, "[M-(R=O)-C2H8NO4P+H]+(20:5)", "Diagnostic_FA"),
+                FragmentRecord(333.3000, "(R=O)+(16:0)", "FA_Frag"),
+                FragmentRecord(738.5068, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pe_lnape_competition",
+            precursor_mz=738.5068,
+            rt_minutes=12.33375,
+            polarity="+",
+            peaks=normalize_peaks([
+                (597.4871, 1000.0),
+                (313.2730, 628.446),
+                (285.2204, 58.712),
+                (359.2594, 24.012),
+                (282.2810, 21.538),
+                (738.5068, 217.783),
+            ]),
+        )
+
+        lnape_result = score_candidate(spectrum, lnape_record, DEFAULT_RULES.get("LNAPE"))
+        pe_result = score_candidate(spectrum, pe_record, DEFAULT_RULES.get("PE"))
+
+        self.assertTrue(lnape_result.passed_required_gates)
+        self.assertTrue(pe_result.passed_required_gates)
+        self.assertLess(lnape_result.total_score, 60.0)
+        self.assertGreater(pe_result.total_score, 90.0)
+        self.assertGreater(pe_result.total_score, lnape_result.total_score)
 
     def test_fragment_quality_uses_all_matched_fragments_without_key_multiplier(self) -> None:
         spectrum = build_spectrum(
@@ -1256,6 +1354,86 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertGreater(result.total_score, 50.0)
         self.assertLessEqual(result.total_score, 100.0)
+
+    def test_positive_hg_and_support_pools_use_separate_saturation_curves(self) -> None:
+        record = LibraryRecord(
+            record_id=85,
+            compound_class="PC",
+            lipid_name="PC(34:1)",
+            lipid_chain_name="PC(16:0_18:1)",
+            precursor_mz=760.585,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(577.5194, "[M-(ROOH)+H]+(18:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(86.0964, "[C5H12N]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_separate_curves",
+            precursor_mz=760.585,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (760.585, 1000.0),
+                (184.0733, 100.0),
+                (577.5194, 100.0),
+                (86.0964, 100.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
+
+        self.assertAlmostEqual(result.pool_scores["hg"].pool_score, 33.0, places=4)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 18.8, places=4)
+        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 18.8, places=4)
+
+    def test_positive_support_pool_is_eighty_percent_coverage_and_twenty_percent_intensity(self) -> None:
+        record = LibraryRecord(
+            record_id=86,
+            compound_class="SM",
+            lipid_name="SM(d34:1)",
+            lipid_chain_name="SM(d18:1/16:0)",
+            precursor_mz=703.5749,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
+                FragmentRecord(264.2686, "LCB-H2O", "Diagnostic_FA"),
+                FragmentRecord(282.2791, "LCB", "Diagnostic_FA"),
+                FragmentRecord(246.2580, "LCB-2H2O", "Diagnostic_FA"),
+                FragmentRecord(300.2897, "LCB+H2O", "Diagnostic_FA"),
+                FragmentRecord(86.0964, "[C5H12N]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_positive_support_formula",
+            precursor_mz=703.5749,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (703.5749, 1000.0),
+                (184.0733, 1000.0),
+                (264.2686, 20.0),
+                (282.2791, 20.0),
+                (86.0964, 1000.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("SM"))
+
+        # At 2% relative intensity the support curve quality is 30%; with
+        # two of four FAH fragments hit, pool quality is 0.8*0.5 + 0.2*0.3.
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 9.2, places=4)
+
+    def test_negative_mode_keeps_existing_hg_quality_curve(self) -> None:
+        spectrum = build_spectrum([
+            (120.0, 1000.0),
+            (224.0693, 100.0),
+        ])
+
+        result = score_candidate(spectrum, self.record, self.rule)
+
+        self.assertAlmostEqual(result.pool_scores["hg"].intensity_ratio, 10.0 ** -0.5, places=6)
 
     def test_full_fah_coverage_enables_chain_level(self) -> None:
         spectrum = build_spectrum(

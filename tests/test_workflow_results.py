@@ -140,7 +140,8 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     assert result.data.loc[0, "rt_minutes"] == 5.123
     assert result.data.loc[0, "precursor_mz"] == 760.1235
     assert result.data.loc[0, "ppm_error"] == 1.23
-    assert result.data.loc[0, "final_score"] == 98.77
+    assert result.data.loc[0, "final_score"] == 80.0
+    assert "total_score" not in result.data.columns
 
 
 def test_ms2_feature_annotation_result_merges_cross_file_orphans(tmp_path: Path, monkeypatch) -> None:

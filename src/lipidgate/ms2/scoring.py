@@ -20,21 +20,27 @@ from .scoring_policy import (
 
 POOL_NAMES = ("fah", "hg", "other")
 FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
-HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.01
+POSITIVE_HG_SATURATION_HALF_INTENSITY = 0.10
+POSITIVE_SUPPORT_SATURATION_HALF_INTENSITY = 0.05
+POSITIVE_SUPPORT_COVERAGE_WEIGHT = 0.80
+POSITIVE_SUPPORT_INTENSITY_WEIGHT = 0.20
+POSITIVE_FAH_ONLY_FALLBACK_MIN_INTENSITY_QUALITY = 0.50
 PRECURSOR_DOMINANCE_EXCLUSION_DA = 2.0
 PRECURSOR_DOMINANCE_MIN_RATIO = 5.0
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
 SPHINGOLIPID_LCB_FRAGMENT_TYPE = "LCB碎片"
+FREE_SPHINGOID_BASE_CLASS_KEYS = {"SPB", "SPH", "DHSPH", "PHYTOSPH"}
+SPB_UNASSIGNED_DIAGNOSTIC_NAMES = {
+    "SPB-Diagnostic-1",
+    "SPB-Diagnostic-2",
+}
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
 CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
 FAH_POOL_COVERAGE_WEIGHT = 0.35
 FAH_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
 FAH_POOL_ANCHOR_WEIGHT = 0.35
-HG_POOL_COVERAGE_WEIGHT = 0.80
-HG_POOL_AVERAGE_INTENSITY_WEIGHT = 0.10
-HG_POOL_ANCHOR_WEIGHT = 0.10
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
 POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "DGO", "OXTG"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
@@ -42,8 +48,63 @@ FAH_ONLY_FALLBACK_BLOCKED_CLASSES = {"ASM"}
 NEGATIVE_PC_RELAXED_CLASSES = {"PC", "PC-O"}
 CANDIDATE_HG_FRAGMENT_TYPE = "Candidate_HG"
 POSITIVE_PC_CHAIN_LOSS_STRICT_CLASSES = {"PC", "PCO", "PCP"}
-POSITIVE_PHOSPHOLIPID_HG_DOMINANT_CLASSES = {"PA", "PC", "PCO", "PCP", "PE", "PG", "PI", "PS"}
+POSITIVE_PHOSPHOLIPID_HG_DOMINANT_CLASSES = {
+    "PA",
+    "PC",
+    "PCO",
+    "PCP",
+    "PE",
+    "PG",
+    "PI",
+    "PS",
+}
+POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES = {"LPC", "LPCO", "SM", "LSM"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
+POSITIVE_PHOSPHOLIPID_SUPPORT_BASE_CLASSES = {
+    "PA",
+    "PC",
+    "PCO",
+    "PCP",
+    "PE",
+    "PEO",
+    "PEP",
+    "PG",
+    "PGO",
+    "PI",
+    "PIO",
+    "PS",
+    "PSO",
+}
+POSITIVE_PHOSPHOLIPID_SUPPORT_CLASSES = {
+    "BMP",
+    "CL",
+    "DLCL",
+    "DMPE",
+    "ETHERLPG",
+    "ETHERLPI",
+    "ETHERPG",
+    "HBMP",
+    "LNAPE",
+    "MLCL",
+    "NAPE",
+    "PETOH",
+    "PIP",
+    "PIP2",
+    "PIP3",
+    "PMEOH",
+}
+POSITIVE_SPHINGOLIPID_SUPPORT_CLASSES = {
+    "ASM",
+    "CERP",
+    "CER1P",
+    "DHSPH",
+    "LSM",
+    "PHYTOSPH",
+    "SL",
+    "SM",
+    "SPB",
+    "SPH",
+}
 PE_O_NON_GATE_HG_MZ = (140.0118, 196.0380)
 CLASS_SPECIFIC_HG_MZ = {
     "PG": (152.9933, 171.0064, 209.0221),
@@ -93,6 +154,20 @@ def _is_positive_hg_dominant_phospholipid(record: LibraryRecord) -> bool:
     return (
         _is_positive_adduct(record.adduct)
         and _normalized_class_key(record.compound_class) in POSITIVE_PHOSPHOLIPID_HG_DOMINANT_CLASSES
+    )
+
+
+def _uses_positive_support_pool_scoring(record: LibraryRecord) -> bool:
+    if not _is_positive_adduct(record.adduct):
+        return False
+    class_key = _normalized_class_key(record.compound_class)
+    phospholipid_key = class_key[1:] if class_key.startswith("L") else class_key
+    return (
+        phospholipid_key in POSITIVE_PHOSPHOLIPID_SUPPORT_BASE_CLASSES
+        or class_key in POSITIVE_PHOSPHOLIPID_SUPPORT_CLASSES
+        or class_key in POSITIVE_SPHINGOLIPID_SUPPORT_CLASSES
+        or "CER" in class_key
+        or class_key.startswith(("GM", "GD", "GT", "GQ"))
     )
 
 
@@ -254,6 +329,11 @@ def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, 
         return "fah"
     if _fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag":
         return "fah"
+    if _normalized_class_key(record.compound_class) in FREE_SPHINGOID_BASE_CLASS_KEYS:
+        if fragment.fragment_type == "C类碎片":
+            return "fah"
+        if str(fragment.name or "").strip() in SPB_UNASSIGNED_DIAGNOSTIC_NAMES:
+            return "other"
     if fragment.fragment_type == SPHINGOLIPID_LCB_FRAGMENT_TYPE:
         return "fah"
     if _fragment_counts_as_hg(record, fragment):
@@ -596,7 +676,11 @@ def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tole
 
 
 def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str, float]:
-    if _is_positive_hg_dominant_phospholipid(record):
+    class_key = _normalized_class_key(record.compound_class)
+    if _is_positive_hg_dominant_phospholipid(record) or (
+        _is_positive_adduct(record.adduct)
+        and class_key in POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES
+    ):
         return POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS
     return rule.score_profile.pool_weights
 
@@ -641,18 +725,24 @@ def _calculate_pool_scores(
         count_ratio = matched_count / total_count if total_count else 0.0
         matched_by_fragment_id = {id(match.fragment): match for match in pool_matches}
         intensity_ratio = 0.0
+        matched_average_quality = 0.0
         if total_count:
-            intensity_ratio = sum(
+            quality_sum = sum(
                 _fragment_quality_for_pool(
+                    record,
                     pool_name,
                     matched_by_fragment_id.get(id(fragment)),
                     quality_relative_intensity_overrides=quality_relative_intensity_overrides,
                 )
                 for fragment in pool_fragments
-            ) / total_count
+            )
+            intensity_ratio = quality_sum / total_count
+            if matched_count:
+                matched_average_quality = quality_sum / matched_count
         anchor_quality = max(
             (
                 _fragment_quality_for_pool(
+                    record,
                     pool_name,
                     match,
                     quality_relative_intensity_overrides=quality_relative_intensity_overrides,
@@ -661,18 +751,21 @@ def _calculate_pool_scores(
             ),
             default=0.0,
         )
-        if pool_name == "fah":
+        if _uses_positive_support_pool_scoring(record) and pool_name in {"fah", "other"}:
+            pool_quality = (
+                POSITIVE_SUPPORT_COVERAGE_WEIGHT * count_ratio
+                + POSITIVE_SUPPORT_INTENSITY_WEIGHT * matched_average_quality
+            )
+        elif pool_name == "fah":
             pool_quality = (
                 FAH_POOL_COVERAGE_WEIGHT * count_ratio
                 + FAH_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
                 + FAH_POOL_ANCHOR_WEIGHT * anchor_quality
             )
         elif pool_name == "hg":
-            pool_quality = (
-                HG_POOL_COVERAGE_WEIGHT * count_ratio
-                + HG_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
-                + HG_POOL_ANCHOR_WEIGHT * anchor_quality
-            )
+            # Each library HG contributes sqrt(relative intensity); an unmatched
+            # HG contributes zero through the average over total_count.
+            pool_quality = intensity_ratio
         else:
             pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
         if total_count and original_active_weight_sum > 0.0:
@@ -713,6 +806,7 @@ def _fragment_quality(
 
 
 def _fragment_quality_for_pool(
+    record: LibraryRecord,
     pool_name: str,
     match: FragmentMatch | None,
     quality_relative_intensity_overrides: Dict[int, float] | None = None,
@@ -723,12 +817,29 @@ def _fragment_quality_for_pool(
         relative_intensity = quality_relative_intensity_overrides[id(match)]
     else:
         relative_intensity = match.experimental_peak.relative_intensity
+    if _uses_positive_support_pool_scoring(record):
+        half_saturation = (
+            POSITIVE_HG_SATURATION_HALF_INTENSITY
+            if pool_name == "hg"
+            else POSITIVE_SUPPORT_SATURATION_HALF_INTENSITY
+        )
+        return _saturation_fragment_quality(relative_intensity, half_saturation)
     if pool_name == "hg":
-        relative_intensity = max(float(relative_intensity), 0.0)
-        return min(relative_intensity / HG_FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
+        relative_intensity = min(max(float(relative_intensity), 0.0), 1.0)
+        return math.sqrt(relative_intensity)
     return _fragment_quality(
         match,
         quality_relative_intensity_overrides=quality_relative_intensity_overrides,
+    )
+
+
+def _saturation_fragment_quality(relative_intensity: float, half_saturation: float) -> float:
+    intensity = min(max(float(relative_intensity), 0.0), 1.0)
+    if intensity <= 0.0:
+        return 0.0
+    return min(
+        ((1.0 + float(half_saturation)) * intensity) / (intensity + float(half_saturation)),
+        1.0,
     )
 
 
@@ -819,6 +930,11 @@ def _fah_only_low_confidence_gate_passes(
     if hg_score is not None and hg_score.matched_count > 0:
         return False
     if fah_score.matched_count < FAH_ONLY_FALLBACK_MIN_MATCHES:
+        return False
+    if (
+        _uses_positive_support_pool_scoring(record)
+        and fah_score.intensity_ratio < POSITIVE_FAH_ONLY_FALLBACK_MIN_INTENSITY_QUALITY
+    ):
         return False
     min_pool_score = FAH_ONLY_FALLBACK_MIN_POOL_SCORE
     if _is_positive_hg_dominant_phospholipid(record):

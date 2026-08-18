@@ -1,8 +1,8 @@
 paths:
   mzml_input: "D:/data/mzml"
   output_dir: "results"
-  positive_msp: "libraries/ms2/current_positive.msp"
-  negative_msp: "libraries/ms2/current_negative.msp"
+  positive_msp: "libraries/ms2/current_positive.msp.gz"
+  negative_msp: "libraries/ms2/current_negative.msp.gz"
 
 ms1:
   algorithm: "pyopenms"
