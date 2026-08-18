@@ -94,8 +94,8 @@ class LogPanel(QtWidgets.QWidget):
 def tool_button(text: str, slot: Callable[[], None], tooltip: str = "") -> QtWidgets.QToolButton:
     button = QtWidgets.QToolButton()
     button.setText(text)
-    button.setMinimumHeight(32)
-    button.setFixedWidth(72)
+    button.setMinimumHeight(34)
+    button.setFixedWidth(78)
     button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
     if tooltip:
         button.setToolTip(tooltip)

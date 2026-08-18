@@ -1,12 +1,12 @@
 ﻿from __future__ import annotations
 
-import shutil
-import unittest
-import uuid
+import gzip
 import os
+import tempfile
+import unittest
 from contextlib import contextmanager
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -15,14 +15,8 @@ from lipidgate.ms2.library import convert_excel_directory_to_msp, load_library, 
 
 @contextmanager
 def workspace_temp_dir():
-    root = Path(__file__).resolve().parents[2] / ".test_outputs"
-    root.mkdir(parents=True, exist_ok=True)
-    tmp_dir = root / f"library_{uuid.uuid4().hex}"
-    tmp_dir.mkdir()
-    try:
-        yield tmp_dir
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    with tempfile.TemporaryDirectory(prefix="lipidgate_library_test_") as tmp_dir:
+        yield Path(tmp_dir)
 
 
 class LibraryConversionTests(unittest.TestCase):
@@ -92,6 +86,29 @@ Num Peaks: 3
         self.assertEqual(records[0].fragments[1].name, "Chainloss")
         self.assertEqual(records[0].fragments[1].fragment_type, "Diagnostic_FA_Loss")
         self.assertEqual(records[0].fragments[2].fragment_type, "Precursor Ion")
+
+    def test_gzip_msp_loads_identically(self) -> None:
+        msp_text = """Name: PE(16:0_18:1)
+PrecursorMZ: 716.5230
+PrecursorType: [M-H]-
+CompoundClass: PE
+Formula: C39H76NO8P
+Comment: MS1_name=PE(34:1);polarity=-
+Num Peaks: 2
+140.0118 100.00 "[C2H7NO4P]-" "Diagnostic_HG"
+255.2329 80.00 "[RCOO]-(16:0)" "Diagnostic_FA"
+"""
+        with workspace_temp_dir() as temp_path:
+            raw_path = temp_path / "library.msp"
+            gzip_path = temp_path / "library.msp.gz"
+            raw_path.write_text(msp_text, encoding="utf-8")
+            with gzip.open(gzip_path, "wt", encoding="utf-8", newline="\n") as handle:
+                handle.write(msp_text)
+
+            raw_records = load_library(raw_path, use_cache=False)
+            gzip_records = load_library(gzip_path, use_cache=False)
+
+        self.assertEqual(gzip_records, raw_records)
 
     def test_single_label_msp_fragment_defaults_to_common(self) -> None:
         msp_text = """Name: Archaeol(20:0_20:0)
@@ -339,6 +356,126 @@ Num Peaks: 6
         diagnostic_hg = [fragment for fragment in records[0].fragments if fragment.fragment_type == "Diagnostic_HG"]
         self.assertEqual({fragment.name for fragment in diagnostic_hg}, {"[R1C=O-H2O]+", "(R=O)+(17:2)", "[M-H2O+H]+"})
         self.assertTrue(all(fragment.required_group == "hg" for fragment in diagnostic_hg))
+
+    def test_positive_shexcer_sulfate_and_hexose_losses_are_hg(self) -> None:
+        msp_text = """Name: SHexCer(d18:1/24:1)
+PrecursorMZ: 890.6386
+PrecursorType: [M+H]+
+CompoundClass: SHexCer
+Comment: MS1_name=SHexCer(d42:2);polarity=+
+Num Peaks: 3
+612.6078 100.00 "M+H-H2SO4-C6H10O5-H2O" "Common"
+630.6184 100.00 "M+H-H2SO4-C6H10O5" "Common"
+890.6386 100.00 "[M+H]+" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "shexcer_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        fragments = {
+            fragment.name: fragment
+            for fragment in records[0].fragments
+            if fragment.name != "[M+H]+"
+        }
+        self.assertEqual(
+            set(fragments),
+            {
+                "M+H-H2SO4-C6H10O5",
+                "M+H-H2SO4-C6H10O5-H2O",
+            },
+        )
+        self.assertTrue(
+            all(
+                fragment.fragment_type == "Diagnostic_HG"
+                and fragment.required_group == "hg"
+                for fragment in fragments.values()
+            )
+        )
+
+    def test_free_sphingoid_base_identity_is_canonicalized_to_spb(self) -> None:
+        msp_text = """Name: PhytoSph(t18:0)
+PrecursorMZ: 318.3003
+PrecursorType: [M+H]+
+CompoundClass: PhytoSph
+Comment: MS1_name=PhytoSph(t18:0);polarity=+
+Num Peaks: 3
+81.0699 100.00 "SPB-Diagnostic-1" "LCB碎片"
+300.2897 100.00 "M+H-H2O" "C类碎片"
+318.3003 100.00 "[M+H]+" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "phytosph_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        self.assertEqual(records[0].compound_class, "SPB")
+        self.assertEqual(records[0].lipid_name, "SPB(t18:0)")
+        self.assertEqual(records[0].lipid_chain_name, "SPB(t18:0)")
+
+    def test_positive_ceramides_gain_d_hydroxy_fa_isomers_with_t_total_names(self) -> None:
+        blocks = []
+        for compound_class, precursor_mz in [
+            ("Cer", 650.6446),
+            ("HexCer", 812.6974),
+            ("Hex2Cer", 974.7502),
+        ]:
+            blocks.append(
+                f"""Name: {compound_class}(d18:1/24:0)
+PrecursorMZ: {precursor_mz:.4f}
+PrecursorType: [M+H]+
+CompoundClass: {compound_class}
+Formula: C42H83NO3
+Comment: MS1_name={compound_class}(d42:1);polarity=+
+Num Peaks: 4
+282.2791 100.00 "LCB-H2O" "LCB碎片"
+300.2897 100.00 "LCB" "LCB碎片"
+{precursor_mz - 18.0106:.4f} 100.00 "M+H-H2O" "C类碎片"
+{precursor_mz:.4f} 100.00 "[M+H]+" "Precursor Ion"
+"""
+            )
+
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "positive_ceramides.msp"
+            msp_path.write_text("\n".join(blocks), encoding="utf-8")
+            records = load_standard_msp(msp_path)
+
+        self.assertEqual(len(records), 6)
+        for compound_class, source_precursor_mz in [
+            ("Cer", 650.6446),
+            ("HexCer", 812.6974),
+            ("Hex2Cer", 974.7502),
+        ]:
+            source = next(
+                record
+                for record in records
+                if record.lipid_chain_name == f"{compound_class}(d18:1/24:0)"
+            )
+            hydroxy = next(
+                record
+                for record in records
+                if record.lipid_chain_name == f"{compound_class}(d18:1/h24:0)"
+            )
+            self.assertEqual(hydroxy.lipid_name, f"{compound_class}(t42:1)")
+            self.assertAlmostEqual(hydroxy.precursor_mz, source_precursor_mz + 15.99491462)
+            self.assertEqual(hydroxy.formula, "C42H83NO4")
+            self.assertTrue(hydroxy.metadata["generated_hydroxy_fa_isomer"])
+            self.assertTrue(any(abs(fragment.mz - 282.2791) < 1e-6 for fragment in hydroxy.fragments))
+            self.assertTrue(
+                any(
+                    fragment.fragment_type == "Precursor Ion"
+                    and abs(fragment.mz - hydroxy.precursor_mz) < 1e-6
+                    for fragment in hydroxy.fragments
+                )
+            )
+            for record in (source, hydroxy):
+                self.assertFalse(
+                    any(
+                        fragment.fragment_type == "LCB碎片"
+                        and abs(fragment.mz - 300.2897) <= 0.02
+                        for fragment in record.fragments
+                    )
+                )
 
 
 if __name__ == "__main__":

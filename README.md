@@ -16,7 +16,7 @@ previews for feature tables, peak-truth tables, EIC images, and MS2 results.
 - `src/lipidgate/` - LipidGate CLI, GUI, and workflow wrappers.
 - `src/lipidbench/` - vendored LipidBench runtime modules used by MS1/EIC/attribute workflows.
 - `src/lipidgate/ms2/` - MS2 workflow wrapper and rule-based matching engine.
-- `libraries/ms2/` - final positive/negative MSP libraries, tracked by Git LFS.
+- `libraries/ms2/` - final positive/negative gzip-compressed MSP libraries, tracked by Git LFS.
 - `models/peak_truth/` - peak truth model artifacts, tracked by Git LFS for weights.
 
 ## Quick Start
@@ -46,10 +46,12 @@ This repository expects Git LFS for MSP libraries and model weights:
 
 ```powershell
 git lfs install
-git lfs track "*.msp" "*.pth" "*.pt" "*.ckpt"
+git lfs track "*.msp" "*.msp.gz" "*.pth" "*.pt" "*.ckpt"
 ```
 
 Excel/CSV library sources are intentionally not tracked. Only final MSP libraries are included.
+The runtime reads `.msp.gz` directly; gzip is lossless and reduces the two final
+text libraries by about 95% without changing any records or fragment peaks.
 Runtime MSP parse caches are written to the user cache directory
 (`%LOCALAPPDATA%\LipidGate\Cache` on Windows, or `~/.cache/lipidgate`
 elsewhere). Set `LIPIDGATE_CACHE_DIR` to override this location.

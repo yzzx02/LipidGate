@@ -508,25 +508,29 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         adduct="[M+H]+",
         required_any_groups=[
             {
-                "[M+H]+",
                 "M+H-H2O",
                 "M+H-2H2O",
                 "M+H-3H2O",
                 "M+H-CH2O",
                 "M+H-CH4O2",
+                "M+H-CH6O3",
                 "M+H-NH3",
                 "M+H-H2O-NH3",
-                "SPB-Diagnostic-1",
-                "SPB-Diagnostic-2",
             },
         ],
         required_type_any_groups=[
-            {"Precursor Ion", "C类碎片"},
+            {"C类碎片"},
         ],
         required_type_count_groups=[
-            ({"Precursor Ion", "C类碎片", "LCB碎片"}, 2),
+            ({"C类碎片"}, 2),
         ],
-        optional={"M+H-CH2O", "M+H-3H2O"},
+        optional={
+            "[M+H]+",
+            "M+H-CH2O",
+            "M+H-3H2O",
+            "SPB-Diagnostic-1",
+            "SPB-Diagnostic-2",
+        },
         only_non_hydroxy_fa=True,
     ),
 }

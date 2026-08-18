@@ -8,6 +8,7 @@ from lipidgate.ms2.feature_linking import (
     collect_mzml_paths,
     link_ms2_to_features,
     rescue_orphan_annotations_to_features,
+    remove_feature_supported_fa_orphans,
     summarize_feature_annotations,
     summarize_orphan_annotations,
 )
@@ -86,6 +87,7 @@ def test_summarize_feature_annotations_allows_multiple_names_per_feature() -> No
                 "compound_class": "PE",
                 "adduct": "[M+H]+",
                 "total_score": 80.0,
+                "注释水平": "链水平",
                 "matched_fragment_count": 3,
                 "matched_fragments": "100 HG; 200 FA",
             },
@@ -118,6 +120,7 @@ def test_summarize_feature_annotations_allows_multiple_names_per_feature() -> No
     assert selected["selected_scan_id"] == "scan_2"
     assert selected["feature_rt"] == 5.0
     assert selected["final_score"] == 80.0
+    assert selected["注释水平"] == "链水平"
     assert "total_score" not in summary.columns
     assert "n_ms2_spectra" not in summary.columns
     assert "supporting_files" not in summary.columns
@@ -172,6 +175,58 @@ def test_rescue_orphan_annotations_to_feature_tailing_scan() -> None:
     assert rescued.loc[1, "Feature_ID"] == "F1"
     assert rescued.loc[1, "feature_rt"] == 18.496
     assert rescued.loc[1, "rt_delta_sec"] > 45.0
+
+
+def test_remove_feature_supported_fa_orphans_only_drops_same_file_duplicates() -> None:
+    linked = pd.DataFrame(
+        [
+            {
+                "Feature_ID": "F1",
+                "source_file": "a.mzML",
+                "scan_id": "scan_feature",
+                "matched_name": "FA(16:0)",
+                "compound_class": "FA",
+                "adduct": "[M-H]-",
+            },
+            {
+                "Feature_ID": pd.NA,
+                "source_file": "a.mzML",
+                "scan_id": "scan_repeat",
+                "matched_name": "FA(16:0)",
+                "compound_class": "FA",
+                "adduct": "[M-H]-",
+            },
+            {
+                "Feature_ID": pd.NA,
+                "source_file": "b.mzML",
+                "scan_id": "scan_other_file",
+                "matched_name": "FA(16:0)",
+                "compound_class": "FA",
+                "adduct": "[M-H]-",
+            },
+            {
+                "Feature_ID": pd.NA,
+                "source_file": "a.mzML",
+                "scan_id": "scan_other_fa",
+                "matched_name": "FA(18:1)",
+                "compound_class": "FA",
+                "adduct": "[M-H]-",
+            },
+            {
+                "Feature_ID": pd.NA,
+                "source_file": "a.mzML",
+                "scan_id": "scan_non_fa",
+                "matched_name": "MGDG(16:0_18:2)",
+                "compound_class": "MGDG",
+                "adduct": "[M+CH3COO]-",
+            },
+        ]
+    )
+
+    filtered = remove_feature_supported_fa_orphans(linked)
+
+    assert "scan_repeat" not in set(filtered["scan_id"])
+    assert {"scan_feature", "scan_other_file", "scan_other_fa", "scan_non_fa"} <= set(filtered["scan_id"])
 
 
 def test_summarize_orphan_annotations_merges_across_files_and_uses_eic(monkeypatch, tmp_path: Path) -> None:

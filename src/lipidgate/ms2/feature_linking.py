@@ -32,6 +32,7 @@ ANNOTATION_COLUMNS = [
     "precursor_mz",
     "ppm_error",
     "final_score",
+    "注释水平",
     "matched_fragment_count",
     "matched_fragments",
 ]
@@ -314,6 +315,7 @@ def _annotation_row(group: pd.DataFrame, best: pd.Series) -> dict[str, object]:
         "precursor_mz": best.get("precursor_mz", pd.NA),
         "ppm_error": best.get("ppm_error", pd.NA),
         "final_score": best.get("final_score", best.get("total_score", pd.NA)),
+        "注释水平": best.get("注释水平", "类别水平"),
         "matched_fragment_count": best.get("matched_fragment_count", pd.NA),
         "matched_fragments": best.get("matched_fragments", ""),
         "n_ms2_spectra": int(len(group)),
@@ -408,6 +410,59 @@ def rescue_orphan_annotations_to_features(
         out.at[row_index, "rt_delta_sec"] = float(best["_rt_delta_sec"])
 
     return out
+
+
+def remove_feature_supported_fa_orphans(linked_df: pd.DataFrame) -> pd.DataFrame:
+    """Drop orphan FA MS2 repeats when the same file already has that FA linked to an MS1 feature."""
+
+    if linked_df.empty or "Feature_ID" not in linked_df.columns:
+        return linked_df
+
+    required_cols = ["matched_name", "adduct", "compound_class"]
+    if any(column not in linked_df.columns for column in required_cols):
+        return linked_df
+
+    out = linked_df.copy()
+    matched_mask = out["Feature_ID"].notna()
+    orphan_mask = out["Feature_ID"].isna()
+    fa_mask = out["compound_class"].map(_text_key).str.upper().eq("FA")
+    matched_fa = out[matched_mask & fa_mask].copy()
+    orphan_fa = out[orphan_mask & fa_mask].copy()
+    if matched_fa.empty or orphan_fa.empty:
+        return out
+
+    key_cols = ["matched_name", "adduct", "compound_class"]
+    if "source_file" in out.columns:
+        source_supported = {
+            (
+                _text_key(row.get("source_file")),
+                *(_text_key(row.get(column)) for column in key_cols),
+            )
+            for _, row in matched_fa.iterrows()
+            if _text_key(row.get("source_file"))
+        }
+    else:
+        source_supported = set()
+
+    global_supported = {
+        tuple(_text_key(row.get(column)) for column in key_cols)
+        for _, row in matched_fa.iterrows()
+    }
+
+    drop_indexes: list[object] = []
+    for row_index, row in orphan_fa.iterrows():
+        global_key = tuple(_text_key(row.get(column)) for column in key_cols)
+        source_file = _text_key(row.get("source_file")) if "source_file" in out.columns else ""
+        if source_file:
+            source_key = (source_file, *global_key)
+            if source_key in source_supported:
+                drop_indexes.append(row_index)
+        elif global_key in global_supported:
+            drop_indexes.append(row_index)
+
+    if not drop_indexes:
+        return out
+    return out.drop(index=drop_indexes).reset_index(drop=True)
 
 
 def summarize_feature_annotations(linked_df: pd.DataFrame) -> pd.DataFrame:

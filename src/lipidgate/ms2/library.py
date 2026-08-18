@@ -1,20 +1,179 @@
 from __future__ import annotations
 
 import ast
+import gzip
 import hashlib
 import os
 import pickle
 import re
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, Iterator, List, Tuple
 
 import pandas as pd
 
+from .import_msdial_sphingo_positive import annotate_positive_sl_fragments
 from .models import FragmentRecord, LibraryRecord
 
 
-LIBRARY_CACHE_VERSION = 8
+LIBRARY_CACHE_VERSION = 13
+
+OXYGEN_MONOISOTOPIC_MASS = 15.99491462
+HYDROXY_FA_SPHINGOLIPID_CLASSES = {"Cer", "HexCer", "LacCer", "Hex2Cer"}
+LCB_FRAGMENT_TYPE = "LCB碎片"
+D18_1_T18_0_MARKER_MZ = 300.2897
+
+POSITIVE_CHOLINE_COMMON_FRAGMENTS = (
+    (86.0964, "[C5H12N]+"),
+    (104.1070, "[C5H14NO]+"),
+    (124.9998, "[C2H6O4P]+"),
+)
+POSITIVE_CHOLINE_CLASS_KEYS = {
+    "PC",
+    "PCO",
+    "PCP",
+    "LPC",
+    "LPCO",
+    "SM",
+    "LSM",
+}
+FREE_SPHINGOID_BASE_CLASSES = {"SPB", "Sph", "DHSph", "PhytoSph"}
+
+
+def _canonicalize_sphingoid_base_identity(
+    compound_class: object,
+    lipid_name: object,
+    lipid_chain_name: object,
+) -> tuple[str, str, str]:
+    cls = str(compound_class or "").strip()
+    name = str(lipid_name or "").strip()
+    chain_name = str(lipid_chain_name or "").strip()
+    if cls not in FREE_SPHINGOID_BASE_CLASSES:
+        return cls, name, chain_name
+
+    def canonicalize_name(value: str) -> str:
+        if "(" in value:
+            return f"SPB({value.split('(', 1)[1]}"
+        return value
+
+    return "SPB", canonicalize_name(name), canonicalize_name(chain_name)
+
+
+def _add_formula_oxygen(formula: str) -> str:
+    text = str(formula or "").strip()
+    if not text:
+        return text
+    match = re.search(r"O(\d*)", text)
+    if match is None:
+        return f"{text}O"
+    current_count = int(match.group(1) or "1")
+    return f"{text[:match.start()]}O{current_count + 1}{text[match.end():]}"
+
+
+def _without_d18_1_300_lcb_marker(record: LibraryRecord) -> LibraryRecord:
+    """Keep m/z 300.2897 as a t18:0 marker instead of a d18:1 LCB ion."""
+
+    if re.search(r"\(d18:1/(?:h)?\d+:\d+\)", record.lipid_chain_name, flags=re.IGNORECASE) is None:
+        return record
+    fragments = [
+        fragment
+        for fragment in record.fragments
+        if not (
+            fragment.fragment_type == LCB_FRAGMENT_TYPE
+            and abs(float(fragment.mz) - D18_1_T18_0_MARKER_MZ) <= 0.02
+        )
+    ]
+    if len(fragments) == len(record.fragments):
+        return record
+    return replace(record, fragments=fragments)
+
+
+def _hydroxy_fa_fragment(fragment: FragmentRecord) -> FragmentRecord:
+    # Adding the FA hydroxyl shifts precursor-derived ions and the acyl-derived
+    # Ceramide-U ion by one oxygen. LCB-only ions retain their original masses.
+    shifts_with_fa_oxygen = fragment.fragment_type in {
+        "Precursor Ion",
+        "C类碎片",
+        "Diagnostic_HG",
+    } or fragment.name == "Ceramide fragment U"
+    if not shifts_with_fa_oxygen:
+        return fragment
+    return replace(fragment, mz=float(fragment.mz) + OXYGEN_MONOISOTOPIC_MASS)
+
+
+def _expand_hydroxy_fa_sphingolipids(records: Iterable[LibraryRecord]) -> List[LibraryRecord]:
+    """Add positive-mode d/h molecular species and normalize three-OH totals to t."""
+
+    normalized = [_without_d18_1_300_lcb_marker(record) for record in records]
+    existing_keys = {
+        (
+            record.compound_class,
+            record.lipid_chain_name,
+            round(float(record.precursor_mz), 4),
+            record.adduct,
+        )
+        for record in normalized
+    }
+    next_id = max((record.record_id for record in normalized), default=-1) + 1
+    generated: List[LibraryRecord] = []
+    chain_pattern = re.compile(
+        r"^(?P<prefix>[^()]+)\(d(?P<base_c>\d+):(?P<base_db>\d+)/"
+        r"(?P<fa_c>\d+):(?P<fa_db>\d+)\)$",
+        flags=re.IGNORECASE,
+    )
+
+    for source in normalized:
+        if source.compound_class not in HYDROXY_FA_SPHINGOLIPID_CLASSES:
+            continue
+        if source.adduct != "[M+H]+":
+            continue
+        match = chain_pattern.fullmatch(source.lipid_chain_name)
+        if match is None:
+            continue
+
+        base_c = int(match.group("base_c"))
+        base_db = int(match.group("base_db"))
+        fa_c = int(match.group("fa_c"))
+        fa_db = int(match.group("fa_db"))
+        chain_name = (
+            f"{match.group('prefix')}(d{base_c}:{base_db}/h{fa_c}:{fa_db})"
+        )
+        precursor_mz = float(source.precursor_mz) + OXYGEN_MONOISOTOPIC_MASS
+        key = (
+            source.compound_class,
+            chain_name,
+            round(precursor_mz, 4),
+            source.adduct,
+        )
+        if key in existing_keys:
+            continue
+
+        fragments = [_hydroxy_fa_fragment(fragment) for fragment in source.fragments]
+        derived = LibraryRecord(
+            record_id=next_id,
+            compound_class=source.compound_class,
+            lipid_name=(
+                f"{source.compound_class}(t{base_c + fa_c}:{base_db + fa_db})"
+            ),
+            lipid_chain_name=chain_name,
+            precursor_mz=precursor_mz,
+            adduct=source.adduct,
+            formula=_add_formula_oxygen(source.formula),
+            polarity=source.polarity,
+            fragments=fragments,
+            metadata={
+                **source.metadata,
+                "generated_hydroxy_fa_isomer": "true",
+                "source_chain_name": source.lipid_chain_name,
+            },
+        )
+        derived = _without_d18_1_300_lcb_marker(derived)
+        generated.append(derived)
+        existing_keys.add(key)
+        next_id += 1
+
+    return normalized + generated
 
 
 def _library_cache_metadata(path: Path) -> Dict[str, object]:
@@ -111,6 +270,24 @@ def _is_negative_pc_candidate_hg(
     return any(abs(float(fragment_mz) - target_mz) <= 0.02 for target_mz in (168.0431, 224.0693))
 
 
+def _is_negative_pc_p_m_ch3_hg(
+    compound_class: str,
+    fragment_type: str,
+    fragment_name: str,
+    adduct: str,
+) -> bool:
+    if str(compound_class or "").strip() != "PC-P":
+        return False
+    if str(fragment_type or "").strip() not in {"Common", "Diagnostic_HG"}:
+        return False
+    if str(adduct or "").strip() not in {"[M+Hac-H]-", "[M+CH3COO]-", "[M+HCOO]-"}:
+        return False
+    return str(fragment_name or "").strip() in {
+        "[M-CH3]-",
+        "[M-CH3COOCH3+Hac-H]-",
+    }
+
+
 def _is_positive_mg_adduct(adduct: str) -> bool:
     return str(adduct or "").strip().endswith("+")
 
@@ -124,6 +301,21 @@ def _is_positive_mg_hg_fragment(fragment_name: str) -> bool:
 
 def _is_positive_mg_negative_mode_fragment(fragment_name: str) -> bool:
     return str(fragment_name or "").strip().startswith("[RCOO]-")
+
+
+def _is_positive_shexcer_hg_fragment(
+    compound_class: str,
+    fragment_name: str,
+    adduct: str,
+) -> bool:
+    if str(compound_class or "").strip() != "SHexCer":
+        return False
+    if not str(adduct or "").strip().endswith("+"):
+        return False
+    return str(fragment_name or "").strip() in {
+        "M+H-H2SO4-C6H10O5",
+        "M+H-H2SO4-C6H10O5-H2O",
+    }
 
 
 def _is_class_specific_hg_fragment(
@@ -165,6 +357,8 @@ def _normalize_fragment_type(
             return None
         if _is_positive_mg_hg_fragment(name):
             return "Diagnostic_HG"
+    if _is_positive_shexcer_hg_fragment(cls, name, adduct):
+        return "Diagnostic_HG"
     if _is_class_specific_hg_fragment(cls, ftype, name, fragment_mz, adduct):
         return "Diagnostic_HG"
     if ftype == "头基诊断碎片" or ("璇婃柇" in ftype and "纰庣墖" in ftype):
@@ -180,6 +374,8 @@ def _normalize_fragment_type(
     if cls == "NAOrn" and _matches_special_hg_fragment(fragment_name, fragment_mz, 115.0866):
         return "Diagnostic_HG"
     if cls == "CE" and _matches_special_hg_fragment(fragment_name, fragment_mz, 369.3516):
+        return "Diagnostic_HG"
+    if _is_negative_pc_p_m_ch3_hg(cls, ftype, name, adduct):
         return "Diagnostic_HG"
     if _is_negative_pc_candidate_hg(cls, ftype, fragment_mz, adduct):
         return "Candidate_HG"
@@ -213,6 +409,42 @@ def _required_group_for_fragment(fragment_type: str) -> str | None:
     if fragment_type == "Diagnostic_HG":
         return "hg"
     return None
+
+
+def _ensure_positive_choline_common_fragments(
+    compound_class: str,
+    adduct: str,
+    fragments: Iterable[FragmentRecord],
+) -> List[FragmentRecord]:
+    result = list(fragments)
+    class_key = str(compound_class or "").strip().upper().replace("-", "")
+    if class_key not in POSITIVE_CHOLINE_CLASS_KEYS:
+        return result
+    if str(adduct or "").strip() != "[M+H]+":
+        return result
+    for target_mz, name in POSITIVE_CHOLINE_COMMON_FRAGMENTS:
+        matching_fragments = [
+            fragment
+            for fragment in result
+            if abs(float(fragment.mz) - target_mz) <= 0.02
+        ]
+        result = [
+            fragment
+            for fragment in result
+            if abs(float(fragment.mz) - target_mz) > 0.02
+        ]
+        source_fragment = matching_fragments[0] if matching_fragments else None
+        result.append(
+            FragmentRecord(
+                mz=float(source_fragment.mz) if source_fragment is not None else target_mz,
+                intensity=float(source_fragment.intensity) if source_fragment is not None else 100.0,
+                name=name,
+                fragment_type="Common",
+                weight=float(source_fragment.weight) if source_fragment is not None else 1.0,
+                required_group=None,
+            )
+        )
+    return result
 
 
 def _infer_polarity_from_adduct(adduct: str, default: str = "-") -> str:
@@ -250,6 +482,11 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
             raise ValueError(f"{file_path} 缺少列: {sorted(missing)}")
         grouped = df.groupby(["main_class", "lipid_name", "lipid_chain_name", "adduct", "precursor_mz"], dropna=False)
         for (main_class, lipid_name, lipid_chain_name, adduct, precursor_mz), group_df in grouped:
+            main_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
+                main_class,
+                lipid_name,
+                lipid_chain_name,
+            )
             formula = ""
             if "formula" in group_df.columns and not group_df["formula"].isna().all():
                 formula = str(group_df["formula"].dropna().iloc[0])
@@ -276,6 +513,11 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                         required_group=_required_group_for_fragment(fragment_type),
                     )
                 )
+            fragments = _ensure_positive_choline_common_fragments(
+                str(main_class),
+                str(adduct),
+                fragments,
+            )
             fragments.sort(key=lambda fragment: fragment.mz)
             records.append(
                 LibraryRecord(
@@ -292,7 +534,7 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 )
             )
             next_id += 1
-    return records
+    return _expand_hydroxy_fa_sphingolipids(records)
 
 
 def _quote_msp_field(value: object) -> str:
@@ -375,6 +617,15 @@ def _decode_record_comment(comment: str) -> Dict[str, str]:
     return fields
 
 
+def _iter_standard_msp_lines(msp_path: Path) -> Iterator[str]:
+    if msp_path.name.lower().endswith(".msp.gz"):
+        with gzip.open(msp_path, "rt", encoding="utf-8") as handle:
+            yield from handle
+        return
+    with msp_path.open("rt", encoding="utf-8") as handle:
+        yield from handle
+
+
 def write_standard_msp(records: Iterable[LibraryRecord], output_path: str | Path) -> Path:
     output_path = Path(output_path)
     with output_path.open("w", encoding="utf-8") as handle:
@@ -417,17 +668,35 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
             fragments = []
             reading_peaks = False
             return
+        normalized_fragments = list(fragments)
+        if current.get("compoundclass", "").strip() == "SL":
+            normalized_fragments = annotate_positive_sl_fragments(
+                current.get("name", ""),
+                float(current["precursormz"]),
+                current.get("precursortype", ""),
+                normalized_fragments,
+            )
+        normalized_fragments = _ensure_positive_choline_common_fragments(
+            current.get("compoundclass", ""),
+            current.get("precursortype", ""),
+            normalized_fragments,
+        )
+        compound_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
+            current.get("compoundclass", ""),
+            current.get("ms1_name", current.get("name", "")),
+            current.get("name", ""),
+        )
         records.append(
             LibraryRecord(
                 record_id=next_id,
-                compound_class=current.get("compoundclass", ""),
-                lipid_name=current.get("ms1_name", current.get("name", "")),
-                lipid_chain_name=current.get("name", ""),
+                compound_class=compound_class,
+                lipid_name=lipid_name,
+                lipid_chain_name=lipid_chain_name,
                 precursor_mz=float(current["precursormz"]),
                 adduct=current.get("precursortype", ""),
                 formula=current.get("formula", ""),
                 polarity=current.get("polarity", "-"),
-                fragments=list(sorted(fragments, key=lambda fragment: fragment.mz)),
+                fragments=list(sorted(normalized_fragments, key=lambda fragment: fragment.mz)),
             )
         )
         next_id += 1
@@ -435,7 +704,7 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
         fragments = []
         reading_peaks = False
 
-    for raw_line in msp_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in _iter_standard_msp_lines(msp_path):
         line = raw_line.strip()
         if not line:
             flush_current()
@@ -493,14 +762,14 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
                 )
             )
     flush_current()
-    return records
+    return _expand_hydroxy_fa_sphingolipids(records)
 
 
 def load_library(path: str | Path, use_cache: bool = True) -> List[LibraryRecord]:
     path = Path(path)
     if path.is_dir():
         return load_excel_directory(path)
-    if path.suffix.lower() == ".msp":
+    if path.name.lower().endswith((".msp", ".msp.gz")):
         if use_cache:
             cached_records = _load_cached_standard_msp(path)
             if cached_records is not None:
@@ -509,4 +778,4 @@ def load_library(path: str | Path, use_cache: bool = True) -> List[LibraryRecord
         if use_cache:
             _write_cached_standard_msp(path, records)
         return records
-    raise ValueError(f"不支持的库路径: {path}")
+    raise ValueError(f"不支持的库路径（需要 .msp 或 .msp.gz）: {path}")

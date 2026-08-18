@@ -16,9 +16,10 @@ from .scoring_policy import (
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
     HG_ONLY_FALLBACK_REASON as POLICY_HG_ONLY_FALLBACK_REASON,
     SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE,
-    SPHINGO_HG_ONLY_FALLBACK_MIN_TOTAL_SCORE,
 )
 from .scoring import (
+    LOSS_FRAGMENT_TYPES,
+    POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
     _calculate_pool_scores,
     _empty_pool_scores,
     _fah_only_low_confidence_gate_passes,
@@ -46,6 +47,7 @@ MS2_RESULT_EXPORT_COLUMNS = (
     "result_rank",
     "result_channel",
     "final_score",
+    "注释水平",
     "matched_fragment_count",
     "matched_fragments",
 )
@@ -86,7 +88,6 @@ class LipidMS2Searcher:
         "CERP",
     }
     HG_ONLY_FALLBACK_REASON = POLICY_HG_ONLY_FALLBACK_REASON
-    HG_ONLY_FALLBACK_MIN_TOTAL_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_TOTAL_SCORE
     HG_ONLY_FALLBACK_MIN_HG_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
 
@@ -101,7 +102,7 @@ class LipidMS2Searcher:
         min_relative_intensity: float = 0.005,
         min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
-        fragment_prefilter_min_candidates: int = 128,
+        fragment_prefilter_min_candidates: int = 8,
     ) -> None:
         self.library = sorted(load_library(library_path), key=lambda record: record.precursor_mz)
         self.rules = rules or DEFAULT_RULES
@@ -341,7 +342,21 @@ class LipidMS2Searcher:
         hit_indexes: list[int] = []
         for record_index in range(left, right):
             record = self.library[record_index]
+            requires_glyceride_chain_evidence = (
+                str(record.adduct or "").strip().endswith("+")
+                and self._normal_class_key(record.compound_class) in POSITIVE_GLYCERIDE_RCO_GATE_CLASSES
+            )
             for fragment in record.fragments:
+                # Positive glycerides cannot pass the existing gate on a common
+                # or precursor ion alone.  Requiring at least one chain-related
+                # RCO/loss overlap here is conservative: the full scorer still
+                # enforces its stricter match-count and coverage requirements.
+                if (
+                    requires_glyceride_chain_evidence
+                    and fragment.fragment_type != "FA_Frag"
+                    and fragment.fragment_type not in LOSS_FRAGMENT_TYPES
+                ):
+                    continue
                 tolerance = self._fragment_window_da(fragment.mz)
                 peak_left = bisect.bisect_left(experimental_mz, fragment.mz - tolerance)
                 if peak_left < len(experimental_mz) and experimental_mz[peak_left] <= fragment.mz + tolerance:
@@ -458,6 +473,72 @@ class LipidMS2Searcher:
     def _is_chain_info_result(result: CandidateScore) -> bool:
         return result.resolution_level in {"chain_level", "tentative_chain_level"}
 
+    @staticmethod
+    def _trihydroxy_t_counterpart(record: LibraryRecord) -> str | None:
+        match = re.fullmatch(
+            r"(?P<prefix>[^()]+)\(d(?P<base_c>\d+):(?P<base_db>\d+)/"
+            r"h(?P<fa_c>\d+):(?P<fa_db>\d+)\)",
+            str(record.lipid_chain_name or ""),
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        base_db = int(match.group("base_db"))
+        if base_db < 1:
+            return None
+        return (
+            f"{match.group('prefix')}(t{int(match.group('base_c'))}:{base_db - 1}/"
+            f"{int(match.group('fa_c'))}:{int(match.group('fa_db')) + 1})"
+        )
+
+    @classmethod
+    def _resolve_trihydroxy_lcb_isomers(
+        cls,
+        results: Sequence[CandidateScore],
+    ) -> list[CandidateScore]:
+        """Resolve d/h versus t/non-hydroxy pairs with the t-LCB water-loss ion."""
+
+        result_list = list(results)
+        by_identity: Dict[tuple[str, str, str, str, float], list[CandidateScore]] = {}
+        for result in result_list:
+            record = result.record
+            key = (
+                cls._normal_class_key(record.compound_class),
+                str(record.lipid_name),
+                str(record.lipid_chain_name),
+                str(record.adduct),
+                round(float(record.precursor_mz), 4),
+            )
+            by_identity.setdefault(key, []).append(result)
+
+        suppressed: set[int] = set()
+        for hydroxy_result in result_list:
+            hydroxy_record = hydroxy_result.record
+            t_chain_name = cls._trihydroxy_t_counterpart(hydroxy_record)
+            if t_chain_name is None:
+                continue
+            t_key = (
+                cls._normal_class_key(hydroxy_record.compound_class),
+                str(hydroxy_record.lipid_name),
+                t_chain_name,
+                str(hydroxy_record.adduct),
+                round(float(hydroxy_record.precursor_mz), 4),
+            )
+            t_results = by_identity.get(t_key, [])
+            if not t_results:
+                continue
+            t_marker_present = any(
+                match.fragment.fragment_type == "LCB碎片"
+                and match.fragment.name == "LCB-H2O"
+                for t_result in t_results
+                for match in t_result.matched_fragments
+            )
+            if t_marker_present:
+                suppressed.add(id(hydroxy_result))
+            else:
+                suppressed.update(id(t_result) for t_result in t_results)
+        return [result for result in result_list if id(result) not in suppressed]
+
     def _is_low_confidence_hg_only_result(self, result: CandidateScore) -> bool:
         return (
             result.resolution_level == "tentative_species_level"
@@ -469,11 +550,6 @@ class LipidMS2Searcher:
             0.0,
             float(getattr(self, "min_total_score", self.DEFAULT_MIN_TOTAL_SCORE)),
         )
-        if (
-            result.resolution_level == "tentative_species_level"
-            and result.downgrade_reason == self.HG_ONLY_FALLBACK_REASON
-        ):
-            min_total_score = min(min_total_score, self.HG_ONLY_FALLBACK_MIN_TOTAL_SCORE)
         return result.total_score >= min_total_score
 
     @staticmethod
@@ -612,6 +688,7 @@ class LipidMS2Searcher:
                     for item in main_results
                     if not self._is_low_confidence_hg_only_result(item)
                 ]
+            main_results = self._resolve_trihydroxy_lcb_isomers(main_results)
             if main_results:
                 main_metrics = self._compute_rank_metrics(main_results)
                 self._sort_by_rank_metrics(main_results, main_metrics)
@@ -715,7 +792,7 @@ class LipidMS2Searcher:
         }:
             prefix = lipid_chain_name.split("(", 1)[0]
             has_oh = "OH" in lipid_chain_name
-            chain_tokens = re.findall(r"[mdt]?\d+:\d+", lipid_chain_name, flags=re.IGNORECASE)
+            chain_tokens = re.findall(r"[mdth]?\d+:\d+", lipid_chain_name, flags=re.IGNORECASE)
             if len(chain_tokens) >= 2:
                 def is_base(token: str) -> bool:
                     return bool(re.match(r"^[mdt]\d+:\d+$", token, flags=re.IGNORECASE))
@@ -819,6 +896,17 @@ class LipidMS2Searcher:
         return combined
 
 
+def annotation_level_label(resolution_level: object) -> str:
+    normalized = str(resolution_level or "").strip().lower()
+    if normalized in {"double_bond_level", "tentative_double_bond_level"}:
+        return "双键水平"
+    if normalized in {"chain_level", "tentative_chain_level"}:
+        return "链水平"
+    if normalized in {"species_level", "tentative_species_level"}:
+        return "分子种类水平"
+    return "类别水平"
+
+
 def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     if combined.empty:
         return pd.DataFrame(columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in combined.columns])
@@ -840,6 +928,10 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
         export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
     if "result_rank_scope" in export_df.columns:
         export_df["result_channel"] = export_df["result_rank_scope"]
+    if "resolution_level" in export_df.columns:
+        export_df["注释水平"] = export_df["resolution_level"].map(annotation_level_label)
+    elif "注释水平" not in export_df.columns:
+        export_df["注释水平"] = "类别水平"
     return pd.DataFrame(export_df, columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in export_df.columns])
 
 

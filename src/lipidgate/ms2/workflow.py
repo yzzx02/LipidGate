@@ -253,6 +253,7 @@ def run_ms2_feature_annotation_result(
         collect_mzml_paths,
         link_ms2_to_features,
         rescue_orphan_annotations_to_features,
+        remove_feature_supported_fa_orphans,
         summarize_feature_annotations,
         summarize_orphan_annotations,
     )
@@ -321,6 +322,7 @@ def run_ms2_feature_annotation_result(
             mz_tol_ppm=float(precursor_tolerance_ppm),
             rt_window_sec=float(rt_window_sec),
         )
+        linked_df = remove_feature_supported_fa_orphans(linked_df)
         matched = summarize_feature_annotations(linked_df)
         orphan_df = linked_df[linked_df["Feature_ID"].isna()].copy()
         orphan = summarize_orphan_annotations(

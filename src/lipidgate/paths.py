@@ -8,11 +8,11 @@ def project_root() -> Path:
 
 
 def default_positive_msp() -> Path:
-    return project_root() / "libraries" / "ms2" / "current_positive.msp"
+    return project_root() / "libraries" / "ms2" / "current_positive.msp.gz"
 
 
 def default_negative_msp() -> Path:
-    return project_root() / "libraries" / "ms2" / "current_negative.msp"
+    return project_root() / "libraries" / "ms2" / "current_negative.msp.gz"
 
 
 def default_peak_truth_model_dir() -> Path:

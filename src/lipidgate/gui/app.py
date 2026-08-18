@@ -465,8 +465,11 @@ class PeakTruthPage(WorkflowPage):
 
 class MS2Page(WorkflowPage):
     completed = QtCore.Signal(str)
-    CONTROL_HEIGHT = 32
+    CONTROL_HEIGHT = 34
     PARAM_SPIN_WIDTH = 150
+    PATH_LABEL_WIDTH = 92
+    BROWSE_BUTTON_WIDTH = 84
+    MZML_BUTTON_WIDTH = 68
 
     def _style_parameter_spinbox(self, spinbox: QtWidgets.QAbstractSpinBox, width: int | None = None) -> None:
         spinbox.setFixedWidth(width or self.PARAM_SPIN_WIDTH)
@@ -486,11 +489,46 @@ class MS2Page(WorkflowPage):
     def _make_browse_button(self, slot: Callable[[], None], tooltip: str) -> QtWidgets.QPushButton:
         button = QtWidgets.QPushButton("选择")
         button.setMinimumHeight(self.CONTROL_HEIGHT)
-        button.setFixedWidth(72)
+        button.setFixedWidth(self.BROWSE_BUTTON_WIDTH)
         button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         button.setToolTip(tooltip)
         button.clicked.connect(slot)
         return button
+
+    def _attach_inline_browse_button(
+        self,
+        edit: QtWidgets.QLineEdit,
+        slot: Callable[[], None],
+        tooltip: str,
+    ) -> None:
+        button = QtWidgets.QToolButton(edit)
+        button.setObjectName("inlineBrowseButton")
+        button.setText("...")
+        button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        button.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        button.setToolTip(tooltip)
+        button.setFixedSize(28, 24)
+        button.clicked.connect(slot)
+        edit.setTextMargins(0, 0, 34, 0)
+        edit.installEventFilter(self)
+        self._inline_browse_buttons[edit] = button
+        self._position_inline_browse_button(edit)
+
+    def _position_inline_browse_button(self, edit: QtWidgets.QLineEdit) -> None:
+        button = self._inline_browse_buttons.get(edit)
+        if button is None:
+            return
+        x = edit.rect().right() - button.width() - 5
+        y = (edit.height() - button.height()) // 2
+        button.move(max(0, x), max(0, y))
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if watched in getattr(self, "_inline_browse_buttons", {}) and event.type() in {
+            QtCore.QEvent.Type.Resize,
+            QtCore.QEvent.Type.Show,
+        }:
+            self._position_inline_browse_button(watched)  # type: ignore[arg-type]
+        return super().eventFilter(watched, event)
 
     def _add_path_grid_row(
         self,
@@ -504,32 +542,23 @@ class MS2Page(WorkflowPage):
         edit.setMinimumHeight(self.CONTROL_HEIGHT)
         edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         label_widget = self._make_field_label(label)
-        label_widget.setFixedWidth(78)
+        label_widget.setFixedWidth(self.PATH_LABEL_WIDTH)
         grid.addWidget(label_widget, row, 0)
         grid.addWidget(edit, row, 1)
-        grid.addWidget(self._make_browse_button(browse_slot, tooltip), row, 2)
+        self._attach_inline_browse_button(edit, browse_slot, tooltip)
 
     def _add_mzml_grid_row(self, grid: QtWidgets.QGridLayout, row: int) -> None:
         self.mzml.setMinimumHeight(self.CONTROL_HEIGHT)
         self.mzml.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         label_widget = self._make_field_label("mzML")
-        label_widget.setFixedWidth(78)
-        button_box = QtWidgets.QWidget()
-        button_layout = QtWidgets.QHBoxLayout(button_box)
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.setSpacing(6)
-        for text, slot, tooltip in [
-            ("File", self._browse_mzml, "Select one mzML file"),
-            ("Dir", self._browse_mzml_dir, "Select a directory containing mzML files"),
-            ("Multi", self._browse_mzml_multi, "Select multiple mzML files"),
-        ]:
-            button = self._make_browse_button(slot, tooltip)
-            button.setText(text)
-            button.setFixedWidth(62)
-            button_layout.addWidget(button)
+        label_widget.setFixedWidth(self.PATH_LABEL_WIDTH)
         grid.addWidget(label_widget, row, 0)
         grid.addWidget(self.mzml, row, 1)
-        grid.addWidget(button_box, row, 2)
+        self._attach_inline_browse_button(
+            self.mzml,
+            self._browse_mzml_multi,
+            "Select one or more mzML files",
+        )
 
     def _add_parameter_pair(
         self,
@@ -549,10 +578,14 @@ class MS2Page(WorkflowPage):
         self.last_ecn_image: Path | None = None
         self._ecn_preview_pixmap: QtGui.QPixmap | None = None
         self.selected_mzml_paths: list[Path] = []
+        self._inline_browse_buttons: dict[QtWidgets.QLineEdit, QtWidgets.QToolButton] = {}
         self.mzml = QtWidgets.QLineEdit()
         self.feature_table = QtWidgets.QLineEdit()
         self.output_dir = QtWidgets.QLineEdit(self._settings_value("ms2/output_dir", str(Path.cwd() / "results" / "ms2")))
         self.mode = QtWidgets.QComboBox()
+        self.mode.setFixedWidth(self.PARAM_SPIN_WIDTH)
+        self.mode.setMinimumHeight(self.CONTROL_HEIGHT)
+        self.mode.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         self.mode.addItem("负模式", "negative")
         self.mode.addItem("正模式", "positive")
         self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
@@ -619,28 +652,32 @@ class MS2Page(WorkflowPage):
         self.tabs.addTab(self.ecn_table, "ECN 通过结果")
         self.tabs.addTab(self.ecn_preview, "ECN 预览图")
         self.log.setMinimumHeight(60)
-        self.log.setMaximumHeight(90)
+        self.log.setMaximumHeight(120)
         for widget in (
             self.mzml,
             self.feature_table,
             self.output_dir,
-            self.mode,
             self.library,
-            self.tolerance_unit,
         ):
             widget.setMinimumHeight(self.CONTROL_HEIGHT)
             widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        for widget in (self.mode, self.tolerance_unit):
+            widget.setMinimumHeight(self.CONTROL_HEIGHT)
+            widget.setFixedWidth(self.PARAM_SPIN_WIDTH)
+            widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         for button in (self.run_btn, self.run_ecn_btn, self.open_output_btn):
             button.setMinimumHeight(self.CONTROL_HEIGHT)
-            button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+            button.setMinimumWidth(148)
+            button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.run_btn.setMinimumWidth(172)
 
         parameter_card = QtWidgets.QWidget()
         parameter_card.setObjectName("ms2ParameterCard")
         parameter_card.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
 
         card_layout = QtWidgets.QVBoxLayout(parameter_card)
-        card_layout.setContentsMargins(14, 14, 14, 14)
-        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(7)
 
         title = QtWidgets.QLabel("参数设置")
         title.setObjectName("cardTitle")
@@ -649,7 +686,7 @@ class MS2Page(WorkflowPage):
         file_section = QtWidgets.QWidget()
         file_layout = QtWidgets.QVBoxLayout(file_section)
         file_layout.setContentsMargins(0, 0, 0, 0)
-        file_layout.setSpacing(8)
+        file_layout.setSpacing(6)
 
         file_title = QtWidgets.QLabel("输入文件")
         file_title.setObjectName("sectionTitle")
@@ -658,7 +695,8 @@ class MS2Page(WorkflowPage):
         file_grid = QtWidgets.QGridLayout()
         file_grid.setContentsMargins(0, 0, 0, 0)
         file_grid.setHorizontalSpacing(10)
-        file_grid.setVerticalSpacing(8)
+        file_grid.setVerticalSpacing(5)
+        file_grid.setColumnMinimumWidth(0, self.PATH_LABEL_WIDTH)
         file_grid.setColumnStretch(1, 1)
         self._add_mzml_grid_row(file_grid, 0)
         self._add_path_grid_row(file_grid, 1, "Feature", self.feature_table, self._browse_feature_table, "Select feature table CSV/XLSX")
@@ -670,7 +708,7 @@ class MS2Page(WorkflowPage):
         search_section = QtWidgets.QWidget()
         search_layout = QtWidgets.QVBoxLayout(search_section)
         search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(8)
+        search_layout.setSpacing(6)
 
         search_title = QtWidgets.QLabel("搜索参数")
         search_title.setObjectName("sectionTitle")
@@ -679,7 +717,11 @@ class MS2Page(WorkflowPage):
         parameter_grid = QtWidgets.QGridLayout()
         parameter_grid.setContentsMargins(0, 0, 0, 0)
         parameter_grid.setHorizontalSpacing(10)
-        parameter_grid.setVerticalSpacing(8)
+        parameter_grid.setVerticalSpacing(5)
+        parameter_grid.setColumnMinimumWidth(0, 150)
+        parameter_grid.setColumnMinimumWidth(1, self.PARAM_SPIN_WIDTH)
+        parameter_grid.setColumnMinimumWidth(2, 150)
+        parameter_grid.setColumnMinimumWidth(3, self.PARAM_SPIN_WIDTH)
         parameter_grid.setColumnStretch(1, 1)
         parameter_grid.setColumnStretch(3, 1)
         self._add_parameter_pair(parameter_grid, 0, 0, "模式", self.mode)
@@ -706,33 +748,22 @@ class MS2Page(WorkflowPage):
 
         action_row = QtWidgets.QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(8)
+        action_row.setSpacing(10)
         action_row.addWidget(self.run_btn)
         action_row.addWidget(self.run_ecn_btn)
         action_row.addWidget(self.open_output_btn)
         action_row.addStretch(1)
+        card_layout.addLayout(action_row)
 
         parameter_panel = QtWidgets.QWidget()
         parameter_panel.setObjectName("ms2ParameterPanel")
         parameter_panel_layout = QtWidgets.QVBoxLayout(parameter_panel)
         parameter_panel_layout.setContentsMargins(0, 0, 0, 0)
-        parameter_panel_layout.setSpacing(10)
+        parameter_panel_layout.setSpacing(0)
         parameter_panel_layout.addWidget(parameter_card)
-        parameter_panel_layout.addLayout(action_row)
         parameter_panel_layout.activate()
         parameter_panel.setMinimumHeight(parameter_panel.sizeHint().height())
-
-        parameter_scroll = QtWidgets.QScrollArea()
-        parameter_scroll.setObjectName("ms2ParameterScroll")
-        parameter_scroll.setWidgetResizable(True)
-        parameter_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        parameter_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        parameter_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        parameter_scroll.setWidget(parameter_panel)
-        parameter_panel_height = parameter_panel.sizeHint().height()
-        parameter_scroll.setMinimumHeight(parameter_panel_height)
-        parameter_scroll.setMaximumHeight(parameter_panel_height)
-        parameter_scroll.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
+        parameter_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
 
         body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         body.addWidget(self.tabs)
@@ -741,14 +772,14 @@ class MS2Page(WorkflowPage):
         body.setStretchFactor(1, 1)
         body.setCollapsible(0, False)
         body.setCollapsible(1, False)
-        body.setSizes([300, 80])
+        body.setSizes([520, 110])
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-        layout.addWidget(parameter_scroll, 0)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+        layout.addWidget(parameter_panel, 0)
         layout.addWidget(body, 1)
-        layout.setStretchFactor(parameter_scroll, 0)
+        layout.setStretchFactor(parameter_panel, 0)
         layout.setStretchFactor(body, 1)
 
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
@@ -845,7 +876,12 @@ class MS2Page(WorkflowPage):
         self._browse_dir(self.output_dir, "选择输出目录", "ms2/output_dir")
 
     def _browse_library(self) -> None:
-        self._browse_file(self.library, "选择 MSP 库", "MSP (*.msp);;All (*.*)", "ms2/library")
+        self._browse_file(
+            self.library,
+            "选择 MSP 库",
+            "MSP (*.msp *.msp.gz);;All (*.*)",
+            "ms2/library",
+        )
 
     def run(self) -> None:
         mzml_input = self._mzml_input_for_run()
@@ -1022,13 +1058,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings = QtCore.QSettings("LipidGate", "LipidGate")
         screen = QtGui.QGuiApplication.primaryScreen()
         available = screen.availableGeometry() if screen else QtCore.QRect(0, 0, 1280, 800)
-        default_width = max(1100, min(1220, int(available.width() * 0.88)))
-        default_height = max(760, min(820, int(available.height() * 0.88)))
+        default_width = max(1360, min(1440, int(available.width() * 0.92)))
+        default_height = max(860, min(900, int(available.height() * 0.90)))
         self.resize(default_width, default_height)
-        self.setMinimumSize(1100, 760)
+        self.setMinimumSize(1280, 820)
         geometry = self.settings.value("main/geometry")
         if geometry:
             self.restoreGeometry(geometry)
+            if self.width() < 1360 or self.height() < 850:
+                self.resize(default_width, default_height)
         self.status = self.statusBar()
         self.progress = QtWidgets.QProgressBar()
         self.progress.setFixedWidth(180)
@@ -1070,6 +1108,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav = QtWidgets.QListWidget()
         self.nav.addItems(["特征提取", "真假峰识别", "二级质谱鉴定", "结果查看"])
         self.nav.setObjectName("sideNav")
+        self.nav.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.nav.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.nav.setSpacing(6)
         self.nav.setUniformItemSizes(True)
         self.nav.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1117,6 +1157,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def _apply_style(self) -> None:
+        combo_arrow = resource_path("assets/icons/combo_down.svg").as_posix()
         self.setStyleSheet(
             """
             QMainWindow, QWidget {
@@ -1149,18 +1190,33 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: transparent;
                 padding: 6px;
                 color: #e5e7eb;
+                outline: 0;
+                show-decoration-selected: 0;
+            }
+            QListWidget#sideNav:focus {
+                border: none;
+                outline: 0;
             }
             QListWidget#sideNav::item {
                 min-height: 44px;
                 padding: 0 11px;
                 border-radius: 6px;
+                border: 1px solid transparent;
+                outline: 0;
             }
             QListWidget#sideNav::item:selected {
                 background: #2563eb;
                 color: #ffffff;
+                border: 1px solid transparent;
+            }
+            QListWidget#sideNav::item:selected:!active {
+                background: #2563eb;
+                color: #ffffff;
+                border: 1px solid transparent;
             }
             QListWidget#sideNav::item:hover {
                 background: #334155;
+                border: 1px solid transparent;
             }
             QLabel#panelTitle {
                 font-weight: 600;
@@ -1186,13 +1242,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 border: 1px solid #e5e7eb;
                 border-radius: 10px;
             }
-            QScrollArea#ms2ParameterScroll {
-                background: transparent;
-                border: none;
-            }
-            QScrollArea#ms2ParameterScroll > QWidget > QWidget {
-                background: transparent;
-            }
             QLabel#eicPreview, QLabel#ecnPreview {
                 border: 1px solid #d7dde5;
                 border-radius: 8px;
@@ -1215,20 +1264,61 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
                 border: 1px solid #cbd5e1;
-                border-radius: 6px;
+                border-radius: 7px;
                 background: #ffffff;
-                min-height: 30px;
+                min-height: 32px;
                 padding: 0 8px;
             }
             QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus {
                 border: 1px solid #2563eb;
             }
+            QComboBox {
+                min-height: 32px;
+                padding: 0 38px 0 10px;
+                selection-background-color: #2563eb;
+                selection-color: #ffffff;
+            }
+            QComboBox:hover {
+                border-color: #60a5fa;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 34px;
+                border-left: 1px solid #e2e8f0;
+                border-top-right-radius: 7px;
+                border-bottom-right-radius: 7px;
+                background: #f8fafc;
+            }
+            QComboBox::drop-down:hover {
+                background: #eff6ff;
+                border-left-color: #bfdbfe;
+            }
+            QComboBox::down-arrow {
+                image: url("__COMBO_ARROW__");
+                width: 16px;
+                height: 16px;
+            }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #111827;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                padding: 4px;
+                selection-background-color: #2563eb;
+                selection-color: #ffffff;
+                outline: 0;
+            }
             QPushButton, QToolButton {
-                min-height: 30px;
+                min-height: 32px;
                 border: 1px solid #cbd5e1;
                 border-radius: 6px;
                 background: #ffffff;
                 padding: 0 12px;
+            }
+            QPushButton:focus, QToolButton:focus {
+                outline: 0;
+                border: 1px solid #cbd5e1;
             }
             QPushButton:hover, QToolButton:hover {
                 background: #f8fafc;
@@ -1241,12 +1331,35 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #94a3b8;
                 background: #f1f5f9;
             }
+            QToolButton#inlineBrowseButton {
+                min-width: 28px;
+                min-height: 24px;
+                max-width: 28px;
+                max-height: 24px;
+                border: none;
+                border-radius: 5px;
+                background: transparent;
+                color: #475569;
+                padding: 0;
+                font-weight: 700;
+            }
+            QToolButton#inlineBrowseButton:hover {
+                background: #e0f2fe;
+                color: #1d4ed8;
+            }
+            QToolButton#inlineBrowseButton:pressed {
+                background: #bfdbfe;
+            }
             QPushButton#primaryButton {
                 background: #2563eb;
                 border-color: #2563eb;
                 color: #ffffff;
                 font-weight: 600;
                 padding: 0 16px;
+            }
+            QPushButton#primaryButton:focus {
+                outline: 0;
+                border-color: #2563eb;
             }
             QPushButton#primaryButton:hover {
                 background: #1d4ed8;
@@ -1266,6 +1379,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 border-color: #cbd5e1;
                 color: #334155;
             }
+            QPushButton#secondaryButton:focus {
+                outline: 0;
+                border-color: #cbd5e1;
+            }
             QTableView {
                 gridline-color: #e2e8f0;
                 selection-background-color: #bfdbfe;
@@ -1283,7 +1400,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: #f1f5f9;
                 border: 1px solid #d7dde5;
                 border-bottom: none;
-                padding: 7px 13px;
+                min-width: 116px;
+                padding: 8px 14px;
                 margin-right: 3px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
@@ -1292,7 +1410,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: #ffffff;
                 color: #1d4ed8;
             }
-            """
+            """.replace("__COMBO_ARROW__", combo_arrow)
         )
 
 

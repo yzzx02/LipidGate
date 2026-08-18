@@ -298,6 +298,102 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertLess(rows[0]["total_score"], 50.0)
         self.assertEqual(rows[0]["final_score"], rows[0]["total_score"])
 
+    def test_min_total_score_is_hard_cutoff_for_hg_only_species_result(self) -> None:
+        result = build_candidate(
+            47,
+            "PC(34:1)",
+            total_score=49.99,
+            matched_intensity_sum=1000.0,
+            matched_relative_intensity_sum=1.0,
+            matched_fragments=[build_match(184.0733, "Diagnostic_HG", 1.0)],
+            record_fragments=[FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG")],
+            compound_class="PC",
+            adduct="[M+H]+",
+        )
+        result.resolution_level = "tentative_species_level"
+        result.downgrade_reason = "low_confidence_hg_only"
+        self.searcher.min_total_score = 50.0
+
+        self.assertFalse(self.searcher._passes_min_total_score(result))
+
+        self.searcher.min_total_score = 30.0
+        self.assertTrue(self.searcher._passes_min_total_score(result))
+
+    def test_t18_0_marker_selects_t_isomer_over_d18_1_hydroxy_fa(self) -> None:
+        t_result = build_candidate(
+            80,
+            "HexCer(t18:0/24:1)",
+            total_score=70.0,
+            matched_intensity_sum=1000.0,
+            matched_relative_intensity_sum=1.0,
+            matched_fragments=[build_match(300.2897, "LCB碎片", 1.0, "LCB-H2O")],
+            record_fragments=[FragmentRecord(300.2897, "LCB-H2O", "LCB碎片")],
+            compound_class="HexCer",
+            adduct="[M+H]+",
+        )
+        hydroxy_result = build_candidate(
+            81,
+            "HexCer(d18:1/h24:0)",
+            total_score=80.0,
+            matched_intensity_sum=1200.0,
+            matched_relative_intensity_sum=1.2,
+            matched_fragments=[build_match(282.2791, "LCB碎片", 0.8, "LCB-H2O")],
+            record_fragments=[FragmentRecord(282.2791, "LCB-H2O", "LCB碎片")],
+            compound_class="HexCer",
+            adduct="[M+H]+",
+        )
+        for result in (t_result, hydroxy_result):
+            result.record.lipid_name = "HexCer(t42:1)"
+            result.record.precursor_mz = 828.6923
+
+        selected = self.searcher._resolve_trihydroxy_lcb_isomers(
+            [hydroxy_result, t_result]
+        )
+
+        self.assertEqual([result.record.lipid_chain_name for result in selected], ["HexCer(t18:0/24:1)"])
+
+    def test_missing_t18_0_marker_selects_d18_1_hydroxy_fa_isomer(self) -> None:
+        t_result = build_candidate(
+            82,
+            "Cer(t18:0/24:1)",
+            total_score=85.0,
+            matched_intensity_sum=1200.0,
+            matched_relative_intensity_sum=1.2,
+            matched_fragments=[build_match(282.2791, "LCB碎片", 0.8, "LCB-2H2O")],
+            record_fragments=[FragmentRecord(300.2897, "LCB-H2O", "LCB碎片")],
+            compound_class="Cer",
+            adduct="[M+H]+",
+        )
+        hydroxy_result = build_candidate(
+            83,
+            "Cer(d18:1/h24:0)",
+            total_score=70.0,
+            matched_intensity_sum=1000.0,
+            matched_relative_intensity_sum=1.0,
+            matched_fragments=[build_match(282.2791, "LCB碎片", 0.8, "LCB-H2O")],
+            record_fragments=[FragmentRecord(282.2791, "LCB-H2O", "LCB碎片")],
+            compound_class="Cer",
+            adduct="[M+H]+",
+        )
+        for result in (t_result, hydroxy_result):
+            result.record.lipid_name = "Cer(t42:1)"
+            result.record.precursor_mz = 666.6395
+
+        selected = self.searcher._resolve_trihydroxy_lcb_isomers(
+            [t_result, hydroxy_result]
+        )
+
+        self.assertEqual([result.record.lipid_chain_name for result in selected], ["Cer(d18:1/h24:0)"])
+
+    def test_chain_name_canonicalization_preserves_hydroxy_fa_prefix(self) -> None:
+        self.assertEqual(
+            self.searcher._canonicalize_chain_name(
+                "HexCer(d18:1/h24:0)",
+                "HexCer",
+            ),
+            "HexCer(d18:1/h24:0)",
+        )
+
     def test_fa_result_does_not_take_main_top_rank(self) -> None:
         fa_record = LibraryRecord(
             record_id=44,
@@ -547,12 +643,37 @@ class SearchSelectionTests(unittest.TestCase):
             "result_rank_scope": "main",
             "final_score": 88.888,
             "total_score": 62.346,
+            "resolution_level": "tentative_chain_level",
+            "evidence_status": "internal-only",
+            "downgrade_reason": "internal-only",
             "matched_fragment_count": 4,
             "matched_fragments": "x",
         }]))
 
         self.assertEqual(export.loc[0, "final_score"], 62.35)
+        self.assertEqual(export.loc[0, "注释水平"], "链水平")
         self.assertNotIn("total_score", export.columns)
+        self.assertNotIn("resolution_level", export.columns)
+        self.assertNotIn("evidence_status", export.columns)
+        self.assertNotIn("downgrade_reason", export.columns)
+
+    def test_export_maps_all_annotation_levels_to_one_user_column(self) -> None:
+        export = prepare_ms2_result_export_df(pd.DataFrame({
+            "resolution_level": [
+                "class_level",
+                "species_level",
+                "tentative_species_level",
+                "chain_level",
+                "tentative_chain_level",
+                "double_bond_level",
+                "tentative_double_bond_level",
+            ]
+        }))
+
+        self.assertEqual(
+            export["注释水平"].tolist(),
+            ["类别水平", "分子种类水平", "分子种类水平", "链水平", "链水平", "双键水平", "双键水平"],
+        )
 
     def test_fragment_index_prunes_no_fragment_candidates_without_changing_output(self) -> None:
         matching_record = LibraryRecord(
@@ -602,6 +723,56 @@ class SearchSelectionTests(unittest.TestCase):
             ["PE(16:0_18:1)"],
         )
 
+        self.assertEqual(
+            slow_searcher.score_spectrum(spectrum, top_n=5),
+            fast_searcher.score_spectrum(spectrum, top_n=5),
+        )
+
+    def test_fragment_index_ignores_common_only_positive_tg_overlap(self) -> None:
+        common_only_record = LibraryRecord(
+            record_id=1,
+            compound_class="TG",
+            lipid_name="TG(54:3)",
+            lipid_chain_name="TG(18:1_18:1_18:1)",
+            precursor_mz=900.0,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(200.0, "common", "Common"),
+                FragmentRecord(239.2, "(R=O)+(14:0)", "FA_Frag"),
+                FragmentRecord(241.2, "(R=O)+(14:1)", "FA_Frag"),
+            ],
+        )
+        chain_evidence_record = LibraryRecord(
+            record_id=2,
+            compound_class="TG",
+            lipid_name="TG(54:2)",
+            lipid_chain_name="TG(16:0_18:1_20:1)",
+            precursor_mz=900.0,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(200.0, "common", "Common"),
+                FragmentRecord(267.2, "(R=O)+(16:0)", "FA_Frag"),
+                FragmentRecord(295.2, "(R=O)+(18:1)", "FA_Frag"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_tg",
+            precursor_mz=900.0,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (200.0, 500.0),
+                (267.2, 1000.0),
+                (295.2, 800.0),
+            ]),
+        )
+        records = [common_only_record, chain_evidence_record]
+        slow_searcher = self._build_memory_searcher(records, use_fragment_index=False)
+        fast_searcher = self._build_memory_searcher(records, use_fragment_index=True)
+
+        left, right = fast_searcher._find_candidate_index_range(900.0)
+        candidate_indexes = fast_searcher._candidate_indexes_with_fragment_overlap(spectrum, left, right)
+        self.assertEqual(candidate_indexes, [1])
         self.assertEqual(
             slow_searcher.score_spectrum(spectrum, top_n=5),
             fast_searcher.score_spectrum(spectrum, top_n=5),
