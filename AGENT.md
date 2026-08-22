@@ -128,8 +128,27 @@ FA independent channel:
 
 ECN interaction:
 
-- ECN should use `total_score` preferentially when both `total_score` and `final_score` exist.
+- ECN uses `final_score` as its only candidate-priority score column.
+- For each `subclass + total_DB + total_C`, the modeling anchor is selected from
+  the highest-`final_score` candidates. If the top score is tied, choose the tied
+  candidate closest to their median RT.
+- Candidate deduplication is only allowed in the reduced anchor pool. The full
+  output must retain every original candidate row and assess each row against the
+  fitted RT rule.
 - ECN should not remove candidates from the full table; it should create an ECN-passed output table separately.
+
+Current MS2 invariants:
+
+- Equal final scores share the same result rank; a perfect-score tie is therefore
+  reported as multiple Top1 candidates rather than arbitrarily ordered ranks.
+- A fragment assigned to a chain token also supports every repeated occurrence of
+  that same chain in the library composition (for example, one 18:1 loss supports
+  TG(18:1_18:1_18:1) three times).
+- PE-O and PE-P negative-mode headgroup evidence is unified on 140/196; obsolete
+  153 evidence is not part of the HG pool. HG requires at least one match and FAH
+  follows the shared phospholipid gate rather than a subclass-only special gate.
+- DG-O chain evidence comes from `[R2C=O+C3H6O2]+`; `(R=O)+` remains supporting
+  evidence outside the FAH pool.
 
 ## Git And Artifact Discipline
 

@@ -142,6 +142,7 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     assert result.data.loc[0, "ppm_error"] == 1.23
     assert result.data.loc[0, "final_score"] == 80.0
     assert "total_score" not in result.data.columns
+    assert "result_channel" not in result.data.columns
 
 
 def test_ms2_feature_annotation_result_merges_cross_file_orphans(tmp_path: Path, monkeypatch) -> None:
@@ -217,17 +218,21 @@ def test_ms2_feature_annotation_result_merges_cross_file_orphans(tmp_path: Path,
     assert result.annotations_csv_path is None
     assert result.xlsx_path is not None and result.xlsx_path.exists()
     assert result.ms2_row_count == 4
+    assert {"rt_minutes", "feature_rt"} <= set(result.ms2_spectrum_results.columns)
+    assert "result_channel" not in result.ms2_spectrum_results.columns
     assert len(result.feature_annotations) == 2
     assert "annotation_status" not in result.feature_annotations.columns
-    assert "selected_ms2_rt" not in result.feature_annotations.columns
+    assert "selected_ms2_rt" in result.feature_annotations.columns
     assert "n_ms2_spectra" not in result.feature_annotations.columns
     assert "all_scan_ids" not in result.feature_annotations.columns
     assert "supporting_files" not in result.feature_annotations.columns
     orphan = result.feature_annotations[result.feature_annotations["Feature_ID"] == "ORPHAN_001"].iloc[0]
     assert orphan["selected_scan_id"] == "scan_orphan_2"
-    assert orphan["feature_rt"] == 8.05
+    assert pd.isna(orphan["feature_rt"])
+    assert orphan["selected_ms2_rt"] == 8.1
     matched = result.feature_annotations[result.feature_annotations["Feature_ID"] == "F1"].iloc[0]
     assert matched["feature_rt"] == 5.0
+    assert matched["selected_ms2_rt"] == 5.01
     workbook = pd.ExcelFile(result.xlsx_path)
     assert set(workbook.sheet_names) == {
         "MS2_Spectrum_Results",

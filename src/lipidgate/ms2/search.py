@@ -21,10 +21,13 @@ from .scoring import (
     LOSS_FRAGMENT_TYPES,
     POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
     _calculate_pool_scores,
+    _chain_evidence_count_for_matches,
     _empty_pool_scores,
     _fah_only_low_confidence_gate_passes,
     _fragment_counts_as_effective_loss,
+    _fragment_counts_as_fa_loss_gate,
     _matched_fah_tokens,
+    _positive_glyceride_rco_gate_passes,
     _record_fa_loss_fragment_count,
     _record_expected_fah_tokens,
     _total_score_from_pool_scores,
@@ -38,6 +41,9 @@ MS2_RESULT_EXPORT_COLUMNS = (
     "scan_id",
     "rt_minutes",
     "precursor_mz",
+    "Feature_ID",
+    "feature_mz",
+    "feature_rt",
     "ppm_error",
     "compound_class",
     "matched_name",
@@ -45,7 +51,6 @@ MS2_RESULT_EXPORT_COLUMNS = (
     "total_C",
     "total_DB",
     "result_rank",
-    "result_channel",
     "final_score",
     "注释水平",
     "matched_fragment_count",
@@ -125,6 +130,26 @@ class LipidMS2Searcher:
         if fragment_tolerance_ppm is not None:
             return abs(float(fragment_mz)) * float(fragment_tolerance_ppm) * 1e-6
         return 0.01
+
+    @staticmethod
+    def _adduct_charge(adduct: object) -> int | None:
+        matched = re.search(r"\](\d*)([+-])$", str(adduct or "").strip())
+        if matched is None:
+            return None
+        magnitude = int(matched.group(1) or "1")
+        return magnitude if matched.group(2) == "+" else -magnitude
+
+    @classmethod
+    def _candidate_charge_is_compatible(
+        cls,
+        spectrum: ExperimentalSpectrum,
+        record: LibraryRecord,
+    ) -> bool:
+        observed_charge = spectrum.precursor_charge
+        library_charge = cls._adduct_charge(record.adduct)
+        if not observed_charge or library_charge is None:
+            return True
+        return abs(int(observed_charge)) == abs(library_charge)
 
     @staticmethod
     def _sphingo_rule_key(record: LibraryRecord) -> str:
@@ -218,6 +243,12 @@ class LipidMS2Searcher:
 
         library_types = {fragment.fragment_type for fragment in record.fragments}
         matched_types = {match.fragment.fragment_type for match in matches}
+        adduct = str(record.adduct or "").strip()
+        class_key = self._normal_class_key(record.compound_class)
+        uses_negative_hg_fah_tiered_gate = (
+            (adduct == "[M-H]-" and class_key in {"CER1P", "CERP"})
+            or (adduct in {"[M+CH3COO]-", "[M+HCOO]-"} and class_key == "SM")
+        )
         def matched_type_count(type_group: set[str]) -> int:
             return sum(1 for match in matches if match.fragment.fragment_type in type_group)
 
@@ -242,6 +273,13 @@ class LipidMS2Searcher:
                 if not any(matched_type_count(type_group) >= minimum_count for type_group, minimum_count in alternatives):
                     type_gate_passed = False
                     break
+        if uses_negative_hg_fah_tiered_gate:
+            hg_total_count = sum(
+                1 for fragment in record.fragments if fragment.fragment_type == "Diagnostic_HG"
+            )
+            hg_matched_count = matched_type_count({"Diagnostic_HG"})
+            if hg_total_count <= 0 or hg_matched_count * 2 < hg_total_count:
+                type_gate_passed = False
         if not has_explicit_type_gate:
             if "Diagnostic_HG" in library_types and "Diagnostic_HG" not in matched_types:
                 type_gate_passed = False
@@ -261,6 +299,7 @@ class LipidMS2Searcher:
         hg_only_low_confidence_gate = (
             not standard_gate_passed
             and self._normal_class_key(record.compound_class) in self.SPHINGO_HG_ONLY_FALLBACK_CLASSES
+            and not uses_negative_hg_fah_tiered_gate
             and "Diagnostic_HG" in library_types
             and "Diagnostic_HG" in matched_types
             and "LCB碎片" not in matched_types
@@ -274,6 +313,7 @@ class LipidMS2Searcher:
         )
         fah_only_low_confidence_gate = (
             not standard_gate_passed
+            and not uses_negative_hg_fah_tiered_gate
             and has_library_hg_or_structural
             and not matched_hg_or_structural
             and _fah_only_low_confidence_gate_passes(
@@ -284,7 +324,14 @@ class LipidMS2Searcher:
             )
         )
         passed = standard_gate_passed or fah_only_low_confidence_gate or hg_only_low_confidence_gate
-        if standard_gate_passed:
+        has_negative_chain_evidence = (
+            uses_negative_hg_fah_tiered_gate
+            and matched_type_count({"Diagnostic_FA", "Diagnostic_FA_Loss"}) >= 1
+        )
+        if standard_gate_passed and uses_negative_hg_fah_tiered_gate and not has_negative_chain_evidence:
+            resolution_level = "species_level"
+            downgrade_reason = "missing_fah_chain_evidence"
+        elif standard_gate_passed:
             resolution_level = "chain_level"
             downgrade_reason = ""
         elif fah_only_low_confidence_gate:
@@ -405,10 +452,14 @@ class LipidMS2Searcher:
             return False
         expected_fah_tokens = _record_expected_fah_tokens(record)
         has_library_hg = any(fragment.fragment_type == "Diagnostic_HG" for fragment in record.fragments)
-        has_matched_hg = not has_library_hg or self._has_matched_fragment_type(result, "Diagnostic_HG")
+        hg_gate_satisfied = (
+            self._has_matched_fragment_type(result, "Diagnostic_HG")
+            if has_library_hg
+            else str(record.adduct or "").strip().endswith("+")
+        )
         matched_fah_count = len(set(_matched_fah_tokens(result.matched_fragments)))
         if expected_fah_tokens:
-            if not has_library_hg or not has_matched_hg:
+            if not hg_gate_satisfied:
                 return False
             if matched_fah_count < 1:
                 return False
@@ -420,14 +471,10 @@ class LipidMS2Searcher:
         if has_library_loss:
             required_fa_loss_hits = _record_fa_loss_fragment_count(record)
             if required_fa_loss_hits > 0:
-                matched_fa_loss_hits = sum(
-                    1
-                    for match in result.matched_fragments
-                    if match.fragment.fragment_type == "Diagnostic_FA_Loss"
-                    or (
-                        _fragment_counts_as_effective_loss(record, match.fragment)
-                        and match.fragment.fragment_type == "FA_Frag"
-                    )
+                matched_fa_loss_hits = _chain_evidence_count_for_matches(
+                    record,
+                    result.matched_fragments,
+                    _fragment_counts_as_fa_loss_gate,
                 )
                 if matched_fa_loss_hits < required_fa_loss_hits:
                     return False
@@ -452,14 +499,33 @@ class LipidMS2Searcher:
         if not passed_results or top_n <= 0:
             return []
         selected = [passed_results[0]]
-        if top_n <= 1:
-            return selected
         for result in passed_results[1:]:
-            if self._qualifies_secondary_result(result):
+            tied_with_last_selected = self._scores_tied(
+                result.total_score,
+                selected[-1].total_score,
+            )
+            if len(selected) >= top_n and not tied_with_last_selected:
+                break
+            if tied_with_last_selected or self._qualifies_secondary_result(result):
                 selected.append(result)
-                if len(selected) >= top_n:
-                    break
         return selected
+
+    @staticmethod
+    def _scores_tied(left_score: float, right_score: float) -> bool:
+        return abs(float(left_score) - float(right_score)) <= 1e-9
+
+    @classmethod
+    def _next_result_rank(
+        cls,
+        result: CandidateScore,
+        current_rank: int,
+        previous_score: float | None = None,
+    ) -> int:
+        if current_rank <= 0:
+            return 1
+        if previous_score is not None and cls._scores_tied(result.total_score, previous_score):
+            return current_rank
+        return current_rank + 1
 
     @classmethod
     def _normal_class_key(cls, lipid_class: object) -> str:
@@ -658,6 +724,8 @@ class LipidMS2Searcher:
         scored = []
         for record_index in candidate_indexes:
             record = self.library[record_index]
+            if not self._candidate_charge_is_compatible(spectrum, record):
+                continue
             sphingo_key = self._sphingo_rule_key(record)
             if sphingo_key in SPHINGOLIPID_RULEBOOK:
                 candidate_score = self._score_sphingo_candidate(spectrum, record, experimental_mz=experimental_mz)
@@ -713,9 +781,15 @@ class LipidMS2Searcher:
             scoped_results.extend((item, "main", True) for item in selected_results)
         rows = []
         scope_ranks = {"main": 0, "fa": 0}
+        scope_previous_scores: dict[str, float] = {}
         for result, rank_scope, counts_toward_topn in scoped_results:
-            scope_ranks[rank_scope] = scope_ranks.get(rank_scope, 0) + 1
-            rank = scope_ranks[rank_scope]
+            rank = self._next_result_rank(
+                result,
+                scope_ranks.get(rank_scope, 0),
+                scope_previous_scores.get(rank_scope),
+            )
+            scope_ranks[rank_scope] = rank
+            scope_previous_scores[rank_scope] = result.total_score
             metric = rank_metrics.get(
                 id(result),
                 {
@@ -844,6 +918,7 @@ class LipidMS2Searcher:
                     polarity="-",
                     peaks=normalized,
                     metadata={"source": str(mzml_path)},
+                    precursor_charge=int(precursor.getCharge()) or None,
                 )
             return
 
@@ -858,6 +933,9 @@ class LipidMS2Searcher:
             precursor_mz = spectrum.selected_precursors[0].get("mz")
             if precursor_mz is None:
                 continue
+            precursor_charge = spectrum.selected_precursors[0].get("charge")
+            if precursor_charge is None:
+                precursor_charge = spectrum.selected_precursors[0].get("charge state")
             raw_peaks = [(float(mz), float(intensity)) for mz, intensity in spectrum.peaks("raw")]
             normalized = [peak for peak in normalize_peaks(raw_peaks) if peak.relative_intensity >= self.min_relative_intensity]
             if not normalized:
@@ -869,6 +947,7 @@ class LipidMS2Searcher:
                 polarity="-",
                 peaks=normalized,
                 metadata={"source": str(mzml_path)},
+                precursor_charge=int(float(precursor_charge)) if precursor_charge else None,
             )
 
     def search_mzml(self, mzml_path: str | Path, top_n: int = 5) -> pd.DataFrame:
@@ -891,6 +970,7 @@ class LipidMS2Searcher:
             result_df.insert(0, "source_file", mzml_path.name)
             all_rows.append(result_df)
         combined = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
+        combined = deduplicate_fa_results(combined)
         if output_path and not combined.empty:
             self.last_output_path = self._write_result_workbook(Path(output_path), combined)
         return combined
@@ -907,6 +987,68 @@ def annotation_level_label(resolution_level: object) -> str:
     return "类别水平"
 
 
+def deduplicate_fa_results(results: pd.DataFrame) -> pd.DataFrame:
+    """Keep one representative per source file and FA identity.
+
+    A real MS1 feature link takes priority.  Otherwise the strongest absolute
+    matched FA-ion signal is retained; the saturated FA total score is not used
+    for selection.
+    """
+
+    if results.empty or "compound_class" not in results.columns or "matched_name" not in results.columns:
+        return results.copy()
+
+    out = results.copy()
+    fa_mask = out["compound_class"].fillna("").astype(str).str.strip().str.upper().eq("FA")
+    if not fa_mask.any():
+        return out.reset_index(drop=True)
+
+    fa_rows = out.loc[fa_mask].copy()
+    fa_rows["_original_index"] = fa_rows.index
+    feature_ids = fa_rows.get("Feature_ID", pd.Series(pd.NA, index=fa_rows.index, dtype="object"))
+    fa_rows["_has_ms1_feature"] = feature_ids.notna() & feature_ids.astype(str).str.strip().ne("")
+
+    def numeric_column(name: str, default: float) -> pd.Series:
+        values = (
+            fa_rows[name]
+            if name in fa_rows.columns
+            else pd.Series(default, index=fa_rows.index, dtype="float64")
+        )
+        return pd.to_numeric(values, errors="coerce").fillna(default)
+
+    fa_rows["_matched_intensity"] = numeric_column("matched_intensity_sum", 0.0)
+    fa_rows["_matched_relative_intensity"] = numeric_column("matched_relative_intensity_sum", 0.0)
+    fa_rows["_matched_fragment_count"] = numeric_column("matched_fragment_count", 0.0)
+    fa_rows["_ppm_error_abs"] = numeric_column("ppm_error", float("inf")).abs()
+    fa_rows["_rt_minutes"] = numeric_column("rt_minutes", float("inf"))
+
+    group_columns = ["matched_name"]
+    if "adduct" in fa_rows.columns:
+        group_columns.append("adduct")
+    if "source_file" in fa_rows.columns:
+        group_columns.insert(0, "source_file")
+
+    fa_rows.sort_values(
+        [
+            *group_columns,
+            "_has_ms1_feature",
+            "_matched_intensity",
+            "_matched_relative_intensity",
+            "_matched_fragment_count",
+            "_ppm_error_abs",
+            "_rt_minutes",
+        ],
+        ascending=[True] * len(group_columns) + [False, False, False, False, True, True],
+        kind="mergesort",
+        inplace=True,
+    )
+    selected_fa_indexes = set(
+        fa_rows.drop_duplicates(group_columns, keep="first")["_original_index"].tolist()
+    )
+    keep_mask = ~fa_mask | out.index.to_series().isin(selected_fa_indexes)
+    return out.loc[keep_mask].reset_index(drop=True)
+
+
 def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     if combined.empty:
         return pd.DataFrame(columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in combined.columns])
@@ -918,16 +1060,18 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
     if "rt_minutes" in export_df.columns:
         export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
+    if "feature_rt" in export_df.columns:
+        export_df["feature_rt"] = pd.to_numeric(export_df["feature_rt"], errors="coerce").round(3)
     if "precursor_mz" in export_df.columns:
         export_df["precursor_mz"] = pd.to_numeric(export_df["precursor_mz"], errors="coerce").round(4)
+    if "feature_mz" in export_df.columns:
+        export_df["feature_mz"] = pd.to_numeric(export_df["feature_mz"], errors="coerce").round(4)
     if "ppm_error" in export_df.columns:
         export_df["ppm_error"] = pd.to_numeric(export_df["ppm_error"], errors="coerce").round(2)
     if "total_C" in export_df.columns:
         export_df["total_C"] = pd.to_numeric(export_df["total_C"], errors="coerce").astype("Int64")
     if "total_DB" in export_df.columns:
         export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
-    if "result_rank_scope" in export_df.columns:
-        export_df["result_channel"] = export_df["result_rank_scope"]
     if "resolution_level" in export_df.columns:
         export_df["注释水平"] = export_df["resolution_level"].map(annotation_level_label)
     elif "注释水平" not in export_df.columns:

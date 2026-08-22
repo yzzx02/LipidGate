@@ -57,7 +57,7 @@ def test_add_lipid_name_features_keeps_authoritative_subclass_column() -> None:
     assert list(out["total_DB"].astype(int)) == [1, 1]
 
 
-def test_ecn_filter_deduplicates_exact_chain_candidate_but_keeps_chain_alternatives() -> None:
+def test_ecn_filter_deduplicates_only_modeling_anchors_and_keeps_all_candidates() -> None:
     df = pd.DataFrame(
         [
             {"lipidname": "PC(14:0_18:1)", "subclass": "PC", "adduct": "[M+H]+", "mz": 732.55, "RT": 5.0, "score": 70.0},
@@ -71,7 +71,8 @@ def test_ecn_filter_deduplicates_exact_chain_candidate_but_keeps_chain_alternati
 
     out = apply_ecn_filter(df, config=ECNFilterConfig(rt_cluster_sec=5.0))
 
-    assert len(out) == 5
+    assert len(out) == len(df)
+    assert list(out["lipidname"]) == list(df["lipidname"])
     assert "PC(16:0_18:1)" in set(out["lipidname_norm"])
     assert "PC(17:0_17:1)" in set(out["lipidname_norm"])
     assert set(out["total_C"].dropna().astype(int)) == {32, 34, 36, 38}
@@ -82,11 +83,11 @@ def test_ecn_filter_deduplicates_exact_chain_candidate_but_keeps_chain_alternati
     assert out[RT_RULE_PASS_COLUMN].all()
 
 
-def test_ecn_filter_prefers_total_score_over_normalized_final_score() -> None:
+def test_ecn_filter_prefers_canonical_final_score_over_legacy_total_score() -> None:
     df = pd.DataFrame(
         [
             {
-                "scan_id": "normalized_high_raw_low",
+                "scan_id": "final_high_legacy_low",
                 "matched_name": "PC(16:0_18:1)",
                 "compound_class": "PC",
                 "adduct": "[M+H]+",
@@ -96,7 +97,7 @@ def test_ecn_filter_prefers_total_score_over_normalized_final_score() -> None:
                 "total_score": 18.0,
             },
             {
-                "scan_id": "normalized_lower_raw_high",
+                "scan_id": "final_lower_legacy_high",
                 "matched_name": "PC(18:1_16:0)",
                 "compound_class": "PC",
                 "adduct": "[M+H]+",
@@ -110,8 +111,86 @@ def test_ecn_filter_prefers_total_score_over_normalized_final_score() -> None:
 
     out = apply_ecn_filter(df, config=ECNFilterConfig(rt_cluster_sec=5.0))
 
-    assert len(out) == 1
-    assert out.iloc[0]["scan_id"] == "normalized_lower_raw_high"
+    assert len(out) == len(df)
+    assert set(out["scan_id"]) == {"final_high_legacy_low", "final_lower_legacy_high"}
+
+
+def test_ecn_filter_keeps_same_candidate_from_different_source_files() -> None:
+    df = pd.DataFrame(
+        [
+            {"source_file": "sample_a.mzML", "scan_id": "scan_a", "matched_name": "PC(14:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 732.5500, "rt_minutes": 5.000, "final_score": 90.0},
+            {"source_file": "sample_a.mzML", "scan_id": "scan_b", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.5800, "rt_minutes": 6.000, "final_score": 100.0},
+            {"source_file": "sample_b.mzML", "scan_id": "scan_c", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.5802, "rt_minutes": 6.001, "final_score": 95.0},
+            {"source_file": "sample_a.mzML", "scan_id": "scan_d", "matched_name": "PC(18:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 788.6100, "rt_minutes": 7.000, "final_score": 90.0},
+            {"source_file": "sample_a.mzML", "scan_id": "scan_e", "matched_name": "PC(18:0_20:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 816.6400, "rt_minutes": 8.000, "final_score": 90.0},
+        ]
+    )
+
+    out = apply_ecn_filter(df, config=ECNFilterConfig(rt_cluster_sec=5.0))
+
+    assert len(out) == len(df)
+    repeated = out.loc[out["matched_name"] == "PC(16:0_18:1)"]
+    assert set(repeated["source_file"]) == {"sample_a.mzML", "sample_b.mzML"}
+    assert set(repeated["scan_id"]) == {"scan_b", "scan_c"}
+    assert repeated["rt_model_n_points"].eq(4).all()
+
+
+def test_ecn_filter_uses_median_rt_among_tied_top_score_representatives() -> None:
+    df = pd.DataFrame(
+        [
+            {"scan_id": "c32", "matched_name": "PC(14:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 732.55, "rt_minutes": 5.0, "final_score": 90.0},
+            {"scan_id": "c34_tied_outlier", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.58, "rt_minutes": 50.0, "final_score": 100.0},
+            {"scan_id": "c34_tied_low", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.58, "rt_minutes": 6.0, "final_score": 100.0},
+            {"scan_id": "c34_tied_median", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.58, "rt_minutes": 7.0, "final_score": 100.0},
+            {"scan_id": "c36", "matched_name": "PC(18:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 788.61, "rt_minutes": 9.0, "final_score": 90.0},
+            {"scan_id": "c38", "matched_name": "PC(18:0_20:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 816.64, "rt_minutes": 11.0, "final_score": 90.0},
+        ]
+    )
+
+    out = apply_ecn_filter(df)
+
+    assert set(out["scan_id"]) == set(df["scan_id"])
+    tied_median = out.loc[out["scan_id"] == "c34_tied_median"].iloc[0]
+    tied_outlier = out.loc[out["scan_id"] == "c34_tied_outlier"].iloc[0]
+    assert bool(tied_median["RT_consistency_pass"])
+    assert not bool(tied_outlier["RT_consistency_pass"])
+
+
+def test_ecn_filter_scores_non_representative_candidates_after_model_fitting() -> None:
+    df = pd.DataFrame(
+        [
+            {"scan_id": "c32", "matched_name": "PC(14:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 732.55, "rt_minutes": 5.0, "final_score": 90.0},
+            {"scan_id": "c34_anchor", "matched_name": "PC(16:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.58, "rt_minutes": 7.0, "final_score": 100.0},
+            {"scan_id": "c34_lower_score_pass", "matched_name": "PC(17:0_17:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.59, "rt_minutes": 7.8, "final_score": 70.0},
+            {"scan_id": "c34_lower_score_fail", "matched_name": "PC(15:0_19:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 760.60, "rt_minutes": 20.0, "final_score": 70.0},
+            {"scan_id": "c36", "matched_name": "PC(18:0_18:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 788.61, "rt_minutes": 9.0, "final_score": 90.0},
+            {"scan_id": "c38", "matched_name": "PC(18:0_20:1)", "compound_class": "PC", "adduct": "[M+H]+", "precursor_mz": 816.64, "rt_minutes": 11.0, "final_score": 90.0},
+        ]
+    )
+
+    out = apply_ecn_filter(df)
+
+    assert set(out["scan_id"]) == set(df["scan_id"])
+    lower_score_pass = out.loc[out["scan_id"] == "c34_lower_score_pass"].iloc[0]
+    lower_score_fail = out.loc[out["scan_id"] == "c34_lower_score_fail"].iloc[0]
+    assert bool(lower_score_pass["RT_consistency_pass"])
+    assert not bool(lower_score_fail["RT_consistency_pass"])
+
+
+def test_ecn_filter_prefers_aligned_feature_rt_over_ms2_acquisition_rt() -> None:
+    df = pd.DataFrame(
+        [
+            {"matched_name": "PC(14:0_18:1)", "compound_class": "PC", "feature_rt": 5.0, "rt_minutes": 50.0, "final_score": 90.0},
+            {"matched_name": "PC(16:0_18:1)", "compound_class": "PC", "feature_rt": 6.0, "rt_minutes": 40.0, "final_score": 90.0},
+            {"matched_name": "PC(18:0_18:1)", "compound_class": "PC", "feature_rt": 7.0, "rt_minutes": 30.0, "final_score": 90.0},
+            {"matched_name": "PC(18:0_20:1)", "compound_class": "PC", "feature_rt": 8.0, "rt_minutes": 20.0, "final_score": 90.0},
+        ]
+    )
+
+    out = apply_ecn_filter(df)
+
+    assert out["RT_consistency_pass"].all()
+    assert out["rt_model_type"].isin({"linear", "quadratic"}).all()
 
 
 def test_ecn_filter_marks_groups_with_too_few_total_c_points() -> None:

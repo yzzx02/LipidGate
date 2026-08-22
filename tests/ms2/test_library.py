@@ -150,7 +150,7 @@ Num Peaks: 1
             self.assertTrue(any((cache_root / "ms2_libraries").glob("library_*.pkl")))
             self.assertFalse((temp_path / ".library_cache").exists())
 
-    def test_negative_pc_common_signature_fragments_are_candidate_hg(self) -> None:
+    def test_named_negative_choline_fragment_is_hg_and_224_stays_common(self) -> None:
         msp_text = """Name: PC(8:1_15:4)
 PrecursorMZ: 642.3413
 PrecursorType: [M+HCOO]-
@@ -168,8 +168,8 @@ Num Peaks: 3
             records = load_standard_msp(msp_path)
 
         fragment_types = {fragment.name: fragment.fragment_type for fragment in records[0].fragments}
-        self.assertEqual(fragment_types["[C4H11NO4P]-"], "Candidate_HG")
-        self.assertEqual(fragment_types["[C7H15NO5P]-"], "Candidate_HG")
+        self.assertEqual(fragment_types["[C4H11NO4P]-"], "Diagnostic_HG")
+        self.assertEqual(fragment_types["[C7H15NO5P]-"], "Common")
         self.assertEqual(fragment_types["[M+HCOO]-"], "Precursor Ion")
 
     def test_class_specific_common_headgroups_are_normalized_from_msp(self) -> None:
@@ -179,10 +179,13 @@ PrecursorType: [M-H]-
 CompoundClass: PG
 Formula: C40H75O10P
 Comment: MS1_name=PG(34:2);polarity=-
-Num Peaks: 2
+Num Peaks: 7
+78.9591 100.00 "[PO3]-" "Common"
+96.9696 100.00 "[H2PO4]-" "Common"
 152.9933 100.00 "[C3H6O5P]-" "Common"
 171.0064 100.00 "[C3H8O6P]-" "Common"
 209.0221 100.00 "[C6H10O6P]-" "Common"
+227.0326 100.00 "[C6H12O7P]-" "Common"
 745.5025 100.00 "[M-H]-" "Precursor Ion"
 
 Name: PEtOH(16:0_18:1)
@@ -229,10 +232,14 @@ Num Peaks: 2
             fragment = next(item for item in by_class[lipid_class].fragments if item.name == fragment_name)
             self.assertEqual(fragment.fragment_type, "Diagnostic_HG")
             self.assertEqual(fragment.required_group, "hg")
-        for fragment_name in ("[C3H6O5P]-", "[C3H8O6P]-", "[C6H10O6P]-"):
+        for fragment_name in ("[C3H6O5P]-", "[C3H8O6P]-", "[C6H10O6P]-", "[C6H12O7P]-"):
             fragment = next(item for item in by_class["PG"].fragments if item.name == fragment_name)
             self.assertEqual(fragment.fragment_type, "Diagnostic_HG")
             self.assertEqual(fragment.required_group, "hg")
+        for fragment_name in ("[PO3]-", "[H2PO4]-"):
+            fragment = next(item for item in by_class["PG"].fragments if item.name == fragment_name)
+            self.assertEqual(fragment.fragment_type, "Common")
+            self.assertIsNone(fragment.required_group)
 
     def test_special_positive_headgroup_fragments_are_normalized_from_msp(self) -> None:
         msp_text = """Name: NAGly 10:0/10:0

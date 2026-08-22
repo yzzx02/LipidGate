@@ -13,10 +13,10 @@ from .names import add_lipid_name_features, parse_lipid_name
 
 LIPID_COLUMN_ALIASES = ("lipidname", "lipid_name", "matched_name", "library_species_name", "Name", "name")
 SUBCLASS_COLUMN_ALIASES = ("subclass", "compound_class", "lipid_class", "class", "Class")
-RT_COLUMN_ALIASES = ("rt_minutes", "RT", "rt", "retention_time", "retention_time_min", "rt_sec", "rt_seconds")
+RT_COLUMN_ALIASES = ("feature_rt", "rt_minutes", "RT", "rt", "retention_time", "retention_time_min", "rt_sec", "rt_seconds")
 MZ_COLUMN_ALIASES = ("mz", "m/z", "precursor_mz", "PrecursorMZ")
 ADDUCT_COLUMN_ALIASES = ("adduct", "precursortype", "PrecursorType")
-SCORE_COLUMN_ALIASES = ("score", "total_score", "final_score", "rank_score")
+SCORE_COLUMN_ALIASES = ("final_score",)
 INTENSITY_COLUMN_ALIASES = ("intensity", "area", "height", "matched_intensity_sum", "peak_area")
 RT_RULE_PASS_COLUMN = "\u662f\u5426\u6ee1\u8db3RT\u89c4\u5f8b"
 
@@ -176,6 +176,13 @@ def _score_sort_columns(columns: _ColumnMap, df: pd.DataFrame) -> tuple[list[str
 
 
 def _deduplicate_chain_candidates(df: pd.DataFrame, columns: _ColumnMap, config: ECNFilterConfig) -> pd.DataFrame:
+    """Build a reduced candidate pool for choosing model anchors.
+
+    This table is intentionally allowed to collapse near-identical observations,
+    including observations from different files.  It must never be used as the
+    result table because every original feature candidate still needs its own RT
+    consistency assessment and provenance-preserving output row.
+    """
     out = _add_clusters(df, columns, config)
     out["_source_order"] = np.arange(len(out))
     out["_score_for_sort"] = pd.to_numeric(out[columns.score], errors="coerce") if columns.score else np.nan
@@ -211,7 +218,11 @@ def _choose_modeling_representatives(df: pd.DataFrame, columns: _ColumnMap) -> p
     for _, group in valid.groupby(["subclass", "total_DB", "total_C"], dropna=False):
         if columns.score and pd.to_numeric(group[columns.score], errors="coerce").notna().any():
             score = pd.to_numeric(group[columns.score], errors="coerce")
-            representatives.append(score.sort_values(ascending=False, kind="mergesort").index[0])
+            top_score_group = group.loc[score.eq(score.max())]
+            median_rt = top_score_group["_rt_minutes"].median()
+            representatives.append(
+                (top_score_group["_rt_minutes"] - median_rt).abs().sort_values(kind="mergesort").index[0]
+            )
             continue
         if columns.intensity and pd.to_numeric(group[columns.intensity], errors="coerce").notna().any():
             intensity = pd.to_numeric(group[columns.intensity], errors="coerce")
@@ -376,8 +387,9 @@ def _apply_ecn_filter_core(
         score_column=score_column,
         intensity_column=intensity_column,
     )
-    full_table = _deduplicate_chain_candidates(_standardize_input(df, columns), columns, config)
-    modeling_table = _choose_modeling_representatives(full_table, columns)
+    full_table = _standardize_input(df, columns)
+    modeling_candidates = _deduplicate_chain_candidates(full_table, columns, config)
+    modeling_table = _choose_modeling_representatives(modeling_candidates, columns)
     summary_rows: list[dict[str, object]] = []
 
     out = full_table.copy()

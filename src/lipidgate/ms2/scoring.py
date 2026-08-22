@@ -20,10 +20,8 @@ from .scoring_policy import (
 
 POOL_NAMES = ("fah", "hg", "other")
 FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
-POSITIVE_HG_SATURATION_HALF_INTENSITY = 0.10
-POSITIVE_SUPPORT_SATURATION_HALF_INTENSITY = 0.05
-POSITIVE_SUPPORT_COVERAGE_WEIGHT = 0.80
-POSITIVE_SUPPORT_INTENSITY_WEIGHT = 0.20
+PRIMARY_POOL_SATURATION_HALF_INTENSITY = 0.10
+SECONDARY_POOL_SATURATION_HALF_INTENSITY = 0.05
 POSITIVE_FAH_ONLY_FALLBACK_MIN_INTENSITY_QUALITY = 0.50
 PRECURSOR_DOMINANCE_EXCLUSION_DA = 2.0
 PRECURSOR_DOMINANCE_MIN_RATIO = 5.0
@@ -38,14 +36,11 @@ SPB_UNASSIGNED_DIAGNOSTIC_NAMES = {
 }
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
 CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
-FAH_POOL_COVERAGE_WEIGHT = 0.35
-FAH_POOL_AVERAGE_INTENSITY_WEIGHT = 0.30
-FAH_POOL_ANCHOR_WEIGHT = 0.35
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
-POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "DGO", "OXTG"}
+POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "OXTG"}
+ETHER_GLYCERIDE_HALF_RCO_GATE_CLASSES = {"TGO"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
 FAH_ONLY_FALLBACK_BLOCKED_CLASSES = {"ASM"}
-NEGATIVE_PC_RELAXED_CLASSES = {"PC", "PC-O"}
 CANDIDATE_HG_FRAGMENT_TYPE = "Candidate_HG"
 POSITIVE_PC_CHAIN_LOSS_STRICT_CLASSES = {"PC", "PCO", "PCP"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_CLASSES = {
@@ -105,19 +100,14 @@ POSITIVE_SPHINGOLIPID_SUPPORT_CLASSES = {
     "SPB",
     "SPH",
 }
-PE_O_NON_GATE_HG_MZ = (140.0118, 196.0380)
 CLASS_SPECIFIC_HG_MZ = {
-    "PG": (152.9933, 171.0064, 209.0221),
+    "PG": (152.9933, 171.0064, 209.0221, 227.0326),
     "PETOH": (181.0271, 181.0280),
     "PMEOH": (167.0109,),
     "DMPE": (168.0411, 168.0431),
 }
-STRICT_NEGATIVE_HG_CLASSES = {"NAPS", "NAGPS", "NAT"}
+STRICT_NEGATIVE_HG_CLASSES = {"NAGPS"}
 PRECURSOR_FRAGMENT_REQUIRED_CLASSES = {"NAASP"}
-NEGATIVE_PC_SIGNATURE_MZ = {
-    "pc_168": 168.0431,
-    "pc_224": 224.0693,
-}
 POSITIVE_HG_CHAIN_LEVEL_CLASSES = {
     "CL", "MLCL", "NAPE", "LNAPE",
 }
@@ -129,13 +119,6 @@ FA_CHAIN_TOKEN_RE = re.compile(
 
 def _is_positive_adduct(adduct: str) -> bool:
     return str(adduct or "").strip().endswith("+")
-
-
-def _is_negative_pc_relaxed_record(record: LibraryRecord) -> bool:
-    return (
-        not _is_positive_adduct(record.adduct)
-        and str(record.compound_class or "").strip() in NEGATIVE_PC_RELAXED_CLASSES
-    )
 
 
 def _normalized_compound_class(compound_class: str) -> str:
@@ -198,18 +181,19 @@ def _is_positive_glyceride_rco_c3h6o2_fragment(record: LibraryRecord, fragment: 
     return "C3H6O2" in name and "ROOH" not in name and "M-NH3" not in name
 
 
+def _is_positive_glyceride_chain_gate_fragment(
+    record: LibraryRecord,
+    fragment: FragmentRecord,
+) -> bool:
+    return _is_positive_glyceride_rco_fragment(record, fragment)
+
+
+def _positive_glyceride_chain_gate_group(record: LibraryRecord) -> str:
+    return "rco"
+
+
 def _is_positive_mg_record(record: LibraryRecord) -> bool:
     return _is_positive_adduct(record.adduct) and _normalized_compound_class(record.compound_class) == "MG"
-
-
-def _is_pe_o_record(record: LibraryRecord) -> bool:
-    return _normalized_class_key(record.compound_class) == "PEO"
-
-
-def _is_pe_o_non_gate_hg_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
-    if not _is_pe_o_record(record) or fragment.fragment_type != "Diagnostic_HG":
-        return False
-    return any(abs(float(fragment.mz) - target_mz) <= 0.02 for target_mz in PE_O_NON_GATE_HG_MZ)
 
 
 def _is_class_specific_hg_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
@@ -289,10 +273,7 @@ def _fragment_counts_as_chain_resolving_loss(record: LibraryRecord, fragment: Fr
 
 def _record_has_diagnostic_hg(record: LibraryRecord) -> bool:
     return any(
-        (
-            fragment.fragment_type == "Diagnostic_HG"
-            and not _is_pe_o_non_gate_hg_fragment(record, fragment)
-        )
+        fragment.fragment_type == "Diagnostic_HG"
         or _is_class_specific_hg_fragment(record, fragment)
         for fragment in record.fragments
     )
@@ -306,7 +287,7 @@ def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> b
     if _is_positive_mg_record(record):
         return _is_class_specific_hg_fragment(record, fragment)
     if fragment.fragment_type == "Diagnostic_HG":
-        return not _is_pe_o_non_gate_hg_fragment(record, fragment)
+        return True
     if _is_class_specific_hg_fragment(record, fragment):
         return True
     if _record_has_diagnostic_hg(record):
@@ -321,8 +302,14 @@ def _pool_for_fragment(record: LibraryRecord, fragment: FragmentRecord) -> str:
 
 
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
+    if (
+        _normalized_class_key(record.compound_class) in {"FA", "OXFA"}
+        and fragment.fragment_type == "Precursor Ion"
+        and "RCOO" in str(fragment.name or "").upper()
+    ):
+        return "fah"
     if _is_positive_glyceride_rco_fragment(record, fragment):
-        return "fah" if matched else "other"
+        return "other"
     if _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment):
         return "other"
     if fragment.fragment_type in {"Diagnostic_FA", "Diagnostic_FA_Loss"}:
@@ -424,6 +411,36 @@ def _record_hg_fragment_count(record: LibraryRecord) -> int:
     return sum(1 for fragment in record.fragments if _fragment_counts_as_hg(record, fragment))
 
 
+def _matched_hg_fragment_count(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+) -> int:
+    matched_hg_fragments = [
+        match.fragment
+        for match in matches
+        if _fragment_counts_as_hg(record, match.fragment)
+    ]
+    if not matched_hg_fragments:
+        return 0
+
+    if (
+        _is_positive_adduct(record.adduct)
+        and _normalized_class_key(record.compound_class) == "BMP"
+    ):
+        # A repeated-chain BMP has two MAG library entries at the same m/z.
+        # The peak matcher intentionally consumes an experimental peak once,
+        # but that one MAG ion still identifies both identical chains.
+        matched_mz = {float(fragment.mz) for fragment in matched_hg_fragments}
+        return sum(
+            1
+            for fragment in record.fragments
+            if _fragment_counts_as_hg(record, fragment)
+            and any(abs(float(fragment.mz) - mz) <= 1e-6 for mz in matched_mz)
+        )
+
+    return len(matched_hg_fragments)
+
+
 def _record_loss_fragment_count(record: LibraryRecord) -> int:
     return sum(1 for fragment in record.fragments if _fragment_counts_as_effective_loss(record, fragment))
 
@@ -435,24 +452,44 @@ def _record_fa_loss_fragment_count(record: LibraryRecord) -> int:
 
 
 def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
-    return _chain_evidence_count_for_fragments(record, record.fragments, _is_positive_glyceride_rco_fragment)
+    return _chain_evidence_count_for_fragments(
+        record,
+        record.fragments,
+        _is_positive_glyceride_chain_gate_fragment,
+    )
+
+
+def _positive_glyceride_rco_required_hits(record: LibraryRecord) -> int:
+    available_hits = _record_positive_glyceride_rco_fragment_count(record)
+    if available_hits <= 0:
+        return 0
+    if _normalized_class_key(record.compound_class) in ETHER_GLYCERIDE_HALF_RCO_GATE_CLASSES:
+        return max(1, math.ceil(available_hits / 2))
+    return POSITIVE_GLYCERIDE_RCO_MIN_HITS
 
 
 def _positive_glyceride_rco_gate_available(record: LibraryRecord) -> bool:
-    return _record_positive_glyceride_rco_fragment_count(record) >= POSITIVE_GLYCERIDE_RCO_MIN_HITS
+    available_hits = _record_positive_glyceride_rco_fragment_count(record)
+    required_hits = _positive_glyceride_rco_required_hits(record)
+    return required_hits > 0 and available_hits >= required_hits
 
 
 def _matched_positive_glyceride_rco_fragment_count(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
 ) -> int:
-    return _chain_evidence_count_for_matches(record, matches, _is_positive_glyceride_rco_fragment)
+    return _chain_evidence_count_for_matches(
+        record,
+        matches,
+        _is_positive_glyceride_chain_gate_fragment,
+    )
 
 
 def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence[FragmentMatch]) -> bool:
+    required_hits = _positive_glyceride_rco_required_hits(record)
     return (
         _positive_glyceride_rco_gate_available(record)
-        and _matched_positive_glyceride_rco_fragment_count(record, matches) >= POSITIVE_GLYCERIDE_RCO_MIN_HITS
+        and _matched_positive_glyceride_rco_fragment_count(record, matches) >= required_hits
     )
 
 
@@ -462,53 +499,6 @@ def _record_positive_signature_fragment_count(record: LibraryRecord) -> int:
         for fragment in record.fragments
         if not _fragment_counts_as_hg(record, fragment) and fragment.fragment_type != "Precursor Ion"
     )
-
-
-def _is_negative_pc_m_ch3_fragment(fragment: FragmentRecord) -> bool:
-    return fragment.fragment_type == "Diagnostic_HG" and "M-CH3" in str(fragment.name or "")
-
-
-def _negative_pc_signature_group(fragment: FragmentRecord) -> str | None:
-    if fragment.fragment_type == "Precursor Ion":
-        return "precursor"
-    if fragment.fragment_type != CANDIDATE_HG_FRAGMENT_TYPE:
-        return None
-    for group, target_mz in NEGATIVE_PC_SIGNATURE_MZ.items():
-        if abs(float(fragment.mz) - target_mz) <= 0.02:
-            return group
-    return "pc_signature"
-
-
-def _negative_pc_signature_library_groups(record: LibraryRecord) -> set[str]:
-    return {
-        group
-        for fragment in record.fragments
-        for group in [_negative_pc_signature_group(fragment)]
-        if group is not None
-    }
-
-
-def _negative_pc_relaxed_gate_passes(record: LibraryRecord, matches: Sequence[FragmentMatch]) -> bool:
-    if not _is_negative_pc_relaxed_record(record):
-        return False
-    if any(_is_negative_pc_m_ch3_fragment(match.fragment) for match in matches):
-        return True
-
-    library_groups = _negative_pc_signature_library_groups(record)
-    if not library_groups:
-        return False
-    if not (library_groups - {"precursor"}):
-        return False
-    matched_groups = {
-        group
-        for match in matches
-        for group in [_negative_pc_signature_group(match.fragment)]
-        if group is not None
-    }
-    if not (matched_groups - {"precursor"}):
-        return False
-    required_hits = min(len(library_groups), max(2, math.ceil(len(library_groups) / 2)))
-    return len(matched_groups) >= required_hits
 
 
 def _count_positive_nonzero_chains(chain_tokens: Sequence[str]) -> int:
@@ -552,11 +542,8 @@ def _required_positive_hg_hits(
 def _required_negative_hg_hits(record: LibraryRecord, hg_fragment_count: int) -> int:
     if hg_fragment_count <= 0:
         return 0
-    lipid_class = _normalized_compound_class(record.compound_class)
-    if lipid_class in STRICT_NEGATIVE_HG_CLASSES:
+    if _normalized_compound_class(record.compound_class) in STRICT_NEGATIVE_HG_CLASSES:
         return hg_fragment_count
-    if lipid_class == "PG":
-        return 1
     return min(hg_fragment_count, max(1, math.ceil(hg_fragment_count / 2)))
 
 
@@ -602,8 +589,6 @@ def _derive_required_groups(
         supports_required_groups = True
     else:
         supports_required_groups = bool(fah_tokens) or allow_lyso_hg_only or allow_loss_only or positive_rco_gate_available
-    if _is_negative_pc_relaxed_record(record) and _negative_pc_signature_library_groups(record):
-        supports_required_groups = True
     required_groups: List[str] = []
     if positive_hg_or_loss_gate:
         if hg_fragment_count > 0:
@@ -611,7 +596,7 @@ def _derive_required_groups(
         elif loss_fragment_count > 0:
             required_groups.append("loss")
     elif positive_rco_gate_available:
-        required_groups.append("rco")
+        required_groups.append(_positive_glyceride_chain_gate_group(record))
     else:
         if fah_tokens:
             required_groups.append("fah")
@@ -677,6 +662,13 @@ def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tole
 
 def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str, float]:
     class_key = _normalized_class_key(record.compound_class)
+    adduct = str(record.adduct or "").strip()
+    if (
+        adduct == "[M-H]-" and class_key in {"CER1P", "CERP"}
+    ) or (
+        adduct in {"[M+CH3COO]-", "[M+HCOO]-"} and class_key == "SM"
+    ):
+        return {"fah": 20.0, "hg": 60.0, "other": 20.0}
     if _is_positive_hg_dominant_phospholipid(record) or (
         _is_positive_adduct(record.adduct)
         and class_key in POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES
@@ -714,8 +706,19 @@ def _calculate_pool_scores(
         for pool_name in active_pools
     )
     equal_active_weight = 100.0 / len(active_pools) if active_pools else 0.0
-    coverage_weight = float(score_profile.metric_weights.get("coverage", score_profile.metric_weights.get("count", 0.35)))
-    intensity_weight = float(score_profile.metric_weights.get("intensity", 0.65))
+    structural_active_pools = [
+        pool_name
+        for pool_name in ("fah", "hg")
+        if total_fragments_by_pool.get(pool_name)
+    ]
+    primary_pool = (
+        max(
+            structural_active_pools,
+            key=lambda pool_name: float(pool_weights.get(pool_name, 0.0)),
+        )
+        if structural_active_pools
+        else None
+    )
     result: Dict[str, PoolScore] = {}
     for pool_name in POOL_NAMES:
         pool_fragments = total_fragments_by_pool.get(pool_name, [])
@@ -723,51 +726,36 @@ def _calculate_pool_scores(
         total_count = len(pool_fragments)
         matched_count = len(pool_matches)
         count_ratio = matched_count / total_count if total_count else 0.0
-        matched_by_fragment_id = {id(match.fragment): match for match in pool_matches}
-        intensity_ratio = 0.0
-        matched_average_quality = 0.0
-        if total_count:
-            quality_sum = sum(
-                _fragment_quality_for_pool(
-                    record,
-                    pool_name,
-                    matched_by_fragment_id.get(id(fragment)),
-                    quality_relative_intensity_overrides=quality_relative_intensity_overrides,
-                )
-                for fragment in pool_fragments
-            )
-            intensity_ratio = quality_sum / total_count
-            if matched_count:
-                matched_average_quality = quality_sum / matched_count
-        anchor_quality = max(
-            (
-                _fragment_quality_for_pool(
-                    record,
-                    pool_name,
-                    match,
-                    quality_relative_intensity_overrides=quality_relative_intensity_overrides,
-                )
-                for match in pool_matches
-            ),
-            default=0.0,
-        )
-        if _uses_positive_support_pool_scoring(record) and pool_name in {"fah", "other"}:
+        if pool_name == "other":
+            # Supporting fragments saturate after three observations.  When a
+            # library only contains one or two supporting fragments, matching
+            # all available evidence still earns the full pool credit.
+            support_target = min(total_count, 3)
             pool_quality = (
-                POSITIVE_SUPPORT_COVERAGE_WEIGHT * count_ratio
-                + POSITIVE_SUPPORT_INTENSITY_WEIGHT * matched_average_quality
+                min(matched_count / support_target, 1.0)
+                if support_target > 0
+                else 0.0
             )
-        elif pool_name == "fah":
-            pool_quality = (
-                FAH_POOL_COVERAGE_WEIGHT * count_ratio
-                + FAH_POOL_AVERAGE_INTENSITY_WEIGHT * intensity_ratio
-                + FAH_POOL_ANCHOR_WEIGHT * anchor_quality
-            )
-        elif pool_name == "hg":
-            # Each library HG contributes sqrt(relative intensity); an unmatched
-            # HG contributes zero through the average over total_count.
-            pool_quality = intensity_ratio
         else:
-            pool_quality = coverage_weight * count_ratio + intensity_weight * intensity_ratio
+            half_saturation = (
+                PRIMARY_POOL_SATURATION_HALF_INTENSITY
+                if pool_name == primary_pool
+                else SECONDARY_POOL_SATURATION_HALF_INTENSITY
+            )
+            pool_quality = max(
+                (
+                    _saturation_fragment_quality(
+                        _match_relative_intensity(
+                            match,
+                            quality_relative_intensity_overrides=quality_relative_intensity_overrides,
+                        ),
+                        half_saturation,
+                    )
+                    for match in pool_matches
+                ),
+                default=0.0,
+            )
+        intensity_ratio = pool_quality
         if total_count and original_active_weight_sum > 0.0:
             dynamic_pool_weight = (
                 max(float(pool_weights.get(pool_name, 0.0)), 0.0)
@@ -791,46 +779,15 @@ def _calculate_pool_scores(
     return result
 
 
-def _fragment_quality(
-    match: FragmentMatch | None,
+def _match_relative_intensity(
+    match: FragmentMatch,
     quality_relative_intensity_overrides: Dict[int, float] | None = None,
 ) -> float:
-    if match is None:
-        return 0.0
     if quality_relative_intensity_overrides is not None and id(match) in quality_relative_intensity_overrides:
         relative_intensity = quality_relative_intensity_overrides[id(match)]
     else:
         relative_intensity = match.experimental_peak.relative_intensity
-    relative_intensity = max(float(relative_intensity), 0.0)
-    return min(relative_intensity / FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY, 1.0)
-
-
-def _fragment_quality_for_pool(
-    record: LibraryRecord,
-    pool_name: str,
-    match: FragmentMatch | None,
-    quality_relative_intensity_overrides: Dict[int, float] | None = None,
-) -> float:
-    if match is None:
-        return 0.0
-    if quality_relative_intensity_overrides is not None and id(match) in quality_relative_intensity_overrides:
-        relative_intensity = quality_relative_intensity_overrides[id(match)]
-    else:
-        relative_intensity = match.experimental_peak.relative_intensity
-    if _uses_positive_support_pool_scoring(record):
-        half_saturation = (
-            POSITIVE_HG_SATURATION_HALF_INTENSITY
-            if pool_name == "hg"
-            else POSITIVE_SUPPORT_SATURATION_HALF_INTENSITY
-        )
-        return _saturation_fragment_quality(relative_intensity, half_saturation)
-    if pool_name == "hg":
-        relative_intensity = min(max(float(relative_intensity), 0.0), 1.0)
-        return math.sqrt(relative_intensity)
-    return _fragment_quality(
-        match,
-        quality_relative_intensity_overrides=quality_relative_intensity_overrides,
-    )
+    return min(max(float(relative_intensity), 0.0), 1.0)
 
 
 def _saturation_fragment_quality(relative_intensity: float, half_saturation: float) -> float:
@@ -991,7 +948,7 @@ def _missing_required_groups(
 ) -> List[str]:
     missing = []
     if is_positive_mode:
-        matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
+        matched_hg_count = _matched_hg_fragment_count(record, matches)
         matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
         matched_fa_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_fa_loss_gate)
 
@@ -1007,7 +964,7 @@ def _missing_required_groups(
             and loss_fragment_count == 0
             and not expected_fah_tokens
         ):
-            missing.append("rco")
+            missing.append(_positive_glyceride_chain_gate_group(record))
             return missing
 
         if hg_fragment_count > 0 and matched_hg_count < positive_required_hg_hits:
@@ -1184,7 +1141,7 @@ def _determine_resolution(
     if not chain_tokens:
         return "species_level", "missing_chain_annotation"
     if is_positive_mode:
-        matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
+        matched_hg_count = _matched_hg_fragment_count(record, matches)
         matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
         matched_chain_loss_count = _chain_evidence_count_for_matches(
             record,
@@ -1428,8 +1385,6 @@ def score_candidate(
         require_loss_with_fah_only,
         matches,
     )
-    if _negative_pc_relaxed_gate_passes(record, matches):
-        missing_groups = []
     pool_scores = _calculate_pool_scores(
         matches,
         record,
@@ -1442,7 +1397,7 @@ def score_candidate(
     )
     matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
     matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
-    matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
+    matched_hg_count = _matched_hg_fragment_count(record, matches)
     total_score = _total_score_from_pool_scores(pool_scores)
     positive_single_chain_species_hg_only = _positive_single_chain_species_hg_only(
         chain_tokens=chain_tokens,

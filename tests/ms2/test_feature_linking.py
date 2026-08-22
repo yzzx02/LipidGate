@@ -49,6 +49,31 @@ def test_link_ms2_to_features_keeps_unmatched_for_orphan_processing() -> None:
     assert "rt_delta_sec" in linked.columns
 
 
+def test_link_ms2_to_features_does_not_expand_real_peak_boundaries() -> None:
+    features = pd.DataFrame(
+        [
+            {"Feature_ID": "F1", "mz": 760.1234, "RT": 5.000, "RTmin": 4.990, "RTmax": 5.010},
+        ]
+    )
+    ms2 = pd.DataFrame(
+        [
+            {
+                "scan_id": "scan_outside_peak",
+                "rt_minutes": 5.100,
+                "precursor_mz": 760.12345,
+                "matched_name": "PE(16:0_18:1)",
+                "adduct": "[M+H]+",
+            },
+        ]
+    )
+
+    linked = link_ms2_to_features(features, ms2, mz_tol_ppm=10.0, rt_window_sec=30.0)
+
+    assert pd.isna(linked.loc[0, "Feature_ID"])
+    assert pd.isna(linked.loc[0, "feature_rt"])
+    assert linked.loc[0, "rt_minutes"] == 5.1
+
+
 def test_summarize_feature_annotations_allows_multiple_names_per_feature() -> None:
     linked = pd.DataFrame(
         [
@@ -229,7 +254,7 @@ def test_remove_feature_supported_fa_orphans_only_drops_same_file_duplicates() -
     assert {"scan_feature", "scan_other_file", "scan_other_fa", "scan_non_fa"} <= set(filtered["scan_id"])
 
 
-def test_summarize_orphan_annotations_merges_across_files_and_uses_eic(monkeypatch, tmp_path: Path) -> None:
+def test_summarize_orphan_annotations_merges_across_files_without_fake_feature_rt(tmp_path: Path) -> None:
     mzml_a = tmp_path / "a.mzML"
     mzml_b = tmp_path / "b.mzML"
     mzml_a.write_text("", encoding="utf-8")
@@ -265,11 +290,6 @@ def test_summarize_orphan_annotations_merges_across_files_and_uses_eic(monkeypat
         ]
     )
 
-    def fake_extract_eic_apex_rt(mzml_path, target_mz, mz_tol_ppm, rt_min, rt_max):
-        return (5.02 if Path(mzml_path).name == "a.mzML" else 5.08), 123.0
-
-    monkeypatch.setattr("lipidgate.ms2.feature_linking.extract_eic_apex_rt", fake_extract_eic_apex_rt)
-
     summary = summarize_orphan_annotations(orphan, [mzml_a, mzml_b], mz_tol_ppm=10.0, rt_window_sec=30.0)
 
     assert len(summary) == 1
@@ -278,4 +298,5 @@ def test_summarize_orphan_annotations_merges_across_files_and_uses_eic(monkeypat
     assert row["selected_source_file"] == "b.mzML"
     assert row["selected_scan_id"] == "scan_2"
     assert row["final_score"] == 90.0
-    assert row["feature_rt"] == 5.05
+    assert pd.isna(row["feature_rt"])
+    assert row["selected_ms2_rt"] == 5.1

@@ -77,18 +77,17 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     "LSM_[M+H]+": SphingoRule(
         lipid_class="LSM",
         adduct="[M+H]+",
-        required_any_groups=[
-            {"[M+H]+", "M+H-H2O", "M+H-2H2O", "M+H-trimethylamine(-59)", "[C5H15NO4P]+"},
-        ],
+        required_all={"[C5H15NO4P]+"},
         required_any_by_series={
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O"},
-            "t": {"LCB-2H2O", "LCB-3H2O"},
+            "m": {"LCB-H2O", "LCB-2H2O"},
+            "d": {"LCB-H2O", "LCB-2H2O"},
+            "t": {"LCB-H2O", "LCB-2H2O"},
         },
         required_type_any_groups=[
-            {"Precursor Ion", "C类碎片", "Neutral_Loss", "Diagnostic_HG"},
+            {"Diagnostic_HG"},
             {"LCB碎片"},
         ],
-        optional={"M+H-trimethylamine(-59)", "LCB", "LCB-H2O"},
+        optional={"M+H-H2O", "M+H-trimethylamine(-59)"},
         only_non_hydroxy_fa=True,
         prefer_d_series_if_ambiguous=True,
     ),
@@ -349,40 +348,32 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     "Cer1P_[M+H]+": SphingoRule(
         lipid_class="Cer1P",
         adduct="[M+H]+",
-        required_all={"M+H-H2O", "M+H-H3PO4"},
-        required_any_by_series={
-            "m": {"LCB-H2O"},
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O"},
-            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O"},
-        },
-        optional={"M+H-H3PO4-H2O"},
+        required_all={"M+H-H3PO4", "LCB-2H2O"},
+        required_type_any_groups=[
+            {"Diagnostic_HG"},
+            {"LCB碎片"},
+        ],
+        optional={"M+H-H2O"},
         only_non_hydroxy_fa=True,
     ),
     "CerP_[M+H]+": SphingoRule(
         lipid_class="CerP",
         adduct="[M+H]+",
-        required_all={"M+H-H2O", "M+H-H3PO4"},
-        required_any_by_series={
-            "m": {"LCB-H2O"},
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O"},
-            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O"},
-        },
-        optional={"M+H-H3PO4-H2O"},
+        required_all={"M+H-H3PO4", "LCB-2H2O"},
+        required_type_any_groups=[
+            {"Diagnostic_HG"},
+            {"LCB碎片"},
+        ],
+        optional={"M+H-H2O"},
         only_non_hydroxy_fa=True,
     ),
-    "CerP_[M-H]-": SphingoRule(
-        lipid_class="CerP",
+    "Cer1P_[M-H]-": SphingoRule(
+        lipid_class="Cer1P",
         adduct="[M-H]-",
-        required_any_groups=[
-            {"[M-H]-", "M-H-H2O"},
-            {"PO3-", "H2PO4-", "H2O2P-"},
-        ],
         required_type_any_groups=[
-            {"Precursor Ion", "C类碎片"},
             {"Diagnostic_HG"},
-            {"Diagnostic_FA_Loss"},
         ],
-        optional={"M-H-(ROOH)", "M-H-(R=O)"},
+        optional={"PO3-", "H2PO4-", "NL_Ketene-H2O", "[M-H]-", "M-H-H2O"},
         only_non_hydroxy_fa=True,
     ),
 
@@ -391,14 +382,12 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         lipid_class="SM",
         adduct="[M+CH3COO]-",
         required_any_groups=[
-            {"[M+CH3COO]-", "[M-H]-", "M-CH3"},
-            {"[C4H11NO4P]-", "PO3-"},
+            {"[C4H11NO4P]-", "M-CH3"},
         ],
         required_type_any_groups=[
-            {"Precursor Ion", "C类碎片"},
             {"Diagnostic_HG"},
-            {"Diagnostic_FA_Loss"},
         ],
+        optional={"[M+CH3COO]-", "PO3-"},
         only_non_hydroxy_fa=True,
         prefer_d_series_if_ambiguous=True,
     ),
@@ -406,14 +395,12 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         lipid_class="SM",
         adduct="[M+HCOO]-",
         required_any_groups=[
-            {"[M+HCOO]-", "[M-H]-", "M-CH3"},
-            {"[C4H11NO4P]-", "PO3-"},
+            {"[C4H11NO4P]-", "M-CH3"},
         ],
         required_type_any_groups=[
-            {"Precursor Ion", "C类碎片"},
             {"Diagnostic_HG"},
-            {"Diagnostic_FA_Loss"},
         ],
+        optional={"[M+HCOO]-", "PO3-"},
         only_non_hydroxy_fa=True,
         prefer_d_series_if_ambiguous=True,
     ),
@@ -537,3 +524,5 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
 
 for _spb_alias in ("DHSph", "Sph", "PhytoSph"):
     SPHINGOLIPID_RULEBOOK[f"{_spb_alias}_[M+H]+"] = SPHINGOLIPID_RULEBOOK["SPB_[M+H]+"]
+
+SPHINGOLIPID_RULEBOOK["CerP_[M-H]-"] = SPHINGOLIPID_RULEBOOK["Cer1P_[M-H]-"]

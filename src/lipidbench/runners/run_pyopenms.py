@@ -100,6 +100,50 @@ def align_features(feature_maps):
         transformer.transformRetentionTimes(feature_map, trafo, True)
 
 
+def _feature_rt_bounds(feature) -> tuple[float, float]:
+    bounds: list[tuple[float, float]] = []
+    for hull in feature.getConvexHulls():
+        box = hull.getBoundingBox()
+        lower = float(box.minPosition()[0])
+        upper = float(box.maxPosition()[0])
+        if upper >= lower:
+            bounds.append((lower, upper))
+    if bounds:
+        return min(lower for lower, _ in bounds), max(upper for _, upper in bounds)
+
+    rt = float(feature.getRT())
+    width = max(float(feature.getWidth()), 0.0)
+    return rt - width / 2.0, rt + width / 2.0
+
+
+def _consensus_feature_dataframe(feature_maps, consensus_map):
+    feature_lookup = {
+        (map_index, int(feature.getUniqueId())): feature
+        for map_index, feature_map in enumerate(feature_maps)
+        for feature in feature_map
+    }
+    bounds_by_id: dict[int, tuple[float, float]] = {}
+    for consensus_feature in consensus_map:
+        member_bounds = []
+        for handle in consensus_feature.getFeatureList():
+            feature = feature_lookup.get((int(handle.getMapIndex()), int(handle.getUniqueId())))
+            if feature is not None:
+                member_bounds.append(_feature_rt_bounds(feature))
+        if member_bounds:
+            bounds_by_id[int(consensus_feature.getUniqueId())] = (
+                min(lower for lower, _ in member_bounds),
+                max(upper for _, upper in member_bounds),
+            )
+        else:
+            rt = float(consensus_feature.getRT())
+            bounds_by_id[int(consensus_feature.getUniqueId())] = (rt, rt)
+
+    table = consensus_map.get_df()
+    table["RTmin"] = [bounds_by_id[int(feature_id)][0] for feature_id in table.index]
+    table["RTmax"] = [bounds_by_id[int(feature_id)][1] for feature_id in table.index]
+    return table
+
+
 def group_features(feature_maps, output_file):
     oms = _get_oms()
     feature_grouper = oms.FeatureGroupingAlgorithmKD()
@@ -113,7 +157,7 @@ def group_features(feature_maps, output_file):
     feature_grouper.group(feature_maps, consensus_map)
     consensus_map.setColumnHeaders(file_descriptions)
     consensus_map.setUniqueIds()
-    consensus_map.get_df().to_csv(output_file, index=False)
+    _consensus_feature_dataframe(feature_maps, consensus_map).to_csv(output_file, index=False)
 
 
 def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5):

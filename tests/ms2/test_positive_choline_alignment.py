@@ -96,6 +96,8 @@ class PositiveCholineAlignmentTests(unittest.TestCase):
             {"PC", "LPC", "LPC-O", "SM", "LSM"},
         )
         for record in records:
+            if record.compound_class == "LSM":
+                continue
             for target_mz in CHOLINE_COMMON_MZ:
                 fragments = [
                     fragment
@@ -113,6 +115,18 @@ class PositiveCholineAlignmentTests(unittest.TestCase):
             self.assertEqual(len(hg_fragments), 1)
             self.assertEqual(hg_fragments[0].fragment_type, "Diagnostic_HG")
             self.assertEqual(hg_fragments[0].required_group, "hg")
+
+        lsm = next(record for record in records if record.compound_class == "LSM")
+        self.assertEqual(
+            {fragment.name for fragment in lsm.fragments},
+            {
+                "[C5H15NO4P]+",
+                "M+H-H2O",
+                "M+H-trimethylamine(-59)",
+                "LCB-H2O",
+                "LCB-2H2O",
+            },
+        )
 
     def test_lcb_and_pc_chain_losses_share_fah_pool_with_equal_positive_weights(self) -> None:
         with tempfile.TemporaryDirectory(prefix="lipidgate_choline_pool_") as tmp_dir:

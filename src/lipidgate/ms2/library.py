@@ -17,9 +17,15 @@ from .import_msdial_sphingo_positive import annotate_positive_sl_fragments
 from .models import FragmentRecord, LibraryRecord
 
 
-LIBRARY_CACHE_VERSION = 13
+LIBRARY_CACHE_VERSION = 20
 
+CARBON_MONOISOTOPIC_MASS = 12.0
+HYDROGEN_MONOISOTOPIC_MASS = 1.00782503223
 OXYGEN_MONOISOTOPIC_MASS = 15.99491462
+PROTON_MONOISOTOPIC_MASS = 1.007276466621
+WATER_MONOISOTOPIC_MASS = 18.01056468
+TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
+PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
 HYDROXY_FA_SPHINGOLIPID_CLASSES = {"Cer", "HexCer", "LacCer", "Hex2Cer"}
 LCB_FRAGMENT_TYPE = "LCB碎片"
 D18_1_T18_0_MARKER_MZ = 300.2897
@@ -36,9 +42,13 @@ POSITIVE_CHOLINE_CLASS_KEYS = {
     "LPC",
     "LPCO",
     "SM",
-    "LSM",
 }
 FREE_SPHINGOID_BASE_CLASSES = {"SPB", "Sph", "DHSph", "PhytoSph"}
+SPB_D_SERIES_C_FRAGMENT_NAMES = {
+    "M+H-CH4O2",
+    "M+H-2H2O",
+    "M+H-H2O",
+}
 
 
 def _canonicalize_sphingoid_base_identity(
@@ -49,6 +59,10 @@ def _canonicalize_sphingoid_base_identity(
     cls = str(compound_class or "").strip()
     name = str(lipid_name or "").strip()
     chain_name = str(lipid_chain_name or "").strip()
+    if cls == "CerP":
+        canonical_name = re.sub(r"^CerP", "Cer1P", name, flags=re.IGNORECASE)
+        canonical_chain_name = re.sub(r"^CerP", "Cer1P", chain_name, flags=re.IGNORECASE)
+        return "Cer1P", canonical_name, canonical_chain_name
     if cls not in FREE_SPHINGOID_BASE_CLASSES:
         return cls, name, chain_name
 
@@ -87,6 +101,242 @@ def _without_d18_1_300_lcb_marker(record: LibraryRecord) -> LibraryRecord:
     if len(fragments) == len(record.fragments):
         return record
     return replace(record, fragments=fragments)
+
+
+def _fragment_with_role(fragment: FragmentRecord, fragment_type: str) -> FragmentRecord:
+    return replace(
+        fragment,
+        fragment_type=fragment_type,
+        required_group=_required_group_for_fragment(fragment_type),
+    )
+
+
+def _synthetic_fragment(mz: float, name: str, fragment_type: str) -> FragmentRecord:
+    return FragmentRecord(
+        mz=float(mz),
+        intensity=100.0,
+        name=name,
+        fragment_type=fragment_type,
+        weight=1.0,
+        required_group=_required_group_for_fragment(fragment_type),
+    )
+
+
+def _fatty_acid_anion_mz(carbons: int, double_bonds: int) -> float:
+    neutral_hydrogens = 2 * int(carbons) - 2 * int(double_bonds)
+    return (
+        int(carbons) * CARBON_MONOISOTOPIC_MASS
+        + neutral_hydrogens * HYDROGEN_MONOISOTOPIC_MASS
+        + 2 * OXYGEN_MONOISOTOPIC_MASS
+        - PROTON_MONOISOTOPIC_MASS
+    )
+
+
+def _normalize_targeted_positive_sphingolipid_fragments(
+    compound_class: str,
+    lipid_chain_name: str,
+    precursor_mz: float,
+    adduct: str,
+    fragments: Iterable[FragmentRecord],
+) -> List[FragmentRecord]:
+    """Apply curated evidence pools for the targeted sphingolipid classes."""
+
+    result = list(fragments)
+    adduct_text = str(adduct or "").strip()
+    cls = str(compound_class or "").strip()
+    chain_name = str(lipid_chain_name or "").strip()
+    by_name = {str(fragment.name).strip(): fragment for fragment in result}
+
+    if adduct_text in {"[M+CH3COO]-", "[M+HCOO]-"} and cls == "SM":
+        fa_match = re.search(r"/(?P<carbons>\d+):(?P<double_bonds>\d+)\)", chain_name)
+        phosphate = by_name.get("PO3-") or _synthetic_fragment(78.9591, "PO3-", "Common")
+        phosphocholine = by_name.get("[C4H11NO4P]-") or _synthetic_fragment(
+            168.0431,
+            "[C4H11NO4P]-",
+            "Diagnostic_HG",
+        )
+        methyl_loss = by_name.get("M-CH3")
+        precursor = by_name.get(adduct_text) or _synthetic_fragment(
+            float(precursor_mz),
+            adduct_text,
+            "Precursor Ion",
+        )
+        curated = [
+            _fragment_with_role(phosphate, "Common"),
+            _fragment_with_role(phosphocholine, "Diagnostic_HG"),
+            _fragment_with_role(precursor, "Precursor Ion"),
+        ]
+        if methyl_loss is not None:
+            curated.append(_fragment_with_role(methyl_loss, "Diagnostic_HG"))
+        fa_loss = next(
+            (
+                fragment
+                for fragment in result
+                if fragment.fragment_type == "Diagnostic_FA_Loss"
+                or str(fragment.name or "").startswith("M-CH3-(R=O)(")
+            ),
+            None,
+        )
+        if fa_loss is not None:
+            curated.append(_fragment_with_role(fa_loss, "Diagnostic_FA_Loss"))
+        if fa_match is not None:
+            carbons = int(fa_match.group("carbons"))
+            double_bonds = int(fa_match.group("double_bonds"))
+            fa_token = f"{carbons}:{double_bonds}"
+            rcoo_name = f"[RCOO]-({fa_token})"
+            rcoo = by_name.get(rcoo_name) or _synthetic_fragment(
+                _fatty_acid_anion_mz(carbons, double_bonds),
+                rcoo_name,
+                "Diagnostic_FA",
+            )
+            curated.append(_fragment_with_role(rcoo, "Diagnostic_FA"))
+        return curated
+
+    if adduct_text == "[M-H]-" and cls in {"Cer1P", "CerP"}:
+        phosphate = by_name.get("PO3-") or _synthetic_fragment(
+            78.9591,
+            "PO3-",
+            "Diagnostic_HG",
+        )
+        hydrogen_phosphate = by_name.get("H2PO4-") or _synthetic_fragment(
+            96.9696,
+            "H2PO4-",
+            "Diagnostic_HG",
+        )
+        precursor = by_name.get("[M-H]-") or _synthetic_fragment(
+            float(precursor_mz),
+            "[M-H]-",
+            "Precursor Ion",
+        )
+        water_loss = by_name.get("M-H-H2O") or _synthetic_fragment(
+            float(precursor_mz) - WATER_MONOISOTOPIC_MASS,
+            "M-H-H2O",
+            "Common",
+        )
+        ketene_loss = next(
+            (
+                fragment
+                for fragment in result
+                if fragment.fragment_type == "Diagnostic_FA_Loss"
+                and (
+                    str(fragment.name).startswith("NL_Ketene(")
+                    or "M-H-(R=O)" in str(fragment.name)
+                )
+            ),
+            None,
+        )
+        curated = [
+            _fragment_with_role(phosphate, "Diagnostic_HG"),
+            _fragment_with_role(hydrogen_phosphate, "Diagnostic_HG"),
+            _fragment_with_role(precursor, "Precursor Ion"),
+            _fragment_with_role(water_loss, "Common"),
+        ]
+        if ketene_loss is not None:
+            fa_match = re.search(r"/(?:n|h)?(?P<fa>\d+:\d+)\)", chain_name, flags=re.IGNORECASE)
+            ketene_name = (
+                f"NL_Ketene(n{fa_match.group('fa')})"
+                if fa_match is not None
+                else str(ketene_loss.name)
+            )
+            curated.append(
+                _fragment_with_role(replace(ketene_loss, name=ketene_name), "Diagnostic_FA_Loss")
+            )
+            ketene_water_loss = next(
+                (
+                    fragment
+                    for fragment in result
+                    if fragment.fragment_type == "Diagnostic_FA_Loss"
+                    and (
+                        str(fragment.name).startswith("NL_Ketene-H2O(")
+                        or "M-H-(ROOH)" in str(fragment.name)
+                    )
+                ),
+                None,
+            ) or replace(
+                ketene_loss,
+                mz=float(ketene_loss.mz) - WATER_MONOISOTOPIC_MASS,
+            )
+            ketene_water_name = (
+                f"NL_Ketene-H2O(n{fa_match.group('fa')})"
+                if fa_match is not None
+                else str(ketene_water_loss.name)
+            )
+            curated.append(
+                _fragment_with_role(
+                    replace(ketene_water_loss, name=ketene_water_name),
+                    "Diagnostic_FA_Loss",
+                )
+            )
+        return curated
+
+    if adduct_text != "[M+H]+":
+        return result
+
+    if cls == "SPB" and re.match(r"^SPB\(d", chain_name, flags=re.IGNORECASE):
+        return [
+            fragment
+            for fragment in result
+            if fragment.fragment_type != "C类碎片"
+            or fragment.name in SPB_D_SERIES_C_FRAGMENT_NAMES
+        ]
+
+    if cls == "LSM":
+        hg = by_name.get("[C5H15NO4P]+") or _synthetic_fragment(
+            184.0733,
+            "[C5H15NO4P]+",
+            "Diagnostic_HG",
+        )
+        water_loss = by_name.get("M+H-H2O") or _synthetic_fragment(
+            float(precursor_mz) - WATER_MONOISOTOPIC_MASS,
+            "M+H-H2O",
+            "Common",
+        )
+        trimethylamine_loss = by_name.get("M+H-trimethylamine(-59)") or _synthetic_fragment(
+            float(precursor_mz) - TRIMETHYLAMINE_MONOISOTOPIC_MASS,
+            "M+H-trimethylamine(-59)",
+            "Common",
+        )
+        lcb_h2o = by_name.get("LCB-H2O")
+        lcb_2h2o = by_name.get("LCB-2H2O")
+        curated = [
+            _fragment_with_role(hg, "Diagnostic_HG"),
+            _fragment_with_role(water_loss, "Common"),
+            _fragment_with_role(trimethylamine_loss, "Common"),
+        ]
+        if lcb_h2o is not None:
+            curated.append(_fragment_with_role(lcb_h2o, LCB_FRAGMENT_TYPE))
+        if lcb_2h2o is not None:
+            curated.append(_fragment_with_role(lcb_2h2o, LCB_FRAGMENT_TYPE))
+        return curated
+
+    if cls in {"Cer1P", "CerP"}:
+        phosphate_loss = by_name.get("M+H-H3PO4") or _synthetic_fragment(
+            float(precursor_mz) - PHOSPHORIC_ACID_MONOISOTOPIC_MASS,
+            "M+H-H3PO4",
+            "Diagnostic_HG",
+        )
+        water_loss = by_name.get("M+H-H2O") or _synthetic_fragment(
+            float(precursor_mz) - WATER_MONOISOTOPIC_MASS,
+            "M+H-H2O",
+            "Common",
+        )
+        lcb_2h2o = by_name.get("LCB-2H2O")
+        if lcb_2h2o is None and by_name.get("LCB-H2O") is not None:
+            source = by_name["LCB-H2O"]
+            lcb_2h2o = replace(
+                source,
+                mz=float(source.mz) - WATER_MONOISOTOPIC_MASS,
+                name="LCB-2H2O",
+            )
+        curated = [
+            _fragment_with_role(phosphate_loss, "Diagnostic_HG"),
+            _fragment_with_role(water_loss, "Common"),
+        ]
+        if lcb_2h2o is not None:
+            curated.append(_fragment_with_role(lcb_2h2o, LCB_FRAGMENT_TYPE))
+        return curated
+
+    return result
 
 
 def _hydroxy_fa_fragment(fragment: FragmentRecord) -> FragmentRecord:
@@ -253,36 +503,18 @@ def _matches_special_hg_fragment(fragment_name: str, fragment_mz: float | None, 
     return f"{target_mz:.4f}" in text or f"{target_mz:.1f}" in text
 
 
-def _is_negative_pc_candidate_hg(
-    compound_class: str,
-    fragment_type: str,
-    fragment_mz: float | None,
-    adduct: str,
-) -> bool:
-    if fragment_mz is None:
-        return False
-    if str(compound_class or "").strip() not in {"PC", "PC-O"}:
-        return False
-    if not str(adduct or "").strip().endswith("-"):
-        return False
-    if str(fragment_type or "").strip() not in {"Common", "Candidate_HG"}:
-        return False
-    return any(abs(float(fragment_mz) - target_mz) <= 0.02 for target_mz in (168.0431, 224.0693))
-
-
-def _is_negative_pc_p_m_ch3_hg(
-    compound_class: str,
+def _is_named_negative_headgroup_fragment(
     fragment_type: str,
     fragment_name: str,
     adduct: str,
 ) -> bool:
-    if str(compound_class or "").strip() != "PC-P":
+    if str(fragment_type or "").strip() not in {"Common", "Candidate_HG", "Diagnostic_HG"}:
         return False
-    if str(fragment_type or "").strip() not in {"Common", "Diagnostic_HG"}:
-        return False
-    if str(adduct or "").strip() not in {"[M+Hac-H]-", "[M+CH3COO]-", "[M+HCOO]-"}:
+    if not str(adduct or "").strip().endswith("-"):
         return False
     return str(fragment_name or "").strip() in {
+        "[C4H11NO4P]-",
+        "M-CH3",
         "[M-CH3]-",
         "[M-CH3COOCH3+Hac-H]-",
     }
@@ -334,7 +566,7 @@ def _is_class_specific_hg_fragment(
     if fragment_mz is None or not str(adduct or "").strip().endswith("-"):
         return False
     class_targets = {
-        "PG": (152.9933, 171.0064, 209.0221),
+        "PG": (152.9933, 171.0064, 209.0221, 227.0326),
         "PEtOH": (181.0271, 181.0280),
         "PMeOH": (167.0109,),
         "DMPE": (168.0411, 168.0431),
@@ -352,6 +584,8 @@ def _normalize_fragment_type(
     cls = str(compound_class or "").strip()
     ftype = str(fragment_type or "").strip()
     name = str(fragment_name or "").strip()
+    if _is_named_negative_headgroup_fragment(ftype, name, adduct):
+        return "Diagnostic_HG"
     if cls == "MG" and _is_positive_mg_adduct(adduct):
         if _is_positive_mg_negative_mode_fragment(name) and ftype == "Diagnostic_FA":
             return None
@@ -375,10 +609,6 @@ def _normalize_fragment_type(
         return "Diagnostic_HG"
     if cls == "CE" and _matches_special_hg_fragment(fragment_name, fragment_mz, 369.3516):
         return "Diagnostic_HG"
-    if _is_negative_pc_p_m_ch3_hg(cls, ftype, name, adduct):
-        return "Diagnostic_HG"
-    if _is_negative_pc_candidate_hg(cls, ftype, fragment_mz, adduct):
-        return "Candidate_HG"
     return ftype
 
 
@@ -515,6 +745,13 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 )
             fragments = _ensure_positive_choline_common_fragments(
                 str(main_class),
+                str(adduct),
+                fragments,
+            )
+            fragments = _normalize_targeted_positive_sphingolipid_fragments(
+                str(main_class),
+                str(lipid_chain_name),
+                float(precursor_mz),
                 str(adduct),
                 fragments,
             )
@@ -676,15 +913,22 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
                 current.get("precursortype", ""),
                 normalized_fragments,
             )
-        normalized_fragments = _ensure_positive_choline_common_fragments(
-            current.get("compoundclass", ""),
-            current.get("precursortype", ""),
-            normalized_fragments,
-        )
         compound_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
             current.get("compoundclass", ""),
             current.get("ms1_name", current.get("name", "")),
             current.get("name", ""),
+        )
+        normalized_fragments = _ensure_positive_choline_common_fragments(
+            compound_class,
+            current.get("precursortype", ""),
+            normalized_fragments,
+        )
+        normalized_fragments = _normalize_targeted_positive_sphingolipid_fragments(
+            compound_class,
+            lipid_chain_name,
+            float(current["precursormz"]),
+            current.get("precursortype", ""),
+            normalized_fragments,
         )
         records.append(
             LibraryRecord(

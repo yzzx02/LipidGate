@@ -70,7 +70,7 @@ def run_ms2_search_result(
     if not library.exists():
         raise FileNotFoundError(library)
 
-    from lipidgate.ms2.search import LipidMS2Searcher, prepare_ms2_result_export_df
+    from lipidgate.ms2.search import LipidMS2Searcher, deduplicate_fa_results, prepare_ms2_result_export_df
 
     searcher = LipidMS2Searcher(
         library_path=library,
@@ -83,6 +83,7 @@ def run_ms2_search_result(
     )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
+    df = deduplicate_fa_results(df)
     df = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
     df = prepare_ms2_result_export_df(df)
     csv_path = out_dir / "ms2_results.csv"
@@ -252,12 +253,11 @@ def run_ms2_feature_annotation_result(
         ANNOTATION_COLUMNS,
         collect_mzml_paths,
         link_ms2_to_features,
-        rescue_orphan_annotations_to_features,
         remove_feature_supported_fa_orphans,
         summarize_feature_annotations,
         summarize_orphan_annotations,
     )
-    from lipidgate.ms2.search import LipidMS2Searcher, prepare_ms2_result_export_df
+    from lipidgate.ms2.search import LipidMS2Searcher, deduplicate_fa_results, prepare_ms2_result_export_df
 
     mode_norm = mode.strip().lower().replace("_", "-")
     out_dir = Path(output_dir).resolve()
@@ -298,11 +298,8 @@ def run_ms2_feature_annotation_result(
 
     combined = pd.concat(ms2_frames, ignore_index=True) if ms2_frames else pd.DataFrame()
     combined = add_lipid_name_features(combined, lipid_column="matched_name", subclass_column="compound_class")
-    ms2_df = prepare_ms2_result_export_df(combined)
     ms2_csv_path = None
-    if export_csv:
-        ms2_csv_path = out_dir / "ms2_spectrum_results.csv"
-        ms2_df.to_csv(ms2_csv_path, index=False)
+    ms2_df = pd.DataFrame()
 
     feature_df = pd.DataFrame()
     feature_annotations = pd.DataFrame(columns=ANNOTATION_COLUMNS)
@@ -313,16 +310,13 @@ def run_ms2_feature_annotation_result(
         feature_df = _read_feature_table(feature_table)
         linked_df = link_ms2_to_features(
             feature_df=feature_df,
-            ms2_df=ms2_df,
+            ms2_df=combined,
             mz_tol_ppm=float(precursor_tolerance_ppm),
             rt_window_sec=float(rt_window_sec),
         )
-        linked_df = rescue_orphan_annotations_to_features(
-            linked_df,
-            mz_tol_ppm=float(precursor_tolerance_ppm),
-            rt_window_sec=float(rt_window_sec),
-        )
+        linked_df = deduplicate_fa_results(linked_df)
         linked_df = remove_feature_supported_fa_orphans(linked_df)
+        ms2_df = prepare_ms2_result_export_df(linked_df)
         matched = summarize_feature_annotations(linked_df)
         orphan_df = linked_df[linked_df["Feature_ID"].isna()].copy()
         orphan = summarize_orphan_annotations(
@@ -343,6 +337,13 @@ def run_ms2_feature_annotation_result(
         if export_csv:
             annotations_csv_path = out_dir / "feature_ms2_annotations.csv"
             feature_annotations.to_csv(annotations_csv_path, index=False)
+    else:
+        combined = deduplicate_fa_results(combined)
+        ms2_df = prepare_ms2_result_export_df(combined)
+
+    if export_csv:
+        ms2_csv_path = out_dir / "ms2_spectrum_results.csv"
+        ms2_df.to_csv(ms2_csv_path, index=False)
 
     xlsx_path = None
     if export_xlsx:

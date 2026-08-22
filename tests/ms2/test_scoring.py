@@ -117,7 +117,7 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.missing_required_groups, [])
-        self.assertEqual(result.total_score, 41.5)
+        self.assertEqual(result.total_score, 10.0)
 
     def test_fragment_ppm_tolerance_matches_all_required_fragments(self) -> None:
         spectrum = build_spectrum(
@@ -164,7 +164,7 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(len(result.matched_fragments), 1)
 
-    def test_positive_tg_unmatched_rco_fragments_do_not_expand_fah_denominator(self) -> None:
+    def test_positive_tg_rco_fragments_are_scored_as_other_support(self) -> None:
         record = LibraryRecord(
             record_id=75,
             compound_class="TG",
@@ -201,11 +201,52 @@ class ScoringTests(unittest.TestCase):
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("TG"))
 
         self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.pool_scores["fah"].total_count, 4)
-        self.assertEqual(result.pool_scores["fah"].matched_count, 4)
-        self.assertEqual(result.pool_scores["other"].total_count, 5)
-        self.assertEqual(result.pool_scores["other"].matched_count, 1)
-        self.assertEqual(result.total_score, 80.0)
+        self.assertEqual(result.pool_scores["fah"].total_count, 3)
+        self.assertEqual(result.pool_scores["fah"].matched_count, 3)
+        self.assertEqual(result.pool_scores["other"].total_count, 6)
+        self.assertEqual(result.pool_scores["other"].matched_count, 2)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 74.25)
+        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 25.0 * 2.0 / 3.0)
+        self.assertAlmostEqual(result.total_score, 74.25 + 25.0 * 2.0 / 3.0, places=4)
+
+    def test_other_pool_saturates_at_three_or_all_available_fragments(self) -> None:
+        cases = [
+            (5, 1, 100.0 / 3.0),
+            (5, 2, 200.0 / 3.0),
+            (5, 3, 100.0),
+            (2, 1, 50.0),
+            (2, 2, 100.0),
+        ]
+        for total_count, matched_count, expected_score in cases:
+            with self.subTest(total_count=total_count, matched_count=matched_count):
+                fragments = [
+                    FragmentRecord(100.0 + index, f"support-{index}", "Common")
+                    for index in range(total_count)
+                ]
+                record = LibraryRecord(
+                    record_id=750 + total_count * 10 + matched_count,
+                    compound_class="CAR",
+                    lipid_name="CAR(18:1)",
+                    lipid_chain_name="CAR(18:1)",
+                    precursor_mz=400.0,
+                    adduct="[M+H]+",
+                    fragments=fragments,
+                )
+                spectrum = ExperimentalSpectrum(
+                    scan_id=f"scan_other_{total_count}_{matched_count}",
+                    precursor_mz=400.0,
+                    rt_minutes=5.0,
+                    polarity="+",
+                    peaks=normalize_peaks([
+                        (fragments[index].mz, 1000.0 - index * 100.0)
+                        for index in range(matched_count)
+                    ]),
+                )
+
+                result = score_candidate(spectrum, record, DEFAULT_RULES.get("CAR"))
+
+                self.assertAlmostEqual(result.pool_scores["other"].pool_score, expected_score)
+                self.assertAlmostEqual(result.total_score, expected_score, places=4)
 
     def test_positive_tg_duplicate_chain_loss_counts_as_multiple_chain_evidence(self) -> None:
         record = LibraryRecord(
@@ -413,7 +454,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.pool_scores["hg"].total_count, 1)
         self.assertEqual(result.pool_scores["hg"].matched_count, 1)
         self.assertEqual(result.pool_scores["other"].total_count, 4)
-        self.assertAlmostEqual(result.total_score, 87.5)
+        self.assertAlmostEqual(result.total_score, 75.0 + 25.0 * 2.0 / 3.0, places=4)
 
     def test_cl_double_negative_requires_three_fa_hits(self) -> None:
         record = LibraryRecord(
@@ -603,7 +644,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.missing_required_groups, ["precursor"])
         self.assertEqual(result.downgrade_reason, "no_fragment_match")
 
-    def test_negative_pc_can_pass_with_m_ch3_without_fa_fragments(self) -> None:
+    def test_negative_pc_m_ch3_does_not_bypass_fah_gate(self) -> None:
         record = LibraryRecord(
             record_id=66,
             compound_class="PC",
@@ -612,8 +653,8 @@ class ScoringTests(unittest.TestCase):
             precursor_mz=748.5134,
             adduct="[M+HCOO]-",
             fragments=[
-                FragmentRecord(168.0431, "[C4H11NO4P]-", "Candidate_HG"),
-                FragmentRecord(224.0693, "[C7H15NO5P]-", "Candidate_HG"),
+                FragmentRecord(168.0431, "[C4H11NO4P]-", "Diagnostic_HG"),
+                FragmentRecord(224.0693, "[C7H15NO5P]-", "Common"),
                 FragmentRecord(227.2017, "[RCOO]-(14:0)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(253.2173, "[RCOO]-(16:1)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(688.4917, "[M-CH3]-", "Diagnostic_HG", required_group="hg"),
@@ -630,9 +671,8 @@ class ScoringTests(unittest.TestCase):
 
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
 
-        self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.missing_required_groups, [])
-        self.assertEqual(result.resolution_level, "species_level")
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("fah", result.missing_required_groups)
 
     def test_strong_fah_pool_can_pass_missing_hg_as_low_confidence(self) -> None:
         record = LibraryRecord(
@@ -770,7 +810,7 @@ class ScoringTests(unittest.TestCase):
         self.assertIn("hg", failed.missing_required_groups)
         self.assertTrue(passed.passed_required_gates)
 
-    def test_negative_pc_can_pass_with_two_of_signature_and_precursor_group(self) -> None:
+    def test_negative_pc_uses_standard_hg_and_all_fah_gate(self) -> None:
         record = LibraryRecord(
             record_id=67,
             compound_class="PC",
@@ -779,8 +819,8 @@ class ScoringTests(unittest.TestCase):
             precursor_mz=748.5134,
             adduct="[M+HCOO]-",
             fragments=[
-                FragmentRecord(168.0431, "[C4H11NO4P]-", "Candidate_HG"),
-                FragmentRecord(224.0693, "[C7H15NO5P]-", "Candidate_HG"),
+                FragmentRecord(168.0431, "[C4H11NO4P]-", "Diagnostic_HG"),
+                FragmentRecord(224.0693, "[C7H15NO5P]-", "Common"),
                 FragmentRecord(227.2017, "[RCOO]-(14:0)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(253.2173, "[RCOO]-(16:1)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(688.4917, "[M-CH3]-", "Diagnostic_HG", required_group="hg"),
@@ -793,32 +833,38 @@ class ScoringTests(unittest.TestCase):
             precursor_mz=748.5134,
             rt_minutes=5.0,
             polarity="-",
-            peaks=normalize_peaks([(168.0431, 800.0), (748.5134, 1000.0)]),
+            peaks=normalize_peaks([
+                (168.0431, 800.0),
+                (227.2017, 900.0),
+                (253.2173, 850.0),
+            ]),
         )
         failing_spectrum = ExperimentalSpectrum(
             scan_id="scan_pc_signature_single",
             precursor_mz=748.5134,
             rt_minutes=5.0,
             polarity="-",
-            peaks=normalize_peaks([(168.0431, 1000.0)]),
+            peaks=normalize_peaks([(168.0431, 1000.0), (227.2017, 900.0)]),
         )
-        precursor_only_spectrum = ExperimentalSpectrum(
-            scan_id="scan_pc_precursor_only",
+        fah_only_spectrum = ExperimentalSpectrum(
+            scan_id="scan_pc_fah_only",
             precursor_mz=748.5134,
             rt_minutes=5.0,
             polarity="-",
-            peaks=normalize_peaks([(748.5134, 1000.0)]),
+            peaks=normalize_peaks([(227.2017, 1000.0), (253.2173, 900.0)]),
         )
 
         passing_result = score_candidate(passing_spectrum, record, rule)
         failing_result = score_candidate(failing_spectrum, record, rule)
-        precursor_only_result = score_candidate(precursor_only_spectrum, record, rule)
+        fah_only_result = score_candidate(fah_only_spectrum, record, rule)
 
         self.assertTrue(passing_result.passed_required_gates)
         self.assertFalse(failing_result.passed_required_gates)
-        self.assertFalse(precursor_only_result.passed_required_gates)
+        self.assertIn("fah", failing_result.missing_required_groups)
+        self.assertFalse(fah_only_result.passed_required_gates)
+        self.assertIn("hg", fah_only_result.missing_required_groups)
 
-    def test_negative_pc_o_uses_same_signature_gate(self) -> None:
+    def test_negative_pc_o_uses_same_hg_and_fah_gate(self) -> None:
         record = LibraryRecord(
             record_id=68,
             compound_class="PC-O",
@@ -827,8 +873,8 @@ class ScoringTests(unittest.TestCase):
             precursor_mz=734.5341,
             adduct="[M+HCOO]-",
             fragments=[
-                FragmentRecord(168.0431, "[C4H11NO4P]-", "Candidate_HG"),
-                FragmentRecord(224.0693, "[C7H15NO5P]-", "Candidate_HG"),
+                FragmentRecord(168.0431, "[C4H11NO4P]-", "Diagnostic_HG"),
+                FragmentRecord(224.0693, "[C7H15NO5P]-", "Common"),
                 FragmentRecord(253.2173, "[RCOO]-(16:1)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(674.5125, "[M-CH3]-", "Diagnostic_HG", required_group="hg"),
                 FragmentRecord(734.5341, "[M+HCOO]-", "Precursor Ion"),
@@ -839,7 +885,7 @@ class ScoringTests(unittest.TestCase):
             precursor_mz=734.5341,
             rt_minutes=5.0,
             polarity="-",
-            peaks=normalize_peaks([(224.0693, 850.0), (734.5341, 1000.0)]),
+            peaks=normalize_peaks([(168.0431, 850.0), (253.2173, 1000.0)]),
         )
 
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC-O"))
@@ -895,7 +941,77 @@ class ScoringTests(unittest.TestCase):
         two_hg_result = score_candidate(two_hg_spectrum, record, rule)
         self.assertTrue(two_hg_result.passed_required_gates)
 
-    def test_naps_requires_all_observable_glycerol_fa_and_hg_fragments(self) -> None:
+    def test_negative_pe_ether_classes_share_two_hg_and_exact_acyl_gate(self) -> None:
+        one_hg_with_chain = ExperimentalSpectrum(
+            scan_id="scan_pe_ether_one_hg",
+            precursor_mz=770.5130,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (196.0380, 50.0),
+                (327.2330, 1000.0),
+                (442.2728, 250.0),
+                (460.2833, 400.0),
+            ]),
+        )
+        chain_without_hg = ExperimentalSpectrum(
+            scan_id="scan_pe_ether_no_hg",
+            precursor_mz=770.5130,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (327.2330, 1000.0),
+                (442.2728, 250.0),
+                (460.2833, 400.0),
+            ]),
+        )
+        hg_without_chain = ExperimentalSpectrum(
+            scan_id="scan_pe_ether_no_chain",
+            precursor_mz=770.5130,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(196.0380, 1000.0)]),
+        )
+
+        passing_scores = []
+        for record_id, compound_class, chain_name in (
+            (641, "PE-O", "PE(O-18:3/22:6)"),
+            (642, "PE-P", "PE(P-18:2/22:6)"),
+        ):
+            with self.subTest(compound_class=compound_class):
+                record = LibraryRecord(
+                    record_id=record_id,
+                    compound_class=compound_class,
+                    lipid_name=f"{compound_class}(40:9)",
+                    lipid_chain_name=chain_name,
+                    precursor_mz=770.5130,
+                    adduct="[M-H]-",
+                    fragments=[
+                        FragmentRecord(140.0118, "[C2H7NO4P]-", "Diagnostic_HG", required_group="hg"),
+                        FragmentRecord(196.0380, "[C5H11NO4P]-", "Diagnostic_HG", required_group="hg"),
+                        FragmentRecord(327.2330, "[RCOO]-(22:6)", "Diagnostic_FA", required_group="fah"),
+                        FragmentRecord(442.2728, "[M-(ROOH)-H]-(22:6)", "Diagnostic_FA_Loss"),
+                        FragmentRecord(460.2833, "[M-(R=O)-H]-(22:6)", "Diagnostic_FA_Loss"),
+                    ],
+                )
+                rule = DEFAULT_RULES.get(compound_class)
+                passing = score_candidate(one_hg_with_chain, record, rule)
+                missing_hg = score_candidate(chain_without_hg, record, rule)
+                missing_fah = score_candidate(hg_without_chain, record, rule)
+
+                self.assertTrue(passing.passed_required_gates)
+                self.assertEqual(passing.resolution_level, "chain_level")
+                self.assertEqual(passing.pool_scores["hg"].total_count, 2)
+                self.assertEqual(passing.pool_scores["hg"].matched_count, 1)
+                self.assertFalse(missing_hg.passed_required_gates)
+                self.assertIn("hg", missing_hg.missing_required_groups)
+                self.assertFalse(missing_fah.passed_required_gates)
+                self.assertIn("fah", missing_fah.missing_required_groups)
+                passing_scores.append(passing.total_score)
+
+        self.assertEqual(passing_scores[0], passing_scores[1])
+
+    def test_naps_uses_default_half_hg_gate_and_requires_all_rcoo_fragments(self) -> None:
         record = LibraryRecord(
             record_id=104,
             compound_class="NAPS",
@@ -908,6 +1024,8 @@ class ScoringTests(unittest.TestCase):
                 FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG", required_group="hg"),
                 FragmentRecord(423.2153, "[PA-H]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(78.9591, "[PO3]-", "Common"),
+                FragmentRecord(96.9696, "[H2PO4]-", "Common"),
                 FragmentRecord(535.2460, "[PA-R1COOH-H]-", "Neutral_Loss"),
                 FragmentRecord(561.2617, "[PA-R2COOH-H]-", "Neutral_Loss"),
                 FragmentRecord(776.4882, "[M-H]-", "Precursor Ion"),
@@ -926,6 +1044,17 @@ class ScoringTests(unittest.TestCase):
                 (152.9953, 700.0),
             ]),
         )
+        one_rcoo_spectrum = ExperimentalSpectrum(
+            scan_id="scan_naps_one_rcoo",
+            precursor_mz=776.4882,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (152.9953, 700.0),
+                (423.2153, 500.0),
+            ]),
+        )
         full_hg_spectrum = ExperimentalSpectrum(
             scan_id="scan_naps_full_hg",
             precursor_mz=776.4882,
@@ -941,11 +1070,106 @@ class ScoringTests(unittest.TestCase):
         )
 
         one_hg_result = score_candidate(one_hg_spectrum, record, rule)
+        one_rcoo_result = score_candidate(one_rcoo_spectrum, record, rule)
         full_hg_result = score_candidate(full_hg_spectrum, record, rule)
+
+        self.assertTrue(one_hg_result.passed_required_gates)
+        self.assertEqual(one_hg_result.pool_scores["hg"].total_count, 2)
+        self.assertEqual(one_hg_result.pool_scores["hg"].matched_count, 1)
+        self.assertEqual(one_hg_result.pool_scores["other"].total_count, 5)
+        self.assertFalse(one_rcoo_result.passed_required_gates)
+        self.assertIn("fah", one_rcoo_result.missing_required_groups)
+        self.assertTrue(full_hg_result.passed_required_gates)
+
+    def test_pg_uses_default_half_headgroup_gate_for_four_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=105,
+            compound_class="PG",
+            lipid_name="PG(16:0_18:2)",
+            lipid_chain_name="PG(16:0_18:2)",
+            precursor_mz=745.5025,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(279.2329, "[RCOO]-(18:2)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(171.0064, "[C3H8O6P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(209.0221, "[C6H10O6P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(227.0326, "[C6H12O7P]-", "Diagnostic_HG", required_group="hg"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("PG")
+        one_hg = ExperimentalSpectrum(
+            scan_id="scan_pg_one_hg",
+            precursor_mz=745.5025,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (279.2329, 900.0),
+                (152.9953, 700.0),
+            ]),
+        )
+        two_hg = ExperimentalSpectrum(
+            scan_id="scan_pg_two_hg",
+            precursor_mz=745.5025,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (255.2329, 1000.0),
+                (279.2329, 900.0),
+                (152.9953, 700.0),
+                (171.0064, 600.0),
+            ]),
+        )
+
+        one_hg_result = score_candidate(one_hg, record, rule)
+        two_hg_result = score_candidate(two_hg, record, rule)
 
         self.assertFalse(one_hg_result.passed_required_gates)
         self.assertIn("hg", one_hg_result.missing_required_groups)
-        self.assertTrue(full_hg_result.passed_required_gates)
+        self.assertTrue(two_hg_result.passed_required_gates)
+
+    def test_negative_ldmpe_uses_half_hg_gate_and_requires_rcoo_chain_evidence(self) -> None:
+        record = LibraryRecord(
+            record_id=106,
+            compound_class="LDMPE",
+            lipid_name="LDMPE(18:1)",
+            lipid_chain_name="LDMPE(18:1)",
+            precursor_mz=506.3252,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(78.9591, "[PO3]-", "Common"),
+                FragmentRecord(168.0431, "[C4H11NO4P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(224.0693, "[C7H15NO5P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
+                FragmentRecord(506.3252, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("LDMPE")
+        chain_level = ExperimentalSpectrum(
+            scan_id="scan_ldmpe_chain",
+            precursor_mz=506.3252,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(168.0431, 200.0), (281.2486, 1000.0)]),
+        )
+        missing_fah = ExperimentalSpectrum(
+            scan_id="scan_ldmpe_missing_fah",
+            precursor_mz=506.3252,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(168.0431, 1000.0), (224.0693, 800.0)]),
+        )
+
+        chain_result = score_candidate(chain_level, record, rule)
+        missing_fah_result = score_candidate(missing_fah, record, rule)
+
+        self.assertTrue(chain_result.passed_required_gates)
+        self.assertEqual(chain_result.resolution_level, "chain_level")
+        self.assertEqual(chain_result.pool_scores["other"].matched_count, 0)
+        self.assertFalse(missing_fah_result.passed_required_gates)
+        self.assertIn("fah", missing_fah_result.missing_required_groups)
 
     def test_nagps_uses_two_required_hg_fragments_without_fa_fragments(self) -> None:
         record = LibraryRecord(
@@ -1385,10 +1609,10 @@ class ScoringTests(unittest.TestCase):
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
 
         self.assertAlmostEqual(result.pool_scores["hg"].pool_score, 33.0, places=4)
-        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 18.8, places=4)
-        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 18.8, places=4)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 14.0, places=4)
+        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 20.0, places=4)
 
-    def test_positive_support_pool_is_eighty_percent_coverage_and_twenty_percent_intensity(self) -> None:
+    def test_secondary_pool_uses_low_intensity_friendly_saturation_curve(self) -> None:
         record = LibraryRecord(
             record_id=86,
             compound_class="SM",
@@ -1421,11 +1645,12 @@ class ScoringTests(unittest.TestCase):
 
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("SM"))
 
-        # At 2% relative intensity the support curve quality is 30%; with
-        # two of four FAH fragments hit, pool quality is 0.8*0.5 + 0.2*0.3.
-        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 9.2, places=4)
+        # At 2% relative intensity the secondary curve quality is 30%.
+        # The strongest matched support ion defines the pool quality, without
+        # dividing by the four theoretical FAH fragments.
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 6.0, places=4)
 
-    def test_negative_mode_keeps_existing_hg_quality_curve(self) -> None:
+    def test_negative_secondary_hg_uses_the_same_support_curve(self) -> None:
         spectrum = build_spectrum([
             (120.0, 1000.0),
             (224.0693, 100.0),
@@ -1433,7 +1658,7 @@ class ScoringTests(unittest.TestCase):
 
         result = score_candidate(spectrum, self.record, self.rule)
 
-        self.assertAlmostEqual(result.pool_scores["hg"].intensity_ratio, 10.0 ** -0.5, places=6)
+        self.assertAlmostEqual(result.pool_scores["hg"].intensity_ratio, 0.7, places=6)
 
     def test_full_fah_coverage_enables_chain_level(self) -> None:
         spectrum = build_spectrum(
@@ -1447,7 +1672,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
 
-    def test_partial_fah_with_pc_m_ch3_passes_relaxed_gate(self) -> None:
+    def test_partial_fah_with_pc_m_ch3_fails_standard_fah_gate(self) -> None:
         spectrum = build_spectrum(
             [
                 (255.2329, 1000.0),
@@ -1455,9 +1680,8 @@ class ScoringTests(unittest.TestCase):
             ]
         )
         result = score_candidate(spectrum, self.record, self.rule)
-        self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.missing_required_groups, [])
-        self.assertEqual(result.resolution_level, "species_level")
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("fah", result.missing_required_groups)
 
     def test_library_without_required_fragments_treats_gate_as_not_applicable(self) -> None:
         incomplete_record = LibraryRecord(
@@ -1538,6 +1762,42 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "class_level")
         self.assertEqual(result.downgrade_reason, "missing_required_hg")
+
+    def test_positive_bmp_repeated_chain_single_mag_peak_covers_both_chains(self) -> None:
+        repeated_chain_record = LibraryRecord(
+            record_id=471,
+            compound_class="BMP",
+            lipid_name="BMP(36:2)",
+            lipid_chain_name="BMP 18:1_18:1",
+            precursor_mz=792.5749,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(339.2894, "[MAG1-H2O]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(339.2894, "[MAG2-H2O]+", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(603.5347, "[M-C3H9O6P+H]+", "Common"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_bmp_repeated_chain",
+            precursor_mz=792.5749,
+            rt_minutes=8.5,
+            polarity="+",
+            peaks=normalize_peaks([
+                (339.2894, 1000.0),
+                (603.5347, 500.0),
+            ]),
+        )
+
+        result = score_candidate(
+            spectrum,
+            repeated_chain_record,
+            DEFAULT_RULES.get("BMP"),
+        )
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
+        self.assertEqual(result.pool_scores["hg"].matched_count, 1)
 
     def test_naglyser_hg_only_class_can_pass_with_headgroup_match(self) -> None:
         hg_only_record = LibraryRecord(
@@ -2269,7 +2529,7 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertNotIn("loss", result.missing_required_groups)
 
-    def test_pe_o_140_196_headgroup_fragments_do_not_gate(self) -> None:
+    def test_pe_o_140_196_headgroup_fragments_use_standard_hg_gate(self) -> None:
         pe_o_record = LibraryRecord(
             record_id=13,
             compound_class="PE-O",
@@ -2294,9 +2554,23 @@ class ScoringTests(unittest.TestCase):
                 (466.3298, 250.0),
             ]),
         )
-        result = score_candidate(spectrum, pe_o_record, DEFAULT_RULES.get("PE-O"))
-        self.assertTrue(result.passed_required_gates)
-        self.assertNotIn("hg", result.missing_required_groups)
+        missing_hg = score_candidate(spectrum, pe_o_record, DEFAULT_RULES.get("PE-O"))
+        one_hg_spectrum = ExperimentalSpectrum(
+            scan_id="scan_pe_o_one_hg",
+            precursor_mz=730.576,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (196.0380, 300.0),
+                (281.2486, 1000.0),
+                (466.3298, 250.0),
+            ]),
+        )
+        passing = score_candidate(one_hg_spectrum, pe_o_record, DEFAULT_RULES.get("PE-O"))
+
+        self.assertFalse(missing_hg.passed_required_gates)
+        self.assertIn("hg", missing_hg.missing_required_groups)
+        self.assertTrue(passing.passed_required_gates)
 
     def test_lpe_o_can_pass_when_fah_and_loss_are_both_matched(self) -> None:
         ether_lyso_record = LibraryRecord(
@@ -2631,7 +2905,102 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(result.passed_required_gates)
         self.assertIn("loss", result.missing_required_groups)
 
-    def test_nat_requires_all_taurine_headgroup_fragments(self) -> None:
+    def test_positive_dg_o_rco_is_other_and_does_not_resolve_chain(self) -> None:
+        record = LibraryRecord(
+            record_id=107,
+            compound_class="DG-O",
+            lipid_name="DG-O(34:1)",
+            lipid_chain_name="DG-O(O-16:0_18:1)",
+            precursor_mz=598.5769,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(339.2894, "[R2C=O+C3H6O2]+(18:1)", "Diagnostic_FA"),
+                FragmentRecord(563.5398, "[M-H2O+H]+", "Common"),
+                FragmentRecord(598.5769, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_dg_o_rco_only",
+            precursor_mz=598.5769,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(265.2526, 1000.0)]),
+        )
+
+        result = score_candidate(record=record, spectrum=spectrum, rule=DEFAULT_RULES.get("DG-O"))
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("fah", result.missing_required_groups)
+        self.assertEqual(result.pool_scores["fah"].matched_count, 0)
+        self.assertEqual(result.pool_scores["other"].matched_count, 1)
+
+    def test_positive_dg_o_c3h6o2_is_fah_and_resolves_chain(self) -> None:
+        record = LibraryRecord(
+            record_id=1071,
+            compound_class="DG-O",
+            lipid_name="DG-O(34:1)",
+            lipid_chain_name="DG-O(O-16:0_18:1)",
+            precursor_mz=598.5769,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(339.2894, "[R2C=O+C3H6O2]+(18:1)", "Diagnostic_FA"),
+                FragmentRecord(563.5398, "[M-H2O+H]+", "Common"),
+                FragmentRecord(598.5769, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_dg_o_c3h6o2",
+            precursor_mz=598.5769,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (265.2526, 250.0),
+                (339.2894, 1000.0),
+            ]),
+        )
+
+        result = score_candidate(record=record, spectrum=spectrum, rule=DEFAULT_RULES.get("DG-O"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
+        self.assertEqual(result.pool_scores["fah"].matched_count, 1)
+        self.assertEqual(result.pool_scores["other"].matched_count, 1)
+
+    def test_positive_tg_o_one_of_two_available_rco_resolves_chain(self) -> None:
+        record = LibraryRecord(
+            record_id=108,
+            compound_class="TG-O",
+            lipid_name="TG-O(52:3)",
+            lipid_chain_name="TG-O(O-16:0_18:1_18:2)",
+            precursor_mz=860.0,
+            adduct="[M+NH4]+",
+            polarity="+",
+            fragments=[
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(263.2369, "(R=O)+(18:2)", "FA_Frag"),
+                FragmentRecord(860.0, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_tg_o_half_rco",
+            precursor_mz=860.0,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(265.2526, 1000.0)]),
+        )
+
+        result = score_candidate(record=record, spectrum=spectrum, rule=DEFAULT_RULES.get("TG-O"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.missing_required_groups, [])
+        self.assertEqual(result.resolution_level, "chain_level")
+
+    def test_nat_uses_default_half_taurine_headgroup_gate(self) -> None:
         record = LibraryRecord(
             record_id=104,
             compound_class="NAT",
@@ -2648,8 +3017,18 @@ class ScoringTests(unittest.TestCase):
         )
         rule = DEFAULT_RULES.get("NAT")
 
-        missing_one = ExperimentalSpectrum(
-            scan_id="scan_nat_missing_one",
+        one_hg = ExperimentalSpectrum(
+            scan_id="scan_nat_one_hg",
+            precursor_mz=446.3310,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([
+                (79.9568, 1000.0),
+                (446.3310, 200.0),
+            ]),
+        )
+        two_hg = ExperimentalSpectrum(
+            scan_id="scan_nat_two_hg",
             precursor_mz=446.3310,
             rt_minutes=5.0,
             polarity="-",
@@ -2672,11 +3051,13 @@ class ScoringTests(unittest.TestCase):
             ]),
         )
 
-        missing_result = score_candidate(missing_one, record, rule)
+        one_hg_result = score_candidate(one_hg, record, rule)
+        two_hg_result = score_candidate(two_hg, record, rule)
         complete_result = score_candidate(complete, record, rule)
 
-        self.assertFalse(missing_result.passed_required_gates)
-        self.assertIn("hg", missing_result.missing_required_groups)
+        self.assertFalse(one_hg_result.passed_required_gates)
+        self.assertIn("hg", one_hg_result.missing_required_groups)
+        self.assertTrue(two_hg_result.passed_required_gates)
         self.assertTrue(complete_result.passed_required_gates)
         self.assertEqual(DEFAULT_RULES.get("NATau"), DEFAULT_RULES.get("NAT"))
 

@@ -15,7 +15,7 @@ from lipidgate.ms2.models import (
     normalize_peaks,
 )
 from lipidgate.ms2.rules import DEFAULT_RULES
-from lipidgate.ms2.search import LipidMS2Searcher, prepare_ms2_result_export_df
+from lipidgate.ms2.search import LipidMS2Searcher, deduplicate_fa_results, prepare_ms2_result_export_df
 
 
 def build_candidate(
@@ -68,6 +68,137 @@ def build_match(mz: float, fragment_type: str, rel: float, name: str | None = No
 class SearchSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
+
+    def test_candidate_charge_gate_rejects_double_charge_for_singly_charged_scan(self) -> None:
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_1",
+            precursor_mz=786.5067,
+            rt_minutes=12.97,
+            polarity="-",
+            peaks=[],
+            precursor_charge=1,
+        )
+        cl_record = LibraryRecord(
+            record_id=1,
+            compound_class="CL",
+            lipid_name="CL(82:15)",
+            lipid_chain_name="CL(18:1_20:4/22:4_22:6)",
+            precursor_mz=786.5111,
+            adduct="[M-2H]2-",
+        )
+        pe_record = LibraryRecord(
+            record_id=2,
+            compound_class="PE",
+            lipid_name="PE(40:8)",
+            lipid_chain_name="PE(20:4_20:4)",
+            precursor_mz=786.5079,
+            adduct="[M-H]-",
+        )
+
+        self.assertFalse(self.searcher._candidate_charge_is_compatible(spectrum, cl_record))
+        self.assertTrue(self.searcher._candidate_charge_is_compatible(spectrum, pe_record))
+
+    def test_candidate_charge_gate_keeps_candidates_when_scan_charge_is_unknown(self) -> None:
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_1",
+            precursor_mz=786.5067,
+            rt_minutes=12.97,
+            polarity="-",
+            peaks=[],
+        )
+        cl_record = LibraryRecord(
+            record_id=1,
+            compound_class="CL",
+            lipid_name="CL(82:15)",
+            lipid_chain_name="CL(18:1_20:4/22:4_22:6)",
+            precursor_mz=786.5111,
+            adduct="[M-2H]2-",
+        )
+
+        self.assertTrue(self.searcher._candidate_charge_is_compatible(spectrum, cl_record))
+
+    def test_fa_dedup_uses_absolute_signal_instead_of_saturated_score(self) -> None:
+        rows = pd.DataFrame(
+            [
+                {
+                    "source_file": "sample.mzML",
+                    "scan_id": "scan_weak",
+                    "compound_class": "FA",
+                    "matched_name": "FA(18:1)",
+                    "adduct": "[M-H]-",
+                    "total_score": 100.0,
+                    "matched_intensity_sum": 500.0,
+                    "matched_relative_intensity_sum": 1.0,
+                    "ppm_error": 0.2,
+                    "rt_minutes": 5.0,
+                },
+                {
+                    "source_file": "sample.mzML",
+                    "scan_id": "scan_strong",
+                    "compound_class": "FA",
+                    "matched_name": "FA(18:1)",
+                    "adduct": "[M-H]-",
+                    "total_score": 100.0,
+                    "matched_intensity_sum": 2500.0,
+                    "matched_relative_intensity_sum": 1.0,
+                    "ppm_error": 1.0,
+                    "rt_minutes": 5.1,
+                },
+                {
+                    "source_file": "other_sample.mzML",
+                    "scan_id": "scan_other_sample",
+                    "compound_class": "FA",
+                    "matched_name": "FA(18:1)",
+                    "adduct": "[M-H]-",
+                    "total_score": 100.0,
+                    "matched_intensity_sum": 100.0,
+                    "matched_relative_intensity_sum": 1.0,
+                    "ppm_error": 0.1,
+                    "rt_minutes": 4.9,
+                },
+            ]
+        )
+
+        selected = deduplicate_fa_results(rows)
+
+        self.assertEqual(selected["scan_id"].tolist(), ["scan_strong", "scan_other_sample"])
+
+    def test_fa_dedup_prefers_ms1_link_over_stronger_orphan(self) -> None:
+        rows = pd.DataFrame(
+            [
+                {
+                    "source_file": "sample.mzML",
+                    "scan_id": "scan_feature",
+                    "compound_class": "FA",
+                    "matched_name": "FA(18:1)",
+                    "adduct": "[M-H]-",
+                    "Feature_ID": "F1",
+                    "matched_intensity_sum": 500.0,
+                },
+                {
+                    "source_file": "sample.mzML",
+                    "scan_id": "scan_orphan",
+                    "compound_class": "FA",
+                    "matched_name": "FA(18:1)",
+                    "adduct": "[M-H]-",
+                    "Feature_ID": pd.NA,
+                    "matched_intensity_sum": 5000.0,
+                },
+                {
+                    "source_file": "sample.mzML",
+                    "scan_id": "scan_pe",
+                    "compound_class": "PE",
+                    "matched_name": "PE(18:0_18:1)",
+                    "adduct": "[M-H]-",
+                    "Feature_ID": pd.NA,
+                    "matched_intensity_sum": 8000.0,
+                },
+            ]
+        )
+
+        selected = deduplicate_fa_results(rows)
+
+        self.assertEqual(selected["scan_id"].tolist(), ["scan_feature", "scan_pe"])
 
     def test_select_results_keeps_primary_and_strong_secondary(self) -> None:
         primary = build_candidate(
@@ -224,6 +355,120 @@ class SearchSelectionTests(unittest.TestCase):
             adduct="[M+NH4]+",
         )
         self.assertFalse(self.searcher._qualifies_secondary_result(result))
+
+    def test_repeated_chain_tg_unique_loss_counts_for_all_three_chains(self) -> None:
+        result = build_candidate(
+            421,
+            "TG(18:1_18:1_18:1)",
+            total_score=100.0,
+            matched_intensity_sum=880.0,
+            matched_relative_intensity_sum=0.88,
+            matched_fragments=[
+                build_match(
+                    603.5347,
+                    "Diagnostic_FA_Loss",
+                    0.88,
+                    "[M-NH3-(ROOH)+NH4]+(18:1)",
+                ),
+            ],
+            record_fragments=[
+                FragmentRecord(
+                    603.5347,
+                    "[M-NH3-(ROOH)+NH4]+(18:1)",
+                    "Diagnostic_FA_Loss",
+                ),
+                FragmentRecord(902.8171, "[M+NH4]+", "Precursor Ion"),
+            ],
+            compound_class="TG",
+            adduct="[M+NH4]+",
+        )
+
+        self.assertTrue(self.searcher._qualifies_secondary_result(result))
+
+    def test_positive_dg_o_standard_fah_can_be_secondary_result(self) -> None:
+        result = build_candidate(
+            411,
+            "DG-O(O-16:0_18:1)",
+            total_score=100.0,
+            matched_intensity_sum=1000.0,
+            matched_relative_intensity_sum=1.0,
+            matched_fragments=[
+                build_match(
+                    339.2894,
+                    "Diagnostic_FA",
+                    1.0,
+                    "[R2C=O+C3H6O2]+(18:1)",
+                ),
+            ],
+            record_fragments=[
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
+                FragmentRecord(339.2894, "[R2C=O+C3H6O2]+(18:1)", "Diagnostic_FA"),
+            ],
+            compound_class="DG-O",
+            adduct="[M+NH4]+",
+        )
+
+        self.assertTrue(self.searcher._qualifies_secondary_result(result))
+
+    def test_equal_scores_share_rank_one_and_are_not_top1_truncated(self) -> None:
+        primary = build_candidate(
+            422,
+            "TG(16:0_18:1_20:2)",
+            total_score=87.4321,
+            matched_intensity_sum=5000.0,
+            matched_relative_intensity_sum=2.4,
+            matched_fragments=[],
+            record_fragments=[],
+            compound_class="TG",
+            adduct="[M+NH4]+",
+        )
+        tied = build_candidate(
+            423,
+            "TG(18:1_18:1_18:1)",
+            total_score=87.4321,
+            matched_intensity_sum=800.0,
+            matched_relative_intensity_sum=0.8,
+            matched_fragments=[
+                build_match(
+                    603.5347,
+                    "Diagnostic_FA_Loss",
+                    0.80,
+                    "[M-NH3-(ROOH)+NH4]+(18:1)",
+                ),
+            ],
+            record_fragments=[
+                FragmentRecord(
+                    603.5347,
+                    "[M-NH3-(ROOH)+NH4]+(18:1)",
+                    "Diagnostic_FA_Loss",
+                ),
+            ],
+            compound_class="TG",
+            adduct="[M+NH4]+",
+        )
+        lower_score = build_candidate(
+            424,
+            "TG(16:0_18:0_20:2)",
+            total_score=80.0,
+            matched_intensity_sum=9000.0,
+            matched_relative_intensity_sum=2.8,
+            matched_fragments=[],
+            record_fragments=[],
+            compound_class="TG",
+            adduct="[M+NH4]+",
+        )
+
+        selected = self.searcher._select_results_for_output([primary, tied, lower_score], top_n=1)
+        ranks = []
+        current_rank = 0
+        previous_score = None
+        for result in [primary, tied, lower_score]:
+            current_rank = self.searcher._next_result_rank(result, current_rank, previous_score)
+            ranks.append(current_rank)
+            previous_score = result.total_score
+
+        self.assertEqual([result.record.record_id for result in selected], [422, 423])
+        self.assertEqual(ranks, [1, 1, 2])
 
     def test_positive_fa_loss_only_record_uses_unified_searcher(self) -> None:
         record = LibraryRecord(
@@ -656,6 +901,7 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertNotIn("resolution_level", export.columns)
         self.assertNotIn("evidence_status", export.columns)
         self.assertNotIn("downgrade_reason", export.columns)
+        self.assertNotIn("result_channel", export.columns)
 
     def test_export_maps_all_annotation_levels_to_one_user_column(self) -> None:
         export = prepare_ms2_result_export_df(pd.DataFrame({

@@ -29,6 +29,7 @@ ANNOTATION_COLUMNS = [
     "adduct",
     "selected_source_file",
     "selected_scan_id",
+    "selected_ms2_rt",
     "precursor_mz",
     "ppm_error",
     "final_score",
@@ -178,6 +179,13 @@ def link_ms2_to_features(
     mz_tol_ppm: float = 10.0,
     rt_window_sec: float = 30.0,
 ) -> pd.DataFrame:
+    """Link an MS2 spectrum only when it falls inside a real MS1 feature.
+
+    When RTmin/RTmax are available they are authoritative peak boundaries; the
+    fallback rt_window_sec is used only for feature tables that provide an apex
+    RT without peak bounds.  Out-of-bound spectra remain unlinked so their MS1
+    feature time stays empty while their original MS2 acquisition time is kept.
+    """
     out = ms2_df.copy().reset_index(drop=True)
     for column in [
         "Feature_ID",
@@ -216,9 +224,7 @@ def link_ms2_to_features(
         mz_ok = ppm_errors.abs() <= mz_tol_ppm
 
         has_bounds = feature_rtmin.notna() & feature_rtmax.notna()
-        lower = feature_rtmin.fillna(feature_rt) - window_min
-        upper = feature_rtmax.fillna(feature_rt) + window_min
-        rt_ok_with_bounds = has_bounds & (float(ms2_rt) >= lower) & (float(ms2_rt) <= upper)
+        rt_ok_with_bounds = has_bounds & (float(ms2_rt) >= feature_rtmin) & (float(ms2_rt) <= feature_rtmax)
         rt_ok_without_bounds = (~has_bounds) & feature_rt.notna() & ((feature_rt - float(ms2_rt)).abs() <= window_min)
         rt_ok = rt_ok_with_bounds | rt_ok_without_bounds
 
@@ -542,40 +548,15 @@ def summarize_orphan_annotations(
     if not groups:
         return pd.DataFrame(columns=ANNOTATION_COLUMNS)
 
-    path_map = {
-        Path(path).name: Path(path)
-        for path in (mzml_paths or [])
-    }
     rows: list[dict[str, object]] = []
     for idx, group in enumerate(groups, start=1):
         best = _best_ms2_row(group, prefer_rt_delta=False)
         precursor_values = pd.to_numeric(group["precursor_mz"], errors="coerce").dropna()
-        rt_values = pd.to_numeric(group["rt_minutes"], errors="coerce").dropna()
         feature_mz = float(precursor_values.median()) if not precursor_values.empty else best.get("precursor_mz", pd.NA)
-
-        apex_rts: list[float] = []
-        if not rt_values.empty and pd.notna(feature_mz):
-            rt_min = float(rt_values.min()) - float(rt_window_sec) / 60.0
-            rt_max = float(rt_values.max()) + float(rt_window_sec) / 60.0
-            for source_file in sorted({str(v) for v in group.get("source_file", pd.Series(dtype=object)).dropna()}):
-                mzml_path = path_map.get(source_file)
-                if mzml_path is None:
-                    continue
-                apex_rt, _apex_intensity = extract_eic_apex_rt(
-                    mzml_path=mzml_path,
-                    target_mz=float(feature_mz),
-                    mz_tol_ppm=mz_tol_ppm,
-                    rt_min=rt_min,
-                    rt_max=rt_max,
-                )
-                if apex_rt is not None and pd.notna(apex_rt):
-                    apex_rts.append(float(apex_rt))
-
-        feature_rt = float(median(apex_rts)) if apex_rts else best.get("rt_minutes", pd.NA)
         best = best.copy()
         best["Feature_ID"] = f"ORPHAN_{idx:03d}"
         best["feature_mz"] = feature_mz
-        best["feature_rt"] = feature_rt
+        best["feature_rt"] = pd.NA
         best["feature_rtmin"] = pd.NA
         best["feature_rtmax"] = pd.NA
         rows.append(_annotation_row(group, best))

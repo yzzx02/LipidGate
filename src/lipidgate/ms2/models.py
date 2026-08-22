@@ -57,6 +57,7 @@ class ExperimentalSpectrum:
     polarity: str
     peaks: List[ExperimentalPeak]
     metadata: Dict[str, str] = field(default_factory=dict)
+    precursor_charge: Optional[int] = None
 
     @property
     def total_relative_intensity(self) -> float:

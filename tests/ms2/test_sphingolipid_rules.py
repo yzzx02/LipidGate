@@ -3,6 +3,8 @@
 import unittest
 
 from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
+from lipidgate.ms2.rules import DEFAULT_RULES
+from lipidgate.ms2.scoring import _pool_weights_for_record
 from lipidgate.ms2.search import LipidMS2Searcher
 
 
@@ -466,7 +468,7 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
 
-    def test_negative_sm_requires_headgroup_and_acyl_loss_evidence(self) -> None:
+    def test_negative_sm_uses_half_hg_gate_and_fah_chain_promotion_without_ordinary_gate(self) -> None:
         record = LibraryRecord(
             record_id=10,
             compound_class="SM",
@@ -476,15 +478,35 @@ class SphingolipidRuleTests(unittest.TestCase):
             adduct="[M+HCOO]-",
             fragments=[
                 FragmentRecord(691.5032, "[M+HCOO]-", "Precursor Ion"),
-                FragmentRecord(631.4820, "M-CH3", "C类碎片"),
+                FragmentRecord(631.4820, "M-CH3", "Diagnostic_HG"),
+                FragmentRecord(78.9591, "PO3-", "Common"),
                 FragmentRecord(168.0431, "[C4H11NO4P]-", "Diagnostic_HG"),
+                FragmentRecord(253.2173, "[RCOO]-(16:1)", "Diagnostic_FA"),
                 FragmentRecord(395.2680, "M-CH3-(R=O)(16:1)", "Diagnostic_FA_Loss"),
             ],
         )
 
-        result = _score(record, [(631.4820, 1000.0), (168.0431, 850.0), (395.2680, 600.0)])
+        chain_level = _score(record, [(168.0431, 850.0), (253.2173, 600.0)])
+        chain_level_from_loss = _score(record, [(631.4820, 850.0), (395.2680, 600.0)])
+        species_level = _score(record, [(631.4820, 850.0)])
+        missing_hg = _score(record, [(78.9591, 1000.0), (253.2173, 600.0)])
 
-        self.assertTrue(result.passed_required_gates)
+        self.assertTrue(chain_level.passed_required_gates)
+        self.assertEqual(chain_level.resolution_level, "chain_level")
+        self.assertEqual(chain_level.pool_scores["hg"].matched_count, 1)
+        self.assertEqual(chain_level.pool_scores["hg"].total_count, 2)
+        self.assertEqual(chain_level.pool_scores["fah"].matched_count, 1)
+        self.assertEqual(chain_level.pool_scores["other"].matched_count, 0)
+        self.assertTrue(chain_level_from_loss.passed_required_gates)
+        self.assertEqual(chain_level_from_loss.resolution_level, "chain_level")
+        self.assertTrue(species_level.passed_required_gates)
+        self.assertEqual(species_level.resolution_level, "species_level")
+        self.assertEqual(species_level.downgrade_reason, "missing_fah_chain_evidence")
+        self.assertFalse(missing_hg.passed_required_gates)
+        self.assertEqual(
+            _pool_weights_for_record(record, DEFAULT_RULES.get("SM")),
+            {"fah": 20.0, "hg": 60.0, "other": 20.0},
+        )
 
     def test_negative_pe_cer_accepts_lipidin_structural_ion_plus_headgroup(self) -> None:
         record = LibraryRecord(
