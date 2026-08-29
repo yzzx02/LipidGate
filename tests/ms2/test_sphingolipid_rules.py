@@ -237,7 +237,7 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
 
-    def test_hexcer_headgroup_only_can_pass_as_tentative_species(self) -> None:
+    def test_hexcer_headgroup_only_is_rejected_by_dual_half_pool_gate(self) -> None:
         record = LibraryRecord(
             record_id=40,
             compound_class="HexCer",
@@ -257,9 +257,78 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         result = _score(record, [(626.5871, 200.0), (644.5976, 600.0), (806.6504, 1000.0)])
 
-        self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.resolution_level, "tentative_species_level")
-        self.assertEqual(result.downgrade_reason, "low_confidence_hg_only")
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.downgrade_reason, "sphingo_rule_failed")
+
+    def test_hexcer_856_687_rejects_two_lcb_fragments_without_hg(self) -> None:
+        record = LibraryRecord(
+            record_id=42,
+            compound_class="HexCer",
+            lipid_name="HexCer(t43:2)(OH)",
+            lipid_chain_name="HexCer(t18:0/25:2)(OH)",
+            precursor_mz=856.6872,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(252.2686, "LCB-CH6O3", "LCB碎片"),
+                FragmentRecord(264.2686, "LCB-3H2O", "LCB碎片"),
+                FragmentRecord(282.2791, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(300.2897, "LCB-H2O", "LCB碎片"),
+                FragmentRecord(658.6133, "M+H-C6H10O5-2H2O", "Common"),
+                FragmentRecord(676.6238, "M+H-C6H10O5-H2O", "Diagnostic_HG"),
+                FragmentRecord(694.6344, "M+H-C6H10O5", "Diagnostic_HG"),
+                FragmentRecord(838.6767, "M+H-H2O", "C类碎片"),
+                FragmentRecord(856.6872, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+
+        lcb_only = _score(record, [(252.2686, 1000.0), (264.2686, 800.0)])
+        complete_half_pools = _score(record, [
+            (252.2686, 1000.0),
+            (264.2686, 800.0),
+            (282.2791, 700.0),
+            (676.6238, 500.0),
+        ])
+
+        self.assertFalse(lcb_only.passed_required_gates)
+        self.assertIn("sphingo_rule", lcb_only.missing_required_groups)
+        self.assertTrue(complete_half_pools.passed_required_gates)
+
+    def test_positive_ahexcer_requires_half_hg_and_half_lcb_pools(self) -> None:
+        record = LibraryRecord(
+            record_id=43,
+            compound_class="AHexCer",
+            lipid_name="AHexCer d18:1(O-16:0)/22:0(OH)",
+            lipid_chain_name="AHexCer d18:1(O-16:0)/22:0(OH)",
+            precursor_mz=1038.8907,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(239.2375, "LCB-C2H5N", "LCB碎片"),
+                FragmentRecord(252.2691, "LCB-CH4O2", "LCB碎片"),
+                FragmentRecord(264.2691, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(282.2797, "LCB-H2O", "LCB碎片"),
+                FragmentRecord(401.2903, "O-16:0-Hex+", "Diagnostic_HG"),
+                FragmentRecord(602.5870, "M+H-Acyl(O-16:0)-C6H10O5-2H2O", "Diagnostic_HG"),
+                FragmentRecord(620.5976, "M+H-Acyl(O-16:0)-C6H10O5-H2O", "Diagnostic_HG"),
+                FragmentRecord(638.6082, "M+H-Acyl(O-16:0)-C6H10O5", "Diagnostic_HG"),
+                FragmentRecord(1020.8800, "M+H-H2O", "Common"),
+                FragmentRecord(1038.8910, "[M+H]+", "Common"),
+            ],
+        )
+
+        one_sided = _score(record, [
+            (239.2375, 1000.0),
+            (252.2691, 900.0),
+            (401.2903, 800.0),
+        ])
+        passing = _score(record, [
+            (239.2375, 1000.0),
+            (252.2691, 900.0),
+            (401.2903, 800.0),
+            (638.6082, 700.0),
+        ])
+
+        self.assertFalse(one_sided.passed_required_gates)
+        self.assertTrue(passing.passed_required_gates)
 
     def test_hexcer_headgroup_only_rejects_hg_below_ten_percent(self) -> None:
         record = LibraryRecord(
@@ -425,6 +494,8 @@ class SphingolipidRuleTests(unittest.TestCase):
         result = _score(record, [(646.6144, 900.0), (628.6038, 800.0), (408.3847, 1000.0), (365.3425, 700.0)])
 
         self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.pool_scores["fah"].matched_count, 2)
+        self.assertEqual(result.pool_scores["fah"].total_count, 2)
 
     def test_negative_cer_requires_two_structural_and_two_core_fragments(self) -> None:
         record = LibraryRecord(
@@ -447,6 +518,50 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertFalse(missing_core.passed_required_gates)
         self.assertFalse(missing_structural.passed_required_gates)
+
+    def test_negative_gm3_rejects_ordinary_fragments_without_290_headgroup(self) -> None:
+        record = LibraryRecord(
+            record_id=80,
+            compound_class="GM3",
+            lipid_name="GM3(d36:2)",
+            lipid_chain_name="GM3(d36:2)",
+            precursor_mz=1234.7000,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(87.0446, "Neu5Ac fragment 87", "Common"),
+                FragmentRecord(290.0881, "[C11H17O8N1-H]-", "Diagnostic_HG"),
+                FragmentRecord(943.6049, "M-H-291", "Common"),
+                FragmentRecord(1234.7000, "[M-H]-", "Common"),
+            ],
+        )
+
+        result = _score(record, [(87.0446, 500.0), (943.6049, 800.0), (1234.7000, 1000.0)])
+
+        self.assertFalse(result.passed_required_gates)
+        self.assertEqual(result.downgrade_reason, "sphingo_rule_failed")
+
+    def test_negative_gm3_uses_290_gate_and_stays_at_sum_composition(self) -> None:
+        record = LibraryRecord(
+            record_id=81,
+            compound_class="GM3",
+            lipid_name="GM3(d36:2)",
+            lipid_chain_name="GM3(d36:2)",
+            precursor_mz=1234.7000,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(87.0446, "Neu5Ac fragment 87", "Common"),
+                FragmentRecord(290.0881, "[C11H17O8N1-H]-", "Diagnostic_HG"),
+                FragmentRecord(943.6049, "M-H-291", "Common"),
+                FragmentRecord(1234.7000, "[M-H]-", "Common"),
+            ],
+        )
+
+        result = _score(record, [(290.0881, 1000.0), (943.6049, 500.0)])
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "species_level")
+        self.assertEqual(result.downgrade_reason, "sum_composition_only")
+        self.assertAlmostEqual(result.total_score, 66.6667, places=4)
 
     def test_negative_hexcer_requires_headgroup_and_acyl_evidence(self) -> None:
         record = LibraryRecord(
@@ -567,18 +682,18 @@ class SphingolipidRuleTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertFalse(missing_chain.passed_required_gates)
 
-    def test_negative_ahexcer_o_requires_fa_and_structural_evidence(self) -> None:
+    def test_negative_ahexcer_requires_fa_and_structural_evidence(self) -> None:
         record = LibraryRecord(
             record_id=14,
-            compound_class="AHexCer-O",
-            lipid_name="AHexCer-O(16:0/30:1;O)",
-            lipid_chain_name="AHexCer-O(16:0/14:0;2O/16:1;O)",
+            compound_class="AHexCer",
+            lipid_name="AHexCer(16:0/30:1;O)",
+            lipid_chain_name="AHexCer(16:0/14:0;2O/16:1;O)",
             precursor_mz=955.7572,
             adduct="[M+CH3COO]-",
             fragments=[
                 FragmentRecord(955.7572, "[M+CH3COO]-", "Precursor Ion"),
                 FragmentRecord(255.2324, "[RCOO]-(16:0)", "Diagnostic_FA"),
-                FragmentRecord(496.4371, "AHexCer-O structural fragment", "Diagnostic_FA_Loss"),
+                FragmentRecord(496.4371, "AHexCer structural fragment", "Diagnostic_FA_Loss"),
             ],
         )
 
@@ -586,12 +701,12 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
 
-    def test_negative_ahexcer_o_can_use_deprotonated_ion_as_hg_evidence(self) -> None:
+    def test_negative_ahexcer_can_use_deprotonated_ion_as_hg_evidence(self) -> None:
         record = LibraryRecord(
             record_id=15,
-            compound_class="AHexCer-O",
-            lipid_name="AHexCer-O(16:0/40:1;O)",
-            lipid_chain_name="AHexCer-O(16:0/18:1;2O/22:0;O)",
+            compound_class="AHexCer",
+            lipid_name="AHexCer(16:0/40:1;O)",
+            lipid_chain_name="AHexCer(16:0/18:1;2O/22:0;O)",
             precursor_mz=1096.8972,
             adduct="[M+CH3COO]-",
             fragments=[

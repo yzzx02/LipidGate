@@ -11,6 +11,21 @@ TRIMETHYLAMINE_MASS = 59.07349929
 PHOSPHORIC_ACID_MASS = 97.97689557
 SPB_D_C_NAMES = {"M+H-CH4O2", "M+H-2H2O", "M+H-H2O"}
 PEAK_RE = re.compile(r'^(?P<mz>\S+)\s+(?P<intensity>\S+)\s+"(?P<name>[^"]*)"\s+"(?P<type>[^"]*)"$')
+AHEXCER_MSDIAL_NAME_RE = re.compile(
+    r"^AHexCer\s+\((?P<o_acyl>O-\d+:\d+)\)"
+    r"(?P<lcb>\d+:\d+);2O/(?P<n_acyl>\d+:\d+);O$",
+    flags=re.IGNORECASE,
+)
+
+
+def canonical_ahexcer_name(value: str) -> str | None:
+    matched = AHEXCER_MSDIAL_NAME_RE.fullmatch(str(value or "").strip())
+    if matched is None:
+        return None
+    return (
+        f"AHexCer d{matched.group('lcb')}({matched.group('o_acyl')})/"
+        f"{matched.group('n_acyl')}(OH)"
+    )
 
 
 def header_value(lines: list[str], key: str) -> str:
@@ -59,6 +74,7 @@ def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
 
     peaks = parse_peaks(block)
     curated: list[dict[str, object]] | None = None
+    header_replacements: dict[str, str] = {}
     if compound_class == "SPB" and re.match(r"^SPB\(d", name, flags=re.IGNORECASE):
         curated = [
             item
@@ -106,12 +122,56 @@ def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
         if lcb_2h2o is not None:
             curated.append(role(lcb_2h2o, "LCB碎片"))
         stats["cer1p_records"] += 1
+    elif compound_class == "AHexCer":
+        canonical_name = canonical_ahexcer_name(name)
+        if canonical_name is None or len(peaks) != 10:
+            return block
+        o_acyl = AHEXCER_MSDIAL_NAME_RE.fullmatch(name).group("o_acyl")
+        ordered = sorted(peaks, key=lambda item: float(item["mz"]))
+        names_and_types = (
+            ("LCB-C2H5N", "LCB碎片"),
+            ("LCB-CH4O2", "LCB碎片"),
+            ("LCB-2H2O", "LCB碎片"),
+            ("LCB-H2O", "LCB碎片"),
+            (f"{o_acyl}-Hex+", "Diagnostic_HG"),
+            (f"M+H-Acyl({o_acyl})-C6H10O5-2H2O", "Diagnostic_HG"),
+            (f"M+H-Acyl({o_acyl})-C6H10O5-H2O", "Diagnostic_HG"),
+            (f"M+H-Acyl({o_acyl})-C6H10O5", "Diagnostic_HG"),
+            ("M+H-H2O", "Common"),
+            ("[M+H]+", "Common"),
+        )
+        curated = [
+            {**item, "name": fragment_name, "type": fragment_type}
+            for item, (fragment_name, fragment_type) in zip(ordered, names_and_types)
+        ]
+        header_replacements = {
+            "Name": canonical_name,
+            "Comment": f"MS1_name={canonical_name};polarity=+",
+        }
+        stats["ahexcer_records"] += 1
+    elif compound_class == "HexCer":
+        curated = []
+        for item in peaks:
+            fragment_name = str(item["name"]).strip()
+            if str(item["type"]).strip() == "LCB碎片" and fragment_name == "LCB":
+                continue
+            fragment_type = (
+                "Common"
+                if fragment_name == "M+H-C6H10O5-2H2O"
+                else str(item["type"])
+            )
+            curated.append(role(item, fragment_type))
+        stats["hexcer_records"] += 1
 
     if curated is None:
         return block
     curated.sort(key=lambda item: float(item["mz"]))
     header = [line for line in block if PEAK_RE.match(line) is None]
     for index, line in enumerate(header):
+        key = line.split(":", 1)[0] if ":" in line else ""
+        if key in header_replacements:
+            header[index] = f"{key}: {header_replacements[key]}"
+            line = header[index]
         if line.startswith("Num Peaks:"):
             header[index] = f"Num Peaks: {len(curated)}"
             break
@@ -123,7 +183,13 @@ def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
 
 
 def verify_library(path: Path) -> dict[str, int]:
-    counts = {"verified_d_spb": 0, "verified_lsm": 0, "verified_cer1p": 0}
+    counts = {
+        "verified_d_spb": 0,
+        "verified_lsm": 0,
+        "verified_cer1p": 0,
+        "verified_ahexcer": 0,
+        "verified_hexcer": 0,
+    }
     problems: list[str] = []
     with gzip.open(path, "rt", encoding="utf-8", errors="replace") as source:
         block: list[str] = []
@@ -160,6 +226,28 @@ def verify_library(path: Path) -> dict[str, int]:
                 if peak_names != expected:
                     problems.append(f"{name}: unexpected Cer1P fragments {sorted(peak_names)}")
                 counts["verified_cer1p"] += 1
+            elif compound_class == "AHexCer" and adduct == "[M+H]+":
+                peak_types = [str(item["type"]) for item in peaks]
+                if canonical_ahexcer_name(name) is not None or not re.fullmatch(
+                    r"AHexCer d\d+:\d+\(O-\d+:\d+\)/\d+:\d+\(OH\)",
+                    name,
+                ):
+                    problems.append(f"{name}: AHexCer name was not canonicalized")
+                if peak_types.count("Diagnostic_HG") != 4 or peak_types.count("LCB碎片") != 4:
+                    problems.append(f"{name}: expected four HG and four LCB fragments")
+                if peak_types.count("Common") != 2:
+                    problems.append(f"{name}: precursor/dehydration fragments must be Common")
+                counts["verified_ahexcer"] += 1
+            elif compound_class == "HexCer" and adduct == "[M+H]+":
+                peak_types_by_name = {
+                    str(item["name"]): str(item["type"])
+                    for item in peaks
+                }
+                if "LCB" in peak_names:
+                    problems.append(f"{name}: intact LCB fragment was not removed")
+                if peak_types_by_name.get("M+H-C6H10O5-2H2O") != "Common":
+                    problems.append(f"{name}: twice-dehydrated hexose loss must be Common")
+                counts["verified_hexcer"] += 1
             block = []
     if problems:
         raise ValueError("\n".join(problems[:20]))
@@ -177,6 +265,8 @@ def main() -> None:
         "d_spb_removed_peaks": 0,
         "lsm_records": 0,
         "cer1p_records": 0,
+        "ahexcer_records": 0,
+        "hexcer_records": 0,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(args.input, "rt", encoding="utf-8-sig", errors="replace") as source, gzip.open(

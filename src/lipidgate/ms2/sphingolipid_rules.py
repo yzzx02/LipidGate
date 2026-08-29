@@ -14,9 +14,12 @@ class SphingoRule:
     required_type_any_groups: List[Set[str]] = field(default_factory=list)
     required_type_count_groups: List[tuple[Set[str], int]] = field(default_factory=list)
     required_type_count_any_groups: List[List[tuple[Set[str], int]]] = field(default_factory=list)
+    required_type_fraction_groups: List[tuple[Set[str], float]] = field(default_factory=list)
     optional: Set[str] = field(default_factory=set)
     only_non_hydroxy_fa: bool = False
     prefer_d_series_if_ambiguous: bool = False
+    allow_hg_only_fallback: bool = True
+    allow_fah_only_fallback: bool = True
 
 
 def _series_key(series: str) -> str:
@@ -194,11 +197,11 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     "GM3_[M-H]-": SphingoRule(
         lipid_class="GM3",
         adduct="[M-H]-",
-        required_all={"[M-H]-"},
+        required_all={"[C11H17O8N1-H]-"},
         required_type_any_groups=[
-            {"Precursor Ion"},
+            {"Diagnostic_HG"},
         ],
-        optional={"[C11H17O8N1-H]-", "[H89N1C46O13-H]-"},
+        optional={"Neu5Ac fragment 87", "M-H-291", "[M-H]-"},
     ),
 
     "GM1_[M+2NH4]2+": SphingoRule(
@@ -251,7 +254,21 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         optional={"Reference-HG-366.1400"},
     ),
 
-    # HexCer (positive mode)
+    # AHexCer / HexCer (positive mode). Both require structural evidence from
+    # at least half of the HG pool and at least half of the LCB pool. Common
+    # precursor/dehydration ions cannot replace either structural pool. HexCer
+    # excludes the intact LCB ion; its twice-dehydrated hexose loss is support.
+    "AHexCer_[M+H]+": SphingoRule(
+        lipid_class="AHexCer",
+        adduct="[M+H]+",
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"LCB碎片"}, 0.5),
+        ],
+        optional={"[M+H]+", "M+H-H2O"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
+    ),
     "HexCer_[M+H]+": SphingoRule(
         lipid_class="HexCer",
         adduct="[M+H]+",
@@ -266,14 +283,20 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
             },
         ],
         required_any_by_series={
-            "d": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-CH4O2", "Ceramide fragment U"},
-            "t": {"LCB", "LCB-H2O", "LCB-2H2O", "LCB-3H2O", "LCB-CH6O3", "Ceramide fragment U"},
+            "d": {"LCB-H2O", "LCB-2H2O", "LCB-CH4O2", "Ceramide fragment U"},
+            "t": {"LCB-H2O", "LCB-2H2O", "LCB-3H2O", "LCB-CH6O3", "Ceramide fragment U"},
         },
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片", "Diagnostic_HG"},
             {"LCB碎片"},
         ],
-        optional={"M+H-C6H10O5-H2O", "M+H-C6H10O5-2H2O", "LCB", "LCB-H2O"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"LCB碎片"}, 0.5),
+        ],
+        optional={"M+H-C6H10O5-H2O", "M+H-C6H10O5-2H2O", "LCB-H2O"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
     "HexCer_[M-H]-": SphingoRule(
         lipid_class="HexCer",
@@ -405,17 +428,17 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         prefer_d_series_if_ambiguous=True,
     ),
 
-    # AHexCer-O / PE-Cer / PI-Cer / SL (negative mode)
-    "AHexCer-O_[M+CH3COO]-": SphingoRule(
-        lipid_class="AHexCer-O",
+    # AHexCer / PE-Cer / PI-Cer / SL (negative mode)
+    "AHexCer_[M+CH3COO]-": SphingoRule(
+        lipid_class="AHexCer",
         adduct="[M+CH3COO]-",
         required_type_any_groups=[
             {"Diagnostic_FA"},
             {"Diagnostic_HG", "Diagnostic_FA_Loss", "C类碎片", "Precursor Ion"},
         ],
     ),
-    "AHexCer-O_[M+HCOO]-": SphingoRule(
-        lipid_class="AHexCer-O",
+    "AHexCer_[M+HCOO]-": SphingoRule(
+        lipid_class="AHexCer",
         adduct="[M+HCOO]-",
         required_type_any_groups=[
             {"Diagnostic_FA"},

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import bisect
+import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Dict, Iterable, List, Sequence
 
 import pandas as pd
 
-from .library import load_library
+from .library import canonicalize_adduct, load_library
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
 from .rules import DEFAULT_RULES, RuleSet
 from .scoring_policy import (
@@ -81,7 +82,6 @@ class LipidMS2Searcher:
     SPHINGO_HG_ONLY_FALLBACK_CLASSES = {
         "HEXCER",
         "AHEXCER",
-        "AHEXCERO",
         "LACCER",
         "HEX2CER",
         "HEX3CER",
@@ -95,6 +95,27 @@ class LipidMS2Searcher:
     HG_ONLY_FALLBACK_REASON = POLICY_HG_ONLY_FALLBACK_REASON
     HG_ONLY_FALLBACK_MIN_HG_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
+    LYSO_SUM_COMPOSITION_CLASS_KEYS = {
+        "LPA",
+        "LPAO",
+        "LPC",
+        "LPCO",
+        "LPE",
+        "LPEO",
+        "LPG",
+        "LPGO",
+        "LPI",
+        "LPIO",
+        "LPS",
+        "LPSO",
+        "LDMPE",
+        "LPETOH",
+        "LPMEOH",
+        "LPHEG",
+        "LPNE",
+        "ETHERLPG",
+        "ETHERLPI",
+    }
 
     def __init__(
         self,
@@ -108,8 +129,36 @@ class LipidMS2Searcher:
         min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
         fragment_prefilter_min_candidates: int = 8,
+        allowed_adducts: Sequence[str] | None = None,
+        allowed_classes: Sequence[str] | None = None,
     ) -> None:
-        self.library = sorted(load_library(library_path), key=lambda record: record.precursor_mz)
+        allowed_adduct_set = {
+            canonicalize_adduct(value)
+            for value in (allowed_adducts or [])
+            if str(value).strip()
+        }
+        allowed_class_keys = {
+            self._normal_class_key(value)
+            for value in (allowed_classes or [])
+            if str(value).strip()
+        }
+        loaded_library = load_library(library_path)
+        self.available_adducts = tuple(sorted({record.adduct for record in loaded_library if record.adduct}))
+        self.available_classes = tuple(sorted({record.compound_class for record in loaded_library if record.compound_class}))
+        self.allowed_adducts = tuple(sorted(allowed_adduct_set))
+        self.allowed_classes = tuple(sorted(allowed_class_keys))
+        self.library = sorted(
+            (
+                record
+                for record in loaded_library
+                if (not allowed_adduct_set or record.adduct in allowed_adduct_set)
+                and (
+                    not allowed_class_keys
+                    or self._normal_class_key(record.compound_class) in allowed_class_keys
+                )
+            ),
+            key=lambda record: record.precursor_mz,
+        )
         self.rules = rules or DEFAULT_RULES
         self.precursor_tolerance_da = precursor_tolerance_da
         self.precursor_tolerance_ppm = float(precursor_tolerance_ppm)
@@ -158,7 +207,7 @@ class LipidMS2Searcher:
     @staticmethod
     def _sphingo_series(record: LibraryRecord) -> str:
         name = record.lipid_chain_name or record.lipid_name
-        matched = re.search(r"\(([mdt])", str(name), flags=re.IGNORECASE)
+        matched = re.search(r"(?:\(|\s)([mdt])\d", str(name), flags=re.IGNORECASE)
         if matched:
             return matched.group(1).lower()
         return "other"
@@ -257,6 +306,7 @@ class LipidMS2Searcher:
             rule.required_type_any_groups
             or rule.required_type_count_groups
             or rule.required_type_count_any_groups
+            or rule.required_type_fraction_groups
         )
         if rule.required_type_any_groups:
             for type_group in rule.required_type_any_groups:
@@ -271,6 +321,15 @@ class LipidMS2Searcher:
         if type_gate_passed and rule.required_type_count_any_groups:
             for alternatives in rule.required_type_count_any_groups:
                 if not any(matched_type_count(type_group) >= minimum_count for type_group, minimum_count in alternatives):
+                    type_gate_passed = False
+                    break
+        if type_gate_passed and rule.required_type_fraction_groups:
+            for type_group, minimum_fraction in rule.required_type_fraction_groups:
+                library_count = sum(
+                    1 for fragment in record.fragments if fragment.fragment_type in type_group
+                )
+                required_count = max(1, math.ceil(library_count * float(minimum_fraction)))
+                if library_count <= 0 or matched_type_count(type_group) < required_count:
                     type_gate_passed = False
                     break
         if uses_negative_hg_fah_tiered_gate:
@@ -294,10 +353,16 @@ class LipidMS2Searcher:
         pool_scores = _calculate_pool_scores(matches, record, rules.get(record.compound_class))
         total_score = _total_score_from_pool_scores(pool_scores)
         standard_gate_passed = name_gate_passed and type_gate_passed
+        if standard_gate_passed and class_key == "GM3" and adduct == "[M-H]-":
+            ordinary_total = sum(1 for fragment in record.fragments if fragment.fragment_type == "Common")
+            ordinary_matched = matched_type_count({"Common"})
+            support_fraction = ordinary_matched / ordinary_total if ordinary_total else 0.0
+            total_score = 50.0 + 50.0 * support_fraction
         has_library_hg_or_structural = bool(library_types & {"Diagnostic_HG", "C类碎片"})
         matched_hg_or_structural = bool(matched_types & {"Diagnostic_HG", "C类碎片"})
         hg_only_low_confidence_gate = (
             not standard_gate_passed
+            and rule.allow_hg_only_fallback
             and self._normal_class_key(record.compound_class) in self.SPHINGO_HG_ONLY_FALLBACK_CLASSES
             and not uses_negative_hg_fah_tiered_gate
             and "Diagnostic_HG" in library_types
@@ -313,6 +378,7 @@ class LipidMS2Searcher:
         )
         fah_only_low_confidence_gate = (
             not standard_gate_passed
+            and rule.allow_fah_only_fallback
             and not uses_negative_hg_fah_tiered_gate
             and has_library_hg_or_structural
             and not matched_hg_or_structural
@@ -328,7 +394,10 @@ class LipidMS2Searcher:
             uses_negative_hg_fah_tiered_gate
             and matched_type_count({"Diagnostic_FA", "Diagnostic_FA_Loss"}) >= 1
         )
-        if standard_gate_passed and uses_negative_hg_fah_tiered_gate and not has_negative_chain_evidence:
+        if standard_gate_passed and class_key == "GM3" and adduct == "[M-H]-":
+            resolution_level = "species_level"
+            downgrade_reason = "sum_composition_only"
+        elif standard_gate_passed and uses_negative_hg_fah_tiered_gate and not has_negative_chain_evidence:
             resolution_level = "species_level"
             downgrade_reason = "missing_fah_chain_evidence"
         elif standard_gate_passed:
@@ -500,10 +569,7 @@ class LipidMS2Searcher:
             return []
         selected = [passed_results[0]]
         for result in passed_results[1:]:
-            tied_with_last_selected = self._scores_tied(
-                result.total_score,
-                selected[-1].total_score,
-            )
+            tied_with_last_selected = self._results_share_rank(result, selected[-1])
             if len(selected) >= top_n and not tied_with_last_selected:
                 break
             if tied_with_last_selected or self._qualifies_secondary_result(result):
@@ -515,21 +581,95 @@ class LipidMS2Searcher:
         return abs(float(left_score) - float(right_score)) <= 1e-9
 
     @classmethod
+    def _results_share_rank(cls, left: CandidateScore, right: CandidateScore) -> bool:
+        if not cls._scores_tied(left.total_score, right.total_score):
+            return False
+        same_class = cls._normal_class_key(left.record.compound_class) == cls._normal_class_key(
+            right.record.compound_class
+        )
+        if same_class:
+            return len(left.matched_fragments) == len(right.matched_fragments)
+        return True
+
+    @classmethod
     def _next_result_rank(
         cls,
         result: CandidateScore,
         current_rank: int,
-        previous_score: float | None = None,
+        previous_result: CandidateScore | None = None,
     ) -> int:
         if current_rank <= 0:
             return 1
-        if previous_score is not None and cls._scores_tied(result.total_score, previous_score):
+        if previous_result is not None and cls._results_share_rank(result, previous_result):
             return current_rank
         return current_rank + 1
 
     @classmethod
     def _normal_class_key(cls, lipid_class: object) -> str:
         return re.sub(r"[^A-Za-z0-9]+", "", str(lipid_class or "").upper())
+
+    @classmethod
+    def _lyso_sum_composition_name(cls, record: LibraryRecord) -> str | None:
+        if cls._normal_class_key(record.compound_class) not in cls.LYSO_SUM_COMPOSITION_CLASS_KEYS:
+            return None
+        source_name = str(record.lipid_chain_name or record.lipid_name or "")
+        chain_tokens = re.findall(r"(?:O-|P-)?(?P<carbon>\d+):(?P<db>\d+)", source_name)
+        nonzero_tokens = [
+            (int(carbon), int(double_bonds))
+            for carbon, double_bonds in chain_tokens
+            if int(carbon) > 0
+        ]
+        if len(nonzero_tokens) != 1:
+            return None
+        total_carbon, total_db = nonzero_tokens[0]
+        return f"{record.compound_class}({total_carbon}:{total_db})"
+
+    @classmethod
+    def _reported_name(cls, result: CandidateScore) -> str:
+        lyso_name = cls._lyso_sum_composition_name(result.record)
+        if lyso_name is not None:
+            return lyso_name
+        if result.resolution_level in {"chain_level", "tentative_chain_level"}:
+            return cls._canonicalize_chain_name(
+                result.record.lipid_chain_name,
+                result.record.compound_class,
+            )
+        return result.record.lipid_name
+
+    @classmethod
+    def _collapse_report_equivalent_results(
+        cls,
+        results: Sequence[CandidateScore],
+    ) -> list[CandidateScore]:
+        best_by_identity: dict[tuple[str, str, str], CandidateScore] = {}
+        resolution_priority = {
+            "double_bond_level": 4,
+            "tentative_double_bond_level": 3,
+            "chain_level": 3,
+            "tentative_chain_level": 2,
+            "species_level": 2,
+            "tentative_species_level": 1,
+            "class_level": 0,
+        }
+
+        def preference(result: CandidateScore) -> tuple[float, float, int, float]:
+            return (
+                float(resolution_priority.get(result.resolution_level, 0)),
+                float(result.total_score),
+                len(result.matched_fragments),
+                -abs(float(result.ppm_error)),
+            )
+
+        for result in results:
+            key = (
+                cls._normal_class_key(result.record.compound_class),
+                str(result.record.adduct),
+                cls._reported_name(result),
+            )
+            existing = best_by_identity.get(key)
+            if existing is None or preference(result) > preference(existing):
+                best_by_identity[key] = result
+        return list(best_by_identity.values())
 
     @classmethod
     def _is_fa_result(cls, result: CandidateScore) -> bool:
@@ -688,9 +828,8 @@ class LipidMS2Searcher:
             key=lambda item: (
                 rank_metrics.get(id(item), {}).get("rank_score", 0.0),
                 rank_metrics.get(id(item), {}).get("normalized_match_score", 0.0),
+                len(item.matched_fragments),
                 rank_metrics.get(id(item), {}).get("ppm_score", 0.0),
-                item.matched_intensity_sum,
-                item.matched_relative_intensity_sum,
                 item.total_score,
             ),
             reverse=True,
@@ -757,6 +896,7 @@ class LipidMS2Searcher:
                     if not self._is_low_confidence_hg_only_result(item)
                 ]
             main_results = self._resolve_trihydroxy_lcb_isomers(main_results)
+            main_results = self._collapse_report_equivalent_results(main_results)
             if main_results:
                 main_metrics = self._compute_rank_metrics(main_results)
                 self._sort_by_rank_metrics(main_results, main_metrics)
@@ -781,15 +921,15 @@ class LipidMS2Searcher:
             scoped_results.extend((item, "main", True) for item in selected_results)
         rows = []
         scope_ranks = {"main": 0, "fa": 0}
-        scope_previous_scores: dict[str, float] = {}
+        scope_previous_results: dict[str, CandidateScore] = {}
         for result, rank_scope, counts_toward_topn in scoped_results:
             rank = self._next_result_rank(
                 result,
                 scope_ranks.get(rank_scope, 0),
-                scope_previous_scores.get(rank_scope),
+                scope_previous_results.get(rank_scope),
             )
             scope_ranks[rank_scope] = rank
-            scope_previous_scores[rank_scope] = result.total_score
+            scope_previous_results[rank_scope] = result
             metric = rank_metrics.get(
                 id(result),
                 {
@@ -798,11 +938,7 @@ class LipidMS2Searcher:
                     "rank_score": 0.0,
                 },
             )
-            matched_name = (
-                self._canonicalize_chain_name(result.record.lipid_chain_name, result.record.compound_class)
-                if result.resolution_level in {"chain_level", "tentative_chain_level"}
-                else result.record.lipid_name
-            )
+            matched_name = self._reported_name(result)
             evidence_status = (
                 result.downgrade_reason or "tentative"
                 if str(result.resolution_level).startswith("tentative_")
@@ -846,6 +982,12 @@ class LipidMS2Searcher:
 
     @staticmethod
     def _canonicalize_chain_name(lipid_chain_name: str, compound_class: str | None = None) -> str:
+        if str(compound_class or "").strip().upper() == "AHEXCER" and re.match(
+            r"^AHexCer\s+[mdt]\d+:\d+\(O-\d+:\d+\)/\d+:\d+\([^)]*OH\)$",
+            str(lipid_chain_name or ""),
+            flags=re.IGNORECASE,
+        ):
+            return lipid_chain_name
         if "(" not in lipid_chain_name or ")" not in lipid_chain_name:
             return lipid_chain_name
 
@@ -976,15 +1118,26 @@ class LipidMS2Searcher:
         return combined
 
 
-def annotation_level_label(resolution_level: object) -> str:
+def _contains_one_determined_chain(lipid_name: object) -> bool:
+    text = str(lipid_name or "")
+    chain_tokens = [
+        token
+        for token in re.findall(r"(?:[OP]-)?\d+:\d+(?:\([^)]*O\)|,O\d*|;\d*OH)?", text)
+        if not token.startswith("0:0")
+    ]
+    return len(chain_tokens) == 1
+
+
+def annotation_level_label(resolution_level: object, matched_name: object = "") -> str:
     normalized = str(resolution_level or "").strip().lower()
-    if normalized in {"double_bond_level", "tentative_double_bond_level"}:
-        return "双键水平"
-    if normalized in {"chain_level", "tentative_chain_level"}:
+    if normalized in {
+        "double_bond_level",
+        "tentative_double_bond_level",
+        "chain_level",
+        "tentative_chain_level",
+    } or _contains_one_determined_chain(matched_name):
         return "链水平"
-    if normalized in {"species_level", "tentative_species_level"}:
-        return "分子种类水平"
-    return "类别水平"
+    return "分子种类水平"
 
 
 def deduplicate_fa_results(results: pd.DataFrame) -> pd.DataFrame:
@@ -1073,9 +1226,13 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     if "total_DB" in export_df.columns:
         export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
     if "resolution_level" in export_df.columns:
-        export_df["注释水平"] = export_df["resolution_level"].map(annotation_level_label)
+        matched_names = export_df.get("matched_name", pd.Series("", index=export_df.index))
+        export_df["注释水平"] = [
+            annotation_level_label(level, matched_name)
+            for level, matched_name in zip(export_df["resolution_level"], matched_names)
+        ]
     elif "注释水平" not in export_df.columns:
-        export_df["注释水平"] = "类别水平"
+        export_df["注释水平"] = "分子种类水平"
     return pd.DataFrame(export_df, columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in export_df.columns])
 
 

@@ -43,7 +43,7 @@ class NegativePepLibraryCurationTests(unittest.TestCase):
         text = "\n".join(CURATOR.build_pep_block(target))
 
         self.assertIn("PrecursorMZ: 770.5130", text)
-        self.assertIn('283.2431 100.00 "[R2COO-CO2]-" "Common"', text)
+        self.assertIn('283.2431 100.00 "[RCOO-CO2]-(22:6)" "Common"', text)
         self.assertIn('327.2330 100.00 "[RCOO]-(22:6)" "Diagnostic_FA"', text)
 
 

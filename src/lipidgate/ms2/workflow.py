@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 import pandas as pd
 
@@ -53,6 +54,8 @@ def run_ms2_search_result(
     fragment_tolerance_ppm: float | None = None,
     min_relative_intensity: float = 0.005,
     min_total_score: float = 50.0,
+    allowed_adducts: Sequence[str] | None = None,
+    allowed_classes: Sequence[str] | None = None,
     export_xlsx: bool = True,
 ) -> MS2SearchResult:
     mode_norm = mode.strip().lower().replace("_", "-")
@@ -80,6 +83,8 @@ def run_ms2_search_result(
         fragment_tolerance_ppm=float(fragment_tolerance_ppm) if fragment_tolerance_ppm is not None else None,
         min_relative_intensity=float(min_relative_intensity),
         min_total_score=float(min_total_score),
+        allowed_adducts=allowed_adducts,
+        allowed_classes=allowed_classes,
     )
 
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
@@ -127,6 +132,8 @@ def run_ms2_search_result(
             "fragment_tolerance_ppm": fragment_tolerance_ppm,
             "min_relative_intensity": min_relative_intensity,
             "min_total_score": min_total_score,
+            "allowed_adducts": list(allowed_adducts or []),
+            "allowed_classes": list(allowed_classes or []),
             "export_xlsx": export_xlsx,
         },
         message=f"MS2 search finished: {csv_path} ({len(df)} rows)",
@@ -146,6 +153,8 @@ def run_ms2_search(
     fragment_tolerance_ppm: float | None = None,
     min_relative_intensity: float = 0.005,
     min_total_score: float = 50.0,
+    allowed_adducts: Sequence[str] | None = None,
+    allowed_classes: Sequence[str] | None = None,
     export_xlsx: bool = True,
 ) -> tuple[pd.DataFrame, Path, Path | None]:
     """Return the legacy tuple for compatibility.
@@ -165,6 +174,8 @@ def run_ms2_search(
         fragment_tolerance_ppm=fragment_tolerance_ppm,
         min_relative_intensity=min_relative_intensity,
         min_total_score=min_total_score,
+        allowed_adducts=allowed_adducts,
+        allowed_classes=allowed_classes,
         export_xlsx=export_xlsx,
     )
     return result.data, result.csv_path, result.xlsx_path
@@ -244,6 +255,8 @@ def run_ms2_feature_annotation_result(
     fragment_tolerance_ppm: float | None = None,
     min_relative_intensity: float = 0.005,
     min_total_score: float = 50.0,
+    allowed_adducts: Sequence[str] | None = None,
+    allowed_classes: Sequence[str] | None = None,
     rt_window_sec: float = 30.0,
     export_xlsx: bool = True,
     export_csv: bool = False,
@@ -282,6 +295,8 @@ def run_ms2_feature_annotation_result(
         fragment_tolerance_ppm=float(fragment_tolerance_ppm) if fragment_tolerance_ppm is not None else None,
         min_relative_intensity=float(min_relative_intensity),
         min_total_score=float(min_total_score),
+        allowed_adducts=allowed_adducts,
+        allowed_classes=allowed_classes,
     )
 
     ms2_frames: list[pd.DataFrame] = []
@@ -383,6 +398,8 @@ def run_ms2_feature_annotation_result(
             "fragment_tolerance_ppm": fragment_tolerance_ppm,
             "min_relative_intensity": min_relative_intensity,
             "min_total_score": min_total_score,
+            "allowed_adducts": list(allowed_adducts or []),
+            "allowed_classes": list(allowed_classes or []),
             "rt_window_sec": rt_window_sec,
             "export_xlsx": export_xlsx,
             "export_csv": export_csv,

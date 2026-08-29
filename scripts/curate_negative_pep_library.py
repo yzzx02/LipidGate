@@ -123,7 +123,7 @@ def build_pep_block(target: PepTarget) -> list[str]:
         peaks.append(
             (
                 fatty_acid_anion - CARBON_DIOXIDE_MASS,
-                "[R2COO-CO2]-",
+                f"[RCOO-CO2]-({fatty_acid_token})",
                 "Common",
             )
         )

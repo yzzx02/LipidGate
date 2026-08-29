@@ -111,7 +111,7 @@ def _save_figure(fig: plt.Figure, output_stem: Path, formats: Sequence[str], dpi
 
 
 def _model_lines(frame: pd.DataFrame) -> Iterable[tuple[np.ndarray, np.ndarray]]:
-    if "predicted_total_C" not in frame:
+    if "predicted_rt_min" not in frame:
         return []
     lines: list[tuple[np.ndarray, np.ndarray]] = []
     group_columns = [
@@ -122,21 +122,16 @@ def _model_lines(frame: pd.DataFrame) -> Iterable[tuple[np.ndarray, np.ndarray]]
     if len(group_columns) < 2:
         return lines
     for _, group in frame.groupby(group_columns, dropna=False):
-        clean = _numeric(group, ("rt_minutes", "predicted_total_C")).dropna(
-            subset=["rt_minutes", "predicted_total_C"]
+        clean = _numeric(group, ("total_C", "predicted_rt_min")).dropna(
+            subset=["total_C", "predicted_rt_min"]
         )
-        observed = pd.to_numeric(group.get("total_C"), errors="coerce").dropna()
-        if not observed.empty:
-            clean = clean[
-                clean["predicted_total_C"].between(observed.min() - 3, observed.max() + 3)
-            ]
         if len(clean) < 2:
             continue
-        clean = clean.sort_values("rt_minutes")
+        clean = clean.sort_values("total_C")
         lines.append(
             (
-                clean["rt_minutes"].to_numpy(float),
-                clean["predicted_total_C"].to_numpy(float),
+                clean["predicted_rt_min"].to_numpy(float),
+                clean["total_C"].to_numpy(float),
             )
         )
     return lines
@@ -144,8 +139,8 @@ def _model_lines(frame: pd.DataFrame) -> Iterable[tuple[np.ndarray, np.ndarray]]
 
 def plot_ecn_overview(filtered_workbook: Path, output_dir: Path, formats: Sequence[str], dpi: int) -> list[Path]:
     kept, removed, _ = load_filtered_context(filtered_workbook)
-    kept = _numeric(kept, ("rt_minutes", "total_C", "total_DB", "predicted_total_C"))
-    removed = _numeric(removed, ("rt_minutes", "total_C", "total_DB", "predicted_total_C"))
+    kept = _numeric(kept, ("rt_minutes", "total_C", "total_DB", "predicted_rt_min"))
+    removed = _numeric(removed, ("rt_minutes", "total_C", "total_DB", "predicted_rt_min"))
     if "removal_stage" in removed:
         removed = removed[
             removed["removal_stage"].astype(str).str.contains("RT", case=False, na=False)

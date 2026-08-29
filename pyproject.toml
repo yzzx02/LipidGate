@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lipidgate"
-version = "0.1.0"
+version = "1.0.0"
 description = "Integrated lipid feature detection, peak truth scoring, and MS2 rule-based identification."
 readme = "README.md"
 requires-python = ">=3.10"

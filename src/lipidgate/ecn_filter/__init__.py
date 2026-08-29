@@ -4,10 +4,11 @@ from .workflow import (
     ECNFilterResult,
     RT_RULE_PASS_COLUMN,
     apply_ecn_filter,
+    apply_ecn_filter_with_summary,
     build_ecn_passed_table,
     run_ecn_filter_result,
 )
-from .plots import plot_ecn_preview
+from .plots import plot_db_legend, plot_ecn_class, plot_ecn_preview
 
 __all__ = [
     "LipidNameInfo",
@@ -17,7 +18,10 @@ __all__ = [
     "ECNFilterResult",
     "RT_RULE_PASS_COLUMN",
     "apply_ecn_filter",
+    "apply_ecn_filter_with_summary",
     "build_ecn_passed_table",
     "run_ecn_filter_result",
     "plot_ecn_preview",
+    "plot_ecn_class",
+    "plot_db_legend",
 ]

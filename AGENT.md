@@ -128,14 +128,21 @@ FA independent channel:
 
 ECN interaction:
 
-- ECN uses `final_score` as its only candidate-priority score column.
-- For each `subclass + total_DB + total_C`, the modeling anchor is selected from
-  the highest-`final_score` candidates. If the top score is tied, choose the tied
-  candidate closest to their median RT.
-- Candidate deduplication is only allowed in the reduced anchor pool. The full
-  output must retain every original candidate row and assess each row against the
-  fitted RT rule.
-- ECN should not remove candidates from the full table; it should create an ECN-passed output table separately.
+- Production filtering is ECN-only and models RT directly as a function of total
+  carbon for each class + DB series.
+- The algorithm assumes one LC method and ion mode across ordinary samples. It
+  must not branch on fraction, collision energy, polarity, or lipid class.
+- Chain-resolved Top1 rows supply initial anchors. Highest `final_score` wins;
+  tied scores use the point nearest the tied RT median.
+- Optional Top2/Top3 rescue may replace a bad Top1 anchor or extend a compatible
+  series. Molecular-species rows never train a curve and may only be evaluated
+  against a fixed curve when that option is enabled.
+- Candidate deduplication is allowed only in the anchor pool. Full output retains
+  every original row and provenance field.
+- RT residuals are in minutes: pass <=0.5, suspect <=2.0 and retained, reject >2.0.
+  Sparse groups remain unfiltered and retained.
+- ECN plots use fixed DB colors, one point per DB/C cell, 4.0 x 3.45 inches at
+  600 dpi, and hide failed points while exporting an audit CSV.
 
 Current MS2 invariants:
 

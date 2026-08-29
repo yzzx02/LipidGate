@@ -54,6 +54,19 @@ def _ms2_search(args: argparse.Namespace) -> int:
         fragment_da = args.msms_tolerance if args.msms_tolerance is not None else args.fragment_da
         fragment_ppm = None
 
+    allowed_adducts = [
+        value.strip()
+        for item in (args.adduct or [])
+        for value in item.split(",")
+        if value.strip()
+    ] or None
+    allowed_classes = [
+        value.strip()
+        for item in (args.lipid_class or [])
+        for value in item.split(",")
+        if value.strip()
+    ] or None
+
     if args.feature_table or args.map_features:
         result = run_ms2_feature_annotation_result(
             mzml_input=args.mzml,
@@ -68,6 +81,8 @@ def _ms2_search(args: argparse.Namespace) -> int:
             fragment_tolerance_ppm=fragment_ppm,
             min_relative_intensity=args.min_relative_intensity,
             min_total_score=args.min_total_score,
+            allowed_adducts=allowed_adducts,
+            allowed_classes=allowed_classes,
             rt_window_sec=args.rt_window_sec,
             map_to_features=bool(args.feature_table),
         )
@@ -84,6 +99,8 @@ def _ms2_search(args: argparse.Namespace) -> int:
             fragment_tolerance_ppm=fragment_ppm,
             min_relative_intensity=args.min_relative_intensity,
             min_total_score=args.min_total_score,
+            allowed_adducts=allowed_adducts,
+            allowed_classes=allowed_classes,
         )
     if result.csv_path:
         print(f"csv: {result.csv_path}")
@@ -107,7 +124,14 @@ def _ecn_filter(args: argparse.Namespace) -> int:
             mz_ppm=args.mz_ppm,
             rt_cluster_sec=args.rt_cluster_sec,
             min_model_points=args.min_model_points,
-            residual_C_threshold=args.residual_c_threshold,
+            pass_rt_threshold_min=args.pass_rt_threshold_min,
+            suspect_rt_threshold_min=args.suspect_rt_threshold_min,
+            gross_outlier_threshold_min=args.gross_outlier_threshold_min,
+            rescue_rt_threshold_min=args.rescue_rt_threshold_min,
+            training_rank=args.training_rank,
+            rescue_max_rank=args.rescue_max_rank,
+            enable_rank_rescue=not args.no_rank_rescue,
+            enable_species_rescue=args.rescue_species_level,
             max_iter=args.max_iter,
             max_removed_fraction=args.max_removed_fraction,
         ),
@@ -118,6 +142,9 @@ def _ecn_filter(args: argparse.Namespace) -> int:
         adduct_column=args.adduct_column,
         score_column=args.score_column,
         intensity_column=args.intensity_column,
+        rank_column=args.rank_column,
+        sample_column=args.sample_column,
+        annotation_level_column=args.annotation_level_column,
     )
     print(f"csv: {result.csv_path}")
     print(f"passed_csv: {result.passed_csv_path}")
@@ -171,6 +198,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--library", type=Path)
     p.add_argument("--top-n", type=int, default=1)
+    p.add_argument(
+        "--adduct",
+        action="append",
+        help="Only search selected adduct(s); repeat the option or use comma-separated values.",
+    )
+    p.add_argument(
+        "--lipid-class",
+        action="append",
+        help="Only search selected lipid class(es); repeat the option or use comma-separated values.",
+    )
     p.add_argument("--tolerance-unit", choices=["ppm", "da"], help="Use one unit for both MS1 and MS/MS tolerances")
     p.add_argument("--ms1-tolerance", type=float, help="MS1 tolerance in --tolerance-unit")
     p.add_argument("--msms-tolerance", type=float, help="MS/MS tolerance in --tolerance-unit")
@@ -199,10 +236,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--adduct-column", help="Adduct column; inferred when omitted")
     p.add_argument("--score-column", help="Score column; inferred when omitted")
     p.add_argument("--intensity-column", help="Intensity column; inferred when omitted")
+    p.add_argument("--rank-column", help="Candidate-rank column; inferred when omitted")
+    p.add_argument("--sample-column", help="Sample/file column; inferred when omitted")
+    p.add_argument("--annotation-level-column", help="Annotation-level column; inferred when omitted")
     p.add_argument("--mz-ppm", type=float, default=10.0)
     p.add_argument("--rt-cluster-sec", type=float, default=5.0)
     p.add_argument("--min-model-points", type=int, default=4)
-    p.add_argument("--residual-c-threshold", type=float, default=1.5)
+    p.add_argument("--pass-rt-threshold-min", type=float, default=0.5)
+    p.add_argument("--suspect-rt-threshold-min", type=float, default=2.0)
+    p.add_argument("--gross-outlier-threshold-min", type=float, default=2.0)
+    p.add_argument("--rescue-rt-threshold-min", type=float, default=0.5)
+    p.add_argument("--training-rank", type=int, default=1)
+    p.add_argument("--rescue-max-rank", type=int, default=3)
+    p.add_argument("--no-rank-rescue", action="store_true", help="Disable Top2/Top3 curve rescue")
+    p.add_argument(
+        "--rescue-species-level",
+        action="store_true",
+        help="Evaluate molecular-species rows against fixed Top1 chain-level curves",
+    )
     p.add_argument("--max-iter", type=int, default=10)
     p.add_argument("--max-removed-fraction", type=float, default=0.30)
     p.add_argument("--no-xlsx", action="store_true", help="Only write CSV output")

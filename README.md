@@ -22,7 +22,7 @@ previews for feature tables, peak-truth tables, EIC images, and MS2 results.
 ## Quick Start
 
 ```powershell
-cd "D:\Vscode Projects\LipidGate"
+cd LipidGate
 python -m pip install -e .[dev]
 lipidgate gui
 ```
@@ -34,11 +34,25 @@ lipidgate detect --algo pyopenms --input "D:\data\mzml" --output results\ms1
 lipidgate peak-truth --feature-table results\ms1\pyopenms\pyopenms_features.csv --algo pyopenms --mzml "D:\data\sample.mzML" --output results\peak_truth
 lipidgate ms2-search --mode negative --mzml "D:\data\sample.mzML" --output results\ms2
 lipidgate ecn-filter --input results\ms2\ms2_results.csv --output results\ecn_filter
+lipidgate ecn-filter --input results\ms2\ms2_results.csv --output results\ecn_filter --rescue-species-level
 ```
 
 The ECN filter keeps chain-level candidates separate, adds `total_C`,
-`total_DB`, and `lipidname_norm`, then fits subclass/DB-specific RT models to
-flag candidates that do not follow the expected RT trend.
+`total_DB`, and `lipidname_norm`, then fits class/DB-specific RT models directly
+as `RT = f(total carbon)`. It is designed for one LC method and ion mode across
+ordinary samples; fraction labels, collision energies, and two-dimensional
+experiment metadata are not part of the production algorithm.
+
+Chain-resolved Top1 candidates provide the initial anchors. Optional Top2/Top3
+rescue can replace an inconsistent Top1 anchor or extend a compatible homologous
+series. Molecular-species annotations never train a curve and can only be
+rescued against an already fixed curve when that option is enabled. Results are
+classified as pass, review within 2 minutes, reject beyond 2 minutes, or retained
+because the series is too sparse. See [docs/ecn_filter.md](docs/ecn_filter.md)
+for the full decision flow.
+
+Negative-mode acetate adducts use `[M+CH3COO]-`. Historical `[M+Hac-H]-` and
+`[M+Hac]-` inputs remain accepted and are normalized when a library is loaded.
 
 ## Git LFS
 

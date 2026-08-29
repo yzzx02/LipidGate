@@ -37,6 +37,8 @@ class ClassRule:
     positive_signature_min_matches_if_no_fah: int = 0
     allow_loss_only_if_no_fah: bool = False
     require_loss_with_fah_only: bool = False
+    negative_hg_min_matches: int = 0
+    negative_require_all_fah: bool = False
     score_profile: ScoreProfile = field(default_factory=ScoreProfile)
 
 
@@ -53,6 +55,7 @@ class RuleSet:
             "BASulfate-ST": "BASulfate",
             "SSulfate-ST": "SSulfate",
             "NATau": "NAT",
+            "CM-PE": "PHEG",
         }
         normalized_class = aliases.get(lipid_class, lipid_class)
         return self.by_class.get(normalized_class, self.default_rule)
@@ -67,6 +70,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         "PA", "PIP", "PIP2", "PIP3", "CL", "DLCL", "MLCL",
     ])
     default_profile = ScoreProfile()
+    lps_profile = ScoreProfile(pool_weights={"fah": 20.0, "hg": 60.0, "other": 20.0})
     default_rule = ClassRule(lipid_class="DEFAULT", score_profile=default_profile)
     by_class = {}
     for lipid_class in classes:
@@ -80,7 +84,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             positive_hg_complete_can_resolve_chain=False,
             allow_loss_only_if_no_fah=False,
             require_loss_with_fah_only=False,
-            score_profile=default_profile,
+            score_profile=lps_profile if lipid_class == "LPS" else default_profile,
         )
     # BMP positive-mode MAG fragments encode both chains, so both MAG peaks
     # are required before we promote the match to chain level.
@@ -194,6 +198,14 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         positive_hg_complete_can_resolve_chain=False,
         allow_loss_only_if_no_fah=False,
         require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
+    by_class["PHEG"] = ClassRule(
+        lipid_class="PHEG",
+        required_groups={},
+        chain_level_min_fah=2,
+        negative_hg_min_matches=2,
+        negative_require_all_fah=True,
         score_profile=default_profile,
     )
     return RuleSet(by_class=by_class, default_rule=default_rule)

@@ -589,6 +589,12 @@ class MS2Page(WorkflowPage):
         self.mode.addItem("负模式", "negative")
         self.mode.addItem("正模式", "positive")
         self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
+        self.adduct_filter = QtWidgets.QLineEdit()
+        self.adduct_filter.setPlaceholderText("留空=全部；多项用逗号分隔")
+        self.adduct_filter.setToolTip("只检索指定加合物，例如 [M-H]-, [M+CH3COO]-；留空表示全部")
+        self.class_filter = QtWidgets.QLineEdit()
+        self.class_filter.setPlaceholderText("留空=全部；多项用逗号分隔")
+        self.class_filter.setToolTip("只检索指定脂质类别，例如 PHEG, SM, LPC；留空表示全部")
         self.output_topn = QtWidgets.QCheckBox("输出 Top N")
         self.output_topn.setChecked(False)
         self.map_to_features = QtWidgets.QCheckBox("Map MS2 to MS1 feature")
@@ -636,6 +642,10 @@ class MS2Page(WorkflowPage):
         self.run_ecn_btn = QtWidgets.QPushButton("生成 ECN 预览")
         self.run_ecn_btn.setObjectName("secondaryButton")
         self.run_ecn_btn.setEnabled(False)
+        self.ecn_rank_rescue = QtWidgets.QCheckBox("ECN Top2/Top3 rescue")
+        self.ecn_rank_rescue.setChecked(True)
+        self.ecn_species_rescue = QtWidgets.QCheckBox("ECN molecular-species rescue")
+        self.ecn_species_rescue.setChecked(False)
         self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
         self.open_output_btn.setObjectName("secondaryButton")
         self.table = TablePanel("MS2 Results")
@@ -658,6 +668,8 @@ class MS2Page(WorkflowPage):
             self.feature_table,
             self.output_dir,
             self.library,
+            self.adduct_filter,
+            self.class_filter,
         ):
             widget.setMinimumHeight(self.CONTROL_HEIGHT)
             widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
@@ -730,6 +742,8 @@ class MS2Page(WorkflowPage):
         self._add_parameter_pair(parameter_grid, 1, 2, "MS/MS tolerance", self.msms_tolerance)
         self._add_parameter_pair(parameter_grid, 2, 0, "MS/MS peak filter (%)", self.ms2_peak_filter_percent)
         self._add_parameter_pair(parameter_grid, 2, 2, "最低总分", self.min_total_score)
+        self._add_parameter_pair(parameter_grid, 3, 0, "加合物筛选", self.adduct_filter)
+        self._add_parameter_pair(parameter_grid, 3, 2, "类别筛选", self.class_filter)
         topn_row = QtWidgets.QHBoxLayout()
         topn_row.setContentsMargins(0, 0, 0, 0)
         topn_row.setSpacing(8)
@@ -740,8 +754,18 @@ class MS2Page(WorkflowPage):
         topn_widget = QtWidgets.QWidget()
         topn_widget.setMinimumHeight(self.CONTROL_HEIGHT)
         topn_widget.setLayout(topn_row)
-        self._add_parameter_pair(parameter_grid, 3, 0, "Top N", topn_widget)
-        parameter_grid.addWidget(self.mode_hint, 3, 2, 1, 2)
+        self._add_parameter_pair(parameter_grid, 4, 0, "Top N", topn_widget)
+        parameter_grid.addWidget(self.mode_hint, 4, 2, 1, 2)
+        ecn_rescue_row = QtWidgets.QHBoxLayout()
+        ecn_rescue_row.setContentsMargins(0, 0, 0, 0)
+        ecn_rescue_row.setSpacing(8)
+        ecn_rescue_row.addWidget(self.ecn_rank_rescue)
+        ecn_rescue_row.addWidget(self.ecn_species_rescue)
+        ecn_rescue_row.addStretch(1)
+        ecn_rescue_widget = QtWidgets.QWidget()
+        ecn_rescue_widget.setMinimumHeight(self.CONTROL_HEIGHT)
+        ecn_rescue_widget.setLayout(ecn_rescue_row)
+        self._add_parameter_pair(parameter_grid, 5, 0, "ECN rescue", ecn_rescue_widget)
         search_layout.addLayout(parameter_grid)
 
         card_layout.addWidget(search_section)
@@ -824,6 +848,11 @@ class MS2Page(WorkflowPage):
     def _update_mode_hint(self) -> None:
         unit = str(self.tolerance_unit.currentData() or "ppm")
         self.mode_hint.setText(f"MS1 和 MS/MS tolerance 均使用 {unit}。")
+
+    @staticmethod
+    def _filter_values(widget: QtWidgets.QLineEdit) -> list[str] | None:
+        values = [value.strip() for value in widget.text().replace("；", ",").split(",") if value.strip()]
+        return values or None
 
     def _browse_mzml(self) -> None:
         start = self._settings_value("ms2/mzml", str(Path.cwd()))
@@ -916,7 +945,11 @@ class MS2Page(WorkflowPage):
         fragment_da = float(self.msms_tolerance.value()) if unit == "da" else None
         min_relative_intensity = float(self.ms2_peak_filter_percent.value()) / 100.0
         min_total_score = float(self.min_total_score.value())
+        allowed_adducts = self._filter_values(self.adduct_filter)
+        allowed_classes = self._filter_values(self.class_filter)
         output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
+        if self.ecn_rank_rescue.isChecked():
+            output_top_n = max(output_top_n, 3)
         self.run_ecn_btn.setEnabled(False)
         self.last_ms2_csv = None
         self.ecn_table.clear()
@@ -940,6 +973,8 @@ class MS2Page(WorkflowPage):
                 fragment_tolerance_ppm=fragment_ppm,
                 min_relative_intensity=min_relative_intensity,
                 min_total_score=min_total_score,
+                allowed_adducts=allowed_adducts,
+                allowed_classes=allowed_classes,
                 map_to_features=bool(feature_table and self.map_to_features.isChecked()),
             )
 
@@ -965,9 +1000,17 @@ class MS2Page(WorkflowPage):
         ecn_dir = output_dir / "ecn_filter"
 
         def task() -> tuple[object, Path]:
-            from lipidgate.ecn_filter import plot_ecn_preview, run_ecn_filter_result
+            from lipidgate.ecn_filter import ECNFilterConfig, plot_ecn_preview, run_ecn_filter_result
 
-            result = run_ecn_filter_result(input_table=self.last_ms2_csv, output_dir=ecn_dir, export_xlsx=True)
+            result = run_ecn_filter_result(
+                input_table=self.last_ms2_csv,
+                output_dir=ecn_dir,
+                export_xlsx=True,
+                config=ECNFilterConfig(
+                    enable_rank_rescue=self.ecn_rank_rescue.isChecked(),
+                    enable_species_rescue=self.ecn_species_rescue.isChecked(),
+                ),
+            )
             image_path = plot_ecn_preview(result.data, result.output_dir, result.model_summary)
             return result, image_path
 

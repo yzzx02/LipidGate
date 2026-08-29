@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -410,7 +411,7 @@ class SearchSelectionTests(unittest.TestCase):
 
         self.assertTrue(self.searcher._qualifies_secondary_result(result))
 
-    def test_equal_scores_share_rank_one_and_are_not_top1_truncated(self) -> None:
+    def test_same_class_equal_scores_prefer_more_fragment_matches(self) -> None:
         primary = build_candidate(
             422,
             "TG(16:0_18:1_20:2)",
@@ -458,17 +459,21 @@ class SearchSelectionTests(unittest.TestCase):
             adduct="[M+NH4]+",
         )
 
-        selected = self.searcher._select_results_for_output([primary, tied, lower_score], top_n=1)
+        ordered = [primary, tied, lower_score]
+        metrics = self.searcher._compute_rank_metrics(ordered)
+        self.searcher._sort_by_rank_metrics(ordered, metrics)
+        selected = self.searcher._select_results_for_output(ordered, top_n=1)
         ranks = []
         current_rank = 0
-        previous_score = None
-        for result in [primary, tied, lower_score]:
-            current_rank = self.searcher._next_result_rank(result, current_rank, previous_score)
+        previous_result = None
+        for result in ordered:
+            current_rank = self.searcher._next_result_rank(result, current_rank, previous_result)
             ranks.append(current_rank)
-            previous_score = result.total_score
+            previous_result = result
 
-        self.assertEqual([result.record.record_id for result in selected], [422, 423])
-        self.assertEqual(ranks, [1, 1, 2])
+        self.assertEqual([result.record.record_id for result in ordered], [423, 422, 424])
+        self.assertEqual([result.record.record_id for result in selected], [423])
+        self.assertEqual(ranks, [1, 2, 3])
 
     def test_positive_fa_loss_only_record_uses_unified_searcher(self) -> None:
         record = LibraryRecord(
@@ -480,9 +485,9 @@ class SearchSelectionTests(unittest.TestCase):
             adduct="[M+NH4]+",
             polarity="+",
             fragments=[
-                FragmentRecord(603.5000, "M-NH3-(16:0)", "Diagnostic_FA_Loss"),
-                FragmentRecord(577.5000, "M-NH3-(18:1)", "Diagnostic_FA_Loss"),
-                FragmentRecord(551.5000, "M-NH3-(20:2)", "Diagnostic_FA_Loss"),
+                FragmentRecord(603.5000, "[M-NH3-(ROOH)+NH4]+(16:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(577.5000, "[M-NH3-(ROOH)+NH4]+(18:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(551.5000, "[M-NH3-(ROOH)+NH4]+(20:2)", "Diagnostic_FA_Loss"),
                 FragmentRecord(900.8000, "[M+NH4]+", "Precursor Ion"),
             ],
         )
@@ -494,6 +499,7 @@ class SearchSelectionTests(unittest.TestCase):
             peaks=normalize_peaks([
                 (603.5000, 1000.0),
                 (577.5000, 900.0),
+                (551.5000, 800.0),
                 (900.8000, 100.0),
             ]),
         )
@@ -638,6 +644,93 @@ class SearchSelectionTests(unittest.TestCase):
             ),
             "HexCer(d18:1/h24:0)",
         )
+
+    def test_lyso_positional_isomers_report_one_sum_composition(self) -> None:
+        sn1 = build_candidate(
+            84,
+            "LPC(16:0/0:0)",
+            total_score=80.0,
+            matched_intensity_sum=1000.0,
+            matched_relative_intensity_sum=1.0,
+            matched_fragments=[build_match(184.0733, "Diagnostic_HG", 1.0)],
+            record_fragments=[FragmentRecord(184.0733, "PC-HG", "Diagnostic_HG")],
+            compound_class="LPC",
+            adduct="[M+H]+",
+        )
+        sn2 = build_candidate(
+            85,
+            "LPC(0:0/16:0)",
+            total_score=79.0,
+            matched_intensity_sum=900.0,
+            matched_relative_intensity_sum=0.9,
+            matched_fragments=[build_match(184.0733, "Diagnostic_HG", 0.9)],
+            record_fragments=[FragmentRecord(184.0733, "PC-HG", "Diagnostic_HG")],
+            compound_class="LPC",
+            adduct="[M+H]+",
+        )
+
+        collapsed = self.searcher._collapse_report_equivalent_results([sn2, sn1])
+
+        self.assertEqual(len(collapsed), 1)
+        self.assertEqual(self.searcher._reported_name(collapsed[0]), "LPC(16:0)")
+        self.assertEqual(collapsed[0].record.record_id, 84)
+
+    def test_all_supported_lyso_classes_use_sum_composition_name(self) -> None:
+        examples = [
+            ("LPE", "LPE(0:0/18:1)", "LPE(18:1)"),
+            ("LDMPE", "LDMPE(18:1/0:0)", "LDMPE(18:1)"),
+            ("LPE-O", "LPE(O-18:2)", "LPE-O(18:2)"),
+        ]
+        for record_id, (compound_class, source_name, expected_name) in enumerate(examples, start=86):
+            with self.subTest(compound_class=compound_class):
+                result = build_candidate(
+                    record_id,
+                    source_name,
+                    total_score=70.0,
+                    matched_intensity_sum=700.0,
+                    matched_relative_intensity_sum=0.7,
+                    matched_fragments=[],
+                    record_fragments=[],
+                    compound_class=compound_class,
+                )
+                self.assertEqual(self.searcher._reported_name(result), expected_name)
+
+    def test_species_level_cer1p_chain_candidates_collapse_to_one_row(self) -> None:
+        weak = build_candidate(
+            90,
+            "Cer1P(d21:1/2:0)",
+            total_score=56.0,
+            matched_intensity_sum=600.0,
+            matched_relative_intensity_sum=0.6,
+            matched_fragments=[build_match(78.9591, "Diagnostic_HG", 0.6)],
+            record_fragments=[FragmentRecord(78.9591, "PO3-", "Diagnostic_HG")],
+            compound_class="Cer1P",
+        )
+        strong = build_candidate(
+            91,
+            "Cer1P(d18:1/5:0)",
+            total_score=57.0,
+            matched_intensity_sum=900.0,
+            matched_relative_intensity_sum=0.9,
+            matched_fragments=[
+                build_match(78.9591, "Diagnostic_HG", 0.5),
+                build_match(96.9696, "Diagnostic_HG", 0.4),
+            ],
+            record_fragments=[
+                FragmentRecord(78.9591, "PO3-", "Diagnostic_HG"),
+                FragmentRecord(96.9696, "H2PO4-", "Diagnostic_HG"),
+            ],
+            compound_class="Cer1P",
+        )
+        for result in (weak, strong):
+            result.record.lipid_name = "Cer1P(d23:1)"
+            result.resolution_level = "species_level"
+
+        collapsed = self.searcher._collapse_report_equivalent_results([weak, strong])
+
+        self.assertEqual(len(collapsed), 1)
+        self.assertEqual(self.searcher._reported_name(collapsed[0]), "Cer1P(d23:1)")
+        self.assertEqual(collapsed[0].record.record_id, 91)
 
     def test_fa_result_does_not_take_main_top_rank(self) -> None:
         fa_record = LibraryRecord(
@@ -918,8 +1011,31 @@ class SearchSelectionTests(unittest.TestCase):
 
         self.assertEqual(
             export["注释水平"].tolist(),
-            ["类别水平", "分子种类水平", "分子种类水平", "链水平", "链水平", "双键水平", "双键水平"],
+            ["分子种类水平", "分子种类水平", "分子种类水平", "链水平", "链水平", "链水平", "链水平"],
         )
+
+    def test_export_marks_single_chain_lipid_as_chain_level(self) -> None:
+        export = prepare_ms2_result_export_df(pd.DataFrame([{
+            "matched_name": "OxFA(18:2;O2)",
+            "resolution_level": "species_level",
+        }]))
+
+        self.assertEqual(export.loc[0, "注释水平"], "链水平")
+
+    def test_searcher_filters_library_by_adduct_and_class(self) -> None:
+        records = [
+            LibraryRecord(1, "SM", "SM(34:1)", "SM(d18:1/16:0)", 800.0, "[M+HCOO]-"),
+            LibraryRecord(2, "SM", "SM(34:1)", "SM(d18:1/16:0)", 814.0, "[M+CH3COO]-"),
+            LibraryRecord(3, "PHEG", "PHEG(32:2)", "PHEG(16:1_16:1)", 700.0, "[M-H]-"),
+        ]
+        with patch("lipidgate.ms2.search.load_library", return_value=records):
+            searcher = LipidMS2Searcher(
+                "unused.msp.gz",
+                allowed_adducts=["[M+CH3COO]-", "[M-H]-"],
+                allowed_classes=["SM"],
+            )
+
+        self.assertEqual([record.record_id for record in searcher.library], [2])
 
     def test_fragment_index_prunes_no_fragment_candidates_without_changing_output(self) -> None:
         matching_record = LibraryRecord(

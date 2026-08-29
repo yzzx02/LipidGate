@@ -10,7 +10,12 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from lipidgate.ms2.library import convert_excel_directory_to_msp, load_library, load_standard_msp
+from lipidgate.ms2.library import (
+    canonicalize_adduct,
+    convert_excel_directory_to_msp,
+    load_library,
+    load_standard_msp,
+)
 
 
 @contextmanager
@@ -20,6 +25,46 @@ def workspace_temp_dir():
 
 
 class LibraryConversionTests(unittest.TestCase):
+    def test_historical_acetate_adduct_spellings_are_canonicalized(self) -> None:
+        self.assertEqual(canonicalize_adduct("[M+CH3COO]-"), "[M+CH3COO]-")
+        self.assertEqual(canonicalize_adduct("[M+Hac-H]-"), "[M+CH3COO]-")
+        self.assertEqual(canonicalize_adduct(" [M+Hac]- "), "[M+CH3COO]-")
+        self.assertEqual(canonicalize_adduct("[M-H]-"), "[M-H]-")
+
+    def test_msdial_ahexcer_name_and_fragments_are_canonicalized(self) -> None:
+        msp_text = """Name: AHexCer (O-16:0)18:1;2O/22:0;O
+PrecursorMZ: 1038.8907
+PrecursorType: [M+H]+
+CompoundClass: AHexCer
+Formula: C62H119NO10
+Comment: MS1_name=AHexCer (O-16:0)18:1;polarity=+
+Num Peaks: 10
+239.2375 150.00 "m/z 239.2375" "Common"
+252.2691 50.00 "m/z 252.2691" "Common"
+264.2691 200.00 "m/z 264.2691" "Common"
+282.2797 100.00 "m/z 282.2797" "Common"
+401.2903 200.00 "m/z 401.2903" "Common"
+602.5870 150.00 "m/z 602.5870" "Common"
+620.5976 150.00 "m/z 620.5976" "Common"
+638.6082 175.00 "m/z 638.6082" "Common"
+1020.8800 999.00 "m/z 1020.8800" "Common"
+1038.8910 150.00 "m/z 1038.8910" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            path = temp_path / "ahexcer.msp"
+            path.write_text(msp_text, encoding="utf-8")
+            record = load_standard_msp(path)[0]
+
+        self.assertEqual(record.lipid_name, "AHexCer d18:1(O-16:0)/22:0(OH)")
+        self.assertEqual(record.lipid_chain_name, "AHexCer d18:1(O-16:0)/22:0(OH)")
+        self.assertEqual(sum(f.fragment_type == "Diagnostic_HG" for f in record.fragments), 4)
+        self.assertEqual(sum(f.fragment_type == "LCB碎片" for f in record.fragments), 4)
+        self.assertEqual(sum(f.fragment_type == "Common" for f in record.fragments), 2)
+        by_name = {fragment.name: fragment for fragment in record.fragments}
+        self.assertIn("O-16:0-Hex+", by_name)
+        self.assertIn("M+H-Acyl(O-16:0)-C6H10O5", by_name)
+        self.assertEqual(by_name["[M+H]+"].fragment_type, "Common")
+
     def test_excel_directory_can_be_converted_to_standard_msp(self) -> None:
         with workspace_temp_dir() as temp_path:
             excel_path = temp_path / "PE([M-H]-).xlsx"
@@ -483,6 +528,41 @@ Num Peaks: 4
                         for fragment in record.fragments
                     )
                 )
+
+    def test_positive_hexcer_removes_intact_lcb_and_moves_double_water_loss_to_common(self) -> None:
+        msp_text = """Name: HexCer(t18:0/25:2)(OH)
+PrecursorMZ: 856.6872
+PrecursorType: [M+H]+
+CompoundClass: HexCer
+Comment: MS1_name=HexCer(t43:2)(OH);polarity=+
+Num Peaks: 10
+252.2686 100.00 "LCB-CH6O3" "LCB碎片"
+264.2686 100.00 "LCB-3H2O" "LCB碎片"
+282.2791 100.00 "LCB-2H2O" "LCB碎片"
+300.2897 100.00 "LCB-H2O" "LCB碎片"
+318.3003 100.00 "LCB" "LCB碎片"
+658.6133 100.00 "M+H-C6H10O5-2H2O" "Diagnostic_HG"
+676.6238 100.00 "M+H-C6H10O5-H2O" "Diagnostic_HG"
+694.6344 100.00 "M+H-C6H10O5" "Diagnostic_HG"
+838.6767 100.00 "M+H-H2O" "C类碎片"
+856.6872 100.00 "[M+H]+" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            msp_path = temp_path / "hexcer_positive.msp"
+            msp_path.write_text(msp_text, encoding="utf-8")
+            record = load_standard_msp(msp_path)[0]
+
+        by_name = {fragment.name: fragment for fragment in record.fragments}
+        self.assertNotIn("LCB", by_name)
+        self.assertEqual(by_name["M+H-C6H10O5-2H2O"].fragment_type, "Common")
+        self.assertEqual(
+            sum(fragment.fragment_type == "LCB碎片" for fragment in record.fragments),
+            4,
+        )
+        self.assertEqual(
+            sum(fragment.fragment_type == "Diagnostic_HG" for fragment in record.fragments),
+            2,
+        )
 
 
 if __name__ == "__main__":

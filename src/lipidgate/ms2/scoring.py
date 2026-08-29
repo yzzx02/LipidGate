@@ -29,15 +29,38 @@ SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
 SPHINGOLIPID_LCB_FRAGMENT_TYPE = "LCB碎片"
+NEGATIVE_CER_CHAIN_FRAGMENT_TYPES = {"LCB碎片", "FA类碎片", "NAE碎片"}
+NEGATIVE_FA_LOSS_SUPPORT_ONLY_CLASSES = {
+    "PA",
+    "PE",
+    "PG",
+    "PI",
+    "PS",
+    "PAO",
+    "PEO",
+    "PGO",
+    "PIO",
+    "PSO",
+    "PEP",
+    "DMPE",
+    "MMPE",
+    "PMEOH",
+    "PETOH",
+    "PGCN",
+    "OXPGCN",
+    "LPE",
+    "LPETOH",
+    "PLASMENYLPNE",
+}
 FREE_SPHINGOID_BASE_CLASS_KEYS = {"SPB", "SPH", "DHSPH", "PHYTOSPH"}
 SPB_UNASSIGNED_DIAGNOSTIC_NAMES = {
     "SPB-Diagnostic-1",
     "SPB-Diagnostic-2",
 }
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
-CL_DOUBLE_NEGATIVE_MIN_FA_HITS = 3
 POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
 POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "OXTG"}
+POSITIVE_TG_FULL_CHAIN_GATE_CLASSES = {"TG"}
 ETHER_GLYCERIDE_HALF_RCO_GATE_CLASSES = {"TGO"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
 FAH_ONLY_FALLBACK_BLOCKED_CLASSES = {"ASM"}
@@ -157,6 +180,13 @@ def _uses_positive_support_pool_scoring(record: LibraryRecord) -> bool:
 def _is_positive_glyceride_rco_gate_record(record: LibraryRecord) -> bool:
     cls = _normalized_class_key(record.compound_class)
     return _is_positive_adduct(record.adduct) and cls in POSITIVE_GLYCERIDE_RCO_GATE_CLASSES
+
+
+def _is_positive_tg_full_chain_gate_record(record: LibraryRecord) -> bool:
+    return (
+        _is_positive_adduct(record.adduct)
+        and _normalized_class_key(record.compound_class) in POSITIVE_TG_FULL_CHAIN_GATE_CLASSES
+    )
 
 
 def _is_rco_fragment_name(fragment_name: str) -> bool:
@@ -312,6 +342,11 @@ def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, 
         return "other"
     if _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment):
         return "other"
+    if fragment.fragment_type == "Diagnostic_FA_Loss" and (
+        not _is_positive_adduct(record.adduct)
+        and _normalized_class_key(record.compound_class) in NEGATIVE_FA_LOSS_SUPPORT_ONLY_CLASSES
+    ):
+        return "other"
     if fragment.fragment_type in {"Diagnostic_FA", "Diagnostic_FA_Loss"}:
         return "fah"
     if _fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag":
@@ -321,6 +356,12 @@ def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, 
             return "fah"
         if str(fragment.name or "").strip() in SPB_UNASSIGNED_DIAGNOSTIC_NAMES:
             return "other"
+    if (
+        _normalized_class_key(record.compound_class) == "CER"
+        and not _is_positive_adduct(record.adduct)
+        and fragment.fragment_type in NEGATIVE_CER_CHAIN_FRAGMENT_TYPES
+    ):
+        return "fah"
     if fragment.fragment_type == SPHINGOLIPID_LCB_FRAGMENT_TYPE:
         return "fah"
     if _fragment_counts_as_hg(record, fragment):
@@ -493,6 +534,37 @@ def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence
     )
 
 
+def _is_positive_tg_ammonia_fatty_acid_loss(
+    record: LibraryRecord,
+    fragment: FragmentRecord,
+) -> bool:
+    if not _is_positive_tg_full_chain_gate_record(record):
+        return False
+    if fragment.fragment_type != "Diagnostic_FA_Loss":
+        return False
+    fragment_name = re.sub(r"\s+", "", str(fragment.name or "")).upper()
+    if "M-NH3-(ROOH)+NH4" not in fragment_name:
+        return False
+    return _extract_fragment_chain_token(fragment.name) is not None
+
+
+def _positive_tg_full_chain_gate_passes(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+) -> bool:
+    expected_chain_count = _count_positive_nonzero_chains(
+        _extract_chain_tokens(record.lipid_chain_name)
+    )
+    if expected_chain_count <= 0:
+        return False
+    matched_chain_count = _chain_evidence_count_for_matches(
+        record,
+        matches,
+        _is_positive_tg_ammonia_fatty_acid_loss,
+    )
+    return matched_chain_count >= expected_chain_count
+
+
 def _record_positive_signature_fragment_count(record: LibraryRecord) -> int:
     return sum(
         1
@@ -539,9 +611,16 @@ def _required_positive_hg_hits(
     return min(required_hg_hits, hg_fragment_count)
 
 
-def _required_negative_hg_hits(record: LibraryRecord, hg_fragment_count: int) -> int:
+def _required_negative_hg_hits(
+    record: LibraryRecord,
+    hg_fragment_count: int,
+    rule: ClassRule,
+) -> int:
     if hg_fragment_count <= 0:
         return 0
+    configured_minimum = max(int(getattr(rule, "negative_hg_min_matches", 0)), 0)
+    if configured_minimum > 0:
+        return min(hg_fragment_count, configured_minimum)
     if _normalized_compound_class(record.compound_class) in STRICT_NEGATIVE_HG_CLASSES:
         return hg_fragment_count
     return min(hg_fragment_count, max(1, math.ceil(hg_fragment_count / 2)))
@@ -955,6 +1034,11 @@ def _missing_required_groups(
         if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
             missing.append("precursor")
 
+        if _is_positive_tg_full_chain_gate_record(record):
+            if not _positive_tg_full_chain_gate_passes(record, matches):
+                missing.append("tg_all_chains")
+            return missing
+
         if _positive_glyceride_rco_gate_passes(record, matches):
             return missing
 
@@ -994,12 +1078,16 @@ def _missing_required_groups(
         return missing
 
     if expected_fah_tokens:
-        required_fah_hits = _required_fah_gate_hits(record, expected_fah_tokens)
+        required_fah_hits = (
+            len(set(expected_fah_tokens))
+            if bool(getattr(rule, "negative_require_all_fah", False))
+            else _required_fah_gate_hits(record, expected_fah_tokens)
+        )
         if _matched_required_fah_count(record, matches, expected_fah_tokens) < required_fah_hits:
             missing.append("fah")
     if hg_fragment_count > 0:
         matched_hg_count = sum(1 for match in matches if _fragment_counts_as_hg(record, match.fragment))
-        if matched_hg_count < _required_negative_hg_hits(record, hg_fragment_count):
+        if matched_hg_count < _required_negative_hg_hits(record, hg_fragment_count, rule):
             missing.append("hg")
     if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
         missing.append("precursor")
@@ -1036,10 +1124,9 @@ def _is_cl_double_negative_record(record: LibraryRecord) -> bool:
     return record.compound_class == "CL" and record.adduct == "[M-2H]2-"
 
 
-def _cl_relaxed_fah_hit_count(token_count: int) -> int:
-    if token_count <= 0:
-        return 0
-    return max(CL_DOUBLE_NEGATIVE_MIN_FA_HITS, math.ceil(token_count / 2))
+def _cl_required_fah_hit_count(token_count: int) -> int:
+    """Require every distinct CL acyl-chain FAH for [M-2H]2- assignments."""
+    return max(token_count, 0)
 
 
 def _is_cl_chain_info_fragment(record: LibraryRecord, fragment: FragmentRecord) -> bool:
@@ -1060,7 +1147,7 @@ def _matched_cl_chain_info_fragment_count(record: LibraryRecord, matches: Sequen
 def _required_fah_gate_hits(record: LibraryRecord, expected_fah_tokens: Sequence[str]) -> int:
     token_count = len(set(expected_fah_tokens))
     if _is_cl_double_negative_record(record):
-        return _cl_relaxed_fah_hit_count(token_count)
+        return _cl_required_fah_hit_count(token_count)
     return token_count
 
 
@@ -1072,7 +1159,7 @@ def _required_chain_level_fah_hits(
 ) -> int:
     token_count = len(set(expected_fah_tokens)) if expected_fah_tokens else _count_fah_expected_chains(chain_tokens)
     if _is_cl_double_negative_record(record):
-        return _cl_relaxed_fah_hit_count(token_count)
+        return _cl_required_fah_hit_count(token_count)
     return min(max(token_count, 1), rule.chain_level_min_fah)
 
 
@@ -1086,7 +1173,7 @@ def _matched_required_fah_count(
     multiplicity = _chain_token_multiplicity(record)
     if expected_fah:
         matched_expected = matched_fah.intersection(expected_fah)
-        if not _is_positive_adduct(record.adduct) and not _is_cl_double_negative_record(record):
+        if not _is_positive_adduct(record.adduct):
             return len(matched_expected)
         if multiplicity:
             return sum(multiplicity.get(token, 1) for token in matched_expected)

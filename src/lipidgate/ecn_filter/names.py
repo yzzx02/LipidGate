@@ -11,6 +11,9 @@ CHAIN_RE = re.compile(
     r"(?P<prefix>O-|P-|d|m|t)?(?P<carbon>\d{1,3}):(?P<double_bond>\d{1,2})"
     r"(?P<suffix>(?:;[A-Za-z0-9]+|,[A-Za-z0-9]+|\([^)]+\))*)"
 )
+CHAIN_CORE_RE = re.compile(
+    r"(?P<prefix>O-|P-|d|m|t)?(?P<carbon>\d{1,3}):(?P<double_bond>\d{1,2})"
+)
 
 
 @dataclass(frozen=True)
@@ -56,12 +59,17 @@ def _split_name(text: str) -> tuple[str, str, str, str]:
     text = re.sub(r"\s+", " ", str(text or "").strip())
     if not text:
         return "", "", "", "plain"
+    first = _first_chain_match(text)
+    first_paren = text.find("(")
+    if first is not None and first.group("prefix") in {"d", "m", "t"} and (
+        first_paren < 0 or first.start() < first_paren
+    ):
+        return _clean_subclass(text[: first.start()]), text[first.start() :].strip(), "", "space"
     if "(" in text and ")" in text:
         left = text.find("(")
         right = _matching_paren_index(text, left)
         if left < right:
             return _clean_subclass(text[:left]), text[left + 1 : right], text[right + 1 :].strip(), "paren"
-    first = _first_chain_match(text)
     if first is None:
         return "", text, "", "plain"
     return _clean_subclass(text[: first.start()]), text[first.start() :].strip(), "", "space"
@@ -111,11 +119,30 @@ def parse_lipid_name(lipid_name: object, fallback_subclass: object = "") -> Lipi
     subclass, chain_text, tail, style = _split_name(text)
     if not subclass:
         subclass = _clean_subclass(fallback_subclass)
-    tokens = _parse_chain_tokens(chain_text)
+    is_ahexcer_three_chain = (
+        subclass.upper() == "AHEXCER"
+        and style == "space"
+        and re.match(r"^[dmt]\d+:\d+\(O-\d+:\d+\)/\d+:\d+\([^)]*OH\)$", chain_text, flags=re.IGNORECASE)
+        is not None
+    )
+    if is_ahexcer_three_chain:
+        tokens = [
+            _ChainToken(
+                text=matched.group(0),
+                carbon=int(matched.group("carbon")),
+                double_bond=int(matched.group("double_bond")),
+                prefix=matched.group("prefix") or "",
+            )
+            for matched in CHAIN_CORE_RE.finditer(chain_text)
+        ]
+    else:
+        tokens = _parse_chain_tokens(chain_text)
     total_c = sum(token.carbon for token in tokens) if tokens else None
     total_db = sum(token.double_bond for token in tokens) if tokens else None
     normalized_chains = _normalize_chains(chain_text, tokens)
-    if not tokens:
+    if is_ahexcer_three_chain:
+        normalized_name = text
+    elif not tokens:
         normalized_name = text
     elif style == "paren":
         normalized_name = f"{subclass}({normalized_chains}){tail}".strip()

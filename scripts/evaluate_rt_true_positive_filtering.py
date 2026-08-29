@@ -131,7 +131,7 @@ def evaluate_partition(partition: pd.DataFrame, config: ECNFilterConfig) -> tupl
         score_column="final_score",
     )
     fitted = result["rt_model_type"].isin(FITTED_MODEL_TYPES)
-    failed = fitted & ~result["RT_consistency_pass"].fillna(False)
+    failed = result["RT_filter_action"].eq("reject")
     parseable = result["total_C"].notna() & result["total_DB"].notna()
     missing_subclass = result["compound_class"].isna()
 
@@ -145,7 +145,7 @@ def evaluate_partition(partition: pd.DataFrame, config: ECNFilterConfig) -> tupl
     by_subclass = by_subclass.sort_values(["removed", "modeled", "total"], ascending=[False, False, False])
 
     failed_rows = result.loc[failed].sort_values(
-        ["RT_C_residual", "compound_class", "alignment_id"], ascending=[False, True, True]
+        ["RT_time_residual_min", "compound_class", "alignment_id"], ascending=[False, True, True]
     )
     detail_columns = [
         "dataset",
@@ -155,8 +155,8 @@ def evaluate_partition(partition: pd.DataFrame, config: ECNFilterConfig) -> tupl
         "total_C",
         "total_DB",
         "feature_rt",
-        "predicted_total_C",
-        "RT_C_residual",
+        "predicted_rt_min",
+        "RT_time_residual_min",
         "rt_model_group",
         "rt_model_type",
     ]
@@ -185,7 +185,8 @@ def evaluate_partition(partition: pd.DataFrame, config: ECNFilterConfig) -> tupl
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("reference_csv", type=Path)
-    parser.add_argument("--residual-c-threshold", type=float, default=1.5)
+    parser.add_argument("--pass-rt-threshold-min", type=float, default=0.5)
+    parser.add_argument("--suspect-rt-threshold-min", type=float, default=2.0)
     parser.add_argument("--min-model-points", type=int, default=4)
     args = parser.parse_args()
 
@@ -196,7 +197,8 @@ def main() -> None:
     clean["partition"] = clean["dataset"].str.replace("Intestine", "", regex=False).str.lower() + "_" + clean["polarity"]
 
     config = ECNFilterConfig(
-        residual_C_threshold=args.residual_c_threshold,
+        pass_rt_threshold_min=args.pass_rt_threshold_min,
+        suspect_rt_threshold_min=args.suspect_rt_threshold_min,
         min_model_points=args.min_model_points,
     )
     partition_summaries: dict[str, object] = {}
@@ -208,7 +210,7 @@ def main() -> None:
 
     combined = pd.concat(all_results, ignore_index=True)
     fitted = combined["rt_model_type"].isin(FITTED_MODEL_TYPES)
-    failed = fitted & ~combined["RT_consistency_pass"].fillna(False)
+    failed = combined["RT_filter_action"].eq("reject")
     parseable = combined["total_C"].notna() & combined["total_DB"].notna()
     overall_by_subclass = (
         combined.assign(_fitted=fitted, _failed=failed, _parseable=parseable)
@@ -225,7 +227,8 @@ def main() -> None:
         "excluded_isotope_rows": int(isotope_mask.sum()),
         "evaluated_true_positive_rows": int(len(combined)),
         "config": {
-            "residual_C_threshold": config.residual_C_threshold,
+            "pass_rt_threshold_min": config.pass_rt_threshold_min,
+            "suspect_rt_threshold_min": config.suspect_rt_threshold_min,
             "min_model_points": config.min_model_points,
             "max_iter": config.max_iter,
             "max_removed_fraction": config.max_removed_fraction,
