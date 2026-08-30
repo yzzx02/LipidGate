@@ -163,8 +163,65 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         require_loss_with_fah_only=False,
         score_profile=default_profile,
     )
+    # Positive NAPE/NAPS records expose two complementary structural ions:
+    # the DAG ion and the N-acyl headgroup ion.  Both must be present.  NAPS
+    # negative mode instead requires every glycerol-chain RCOO ion plus the
+    # PA-H ion produced by loss of the N-acyl chain.
+    by_class["NAPE"] = ClassRule(
+        lipid_class="NAPE",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=2,
+        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches=2,
+        positive_hg_complete_can_resolve_chain=True,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
     by_class["NAPS"] = ClassRule(
         lipid_class="NAPS",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=2,
+        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches=2,
+        positive_hg_complete_can_resolve_chain=True,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        negative_hg_min_matches=1,
+        negative_require_all_fah=True,
+        score_profile=default_profile,
+    )
+    # Am-PS positive mode is identified by the 347.0617 Da headgroup loss.
+    # RCO+ ions are optional for the class gate but are required to promote a
+    # passing result from molecular-species to chain level.  The negative-mode
+    # rule retains its strict all-RCOO and two-headgroup gate.
+    by_class["Am-PS"] = ClassRule(
+        lipid_class="Am-PS",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches=1,
+        positive_hg_complete_can_resolve_chain=False,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        negative_hg_min_matches=2,
+        negative_require_all_fah=True,
+        score_profile=default_profile,
+    )
+    # PS negative mode uses a two-member HG pool: the glycerophosphate ion
+    # (m/z 153) and the serine neutral loss (87.0320 Da).  Either HG is
+    # sufficient; phosphate m/z 78 remains supporting evidence only.
+    # CE-PE negative mode requires every RCOO chain ion and
+    # two of its three headgroup ions; positive mode can fall back to species
+    # level from the single class-specific headgroup loss when RCO+ is absent.
+    by_class["PS"] = ClassRule(
+        lipid_class="PS",
         required_groups={},
         chain_level_min_fah=2,
         allow_hg_only_if_no_fah=False,
@@ -172,6 +229,21 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         positive_hg_complete_can_resolve_chain=False,
         allow_loss_only_if_no_fah=False,
         require_loss_with_fah_only=False,
+        score_profile=default_profile,
+    )
+    by_class["CE-PE"] = ClassRule(
+        lipid_class="CE-PE",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches=1,
+        positive_hg_complete_can_resolve_chain=False,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
+        negative_hg_min_matches=2,
+        negative_require_all_fah=True,
         score_profile=default_profile,
     )
     by_class["NAGPS"] = ClassRule(

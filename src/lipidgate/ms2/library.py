@@ -14,10 +14,26 @@ from typing import Dict, Iterable, Iterator, List, Tuple
 import pandas as pd
 
 from .import_msdial_sphingo_positive import annotate_positive_sl_fragments
+from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name
+from .library_fragment_policy import (
+    CARBON_MONOISOTOPIC_MASS,
+    HYDROGEN_MONOISOTOPIC_MASS,
+    OXYGEN_MONOISOTOPIC_MASS,
+    PROTON_MONOISOTOPIC_MASS,
+    WATER_MONOISOTOPIC_MASS,
+    fragment_with_role as _fragment_with_role,
+    normalize_special_aminophospholipid_fragments as _normalize_special_aminophospholipid_fragments,
+    normalize_tg_est_fragments as _normalize_tg_est_fragments,
+    synthetic_fragment as _synthetic_fragment,
+)
 from .models import FragmentRecord, LibraryRecord
+from .sphingolipid_naming import (
+    canonicalize_multichain_sphingolipid_name,
+    has_complete_multichain_sphingolipid_identity,
+)
 
 
-LIBRARY_CACHE_VERSION = 23
+LIBRARY_CACHE_VERSION = 29
 
 CANONICAL_ACETATE_ADDUCT = "[M+CH3COO]-"
 ACETATE_ADDUCT_ALIASES = frozenset(
@@ -28,11 +44,6 @@ ACETATE_ADDUCT_ALIASES = frozenset(
     }
 )
 
-CARBON_MONOISOTOPIC_MASS = 12.0
-HYDROGEN_MONOISOTOPIC_MASS = 1.00782503223
-OXYGEN_MONOISOTOPIC_MASS = 15.99491462
-PROTON_MONOISOTOPIC_MASS = 1.007276466621
-WATER_MONOISOTOPIC_MASS = 18.01056468
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
 HYDROXY_FA_SPHINGOLIPID_CLASSES = {"Cer", "HexCer", "LacCer", "Hex2Cer"}
@@ -59,14 +70,6 @@ SPB_D_SERIES_C_FRAGMENT_NAMES = {
     "M+H-H2O",
 }
 
-AHEXCER_MSDIAL_NAME_RE = re.compile(
-    r"^AHexCer\s+\((?P<o_acyl>O-\d+:\d+)\)"
-    r"(?P<lcb>\d+:\d+);(?P<lcb_oxygen>\d*)O/"
-    r"(?P<n_acyl>\d+:\d+);(?P<n_acyl_oxygen>\d*)O$",
-    flags=re.IGNORECASE,
-)
-
-
 def canonicalize_adduct(value: object) -> str:
     """Map historical acetate-adduct spellings to one stable name."""
 
@@ -82,17 +85,14 @@ def canonicalize_adduct(value: object) -> str:
 
 
 def _canonicalize_ahexcer_name(value: object) -> str | None:
-    matched = AHEXCER_MSDIAL_NAME_RE.fullmatch(str(value or "").strip())
-    if matched is None:
+    text = str(value or "").strip()
+    canonical = canonicalize_multichain_sphingolipid_name(text, "AHexCer")
+    if canonical == text and not has_complete_multichain_sphingolipid_identity(
+        canonical,
+        "AHexCer",
+    ):
         return None
-    lcb_oxygen_count = int(matched.group("lcb_oxygen") or "1")
-    lcb_prefix = {1: "m", 2: "d", 3: "t"}.get(lcb_oxygen_count, "d")
-    n_acyl_oxygen_count = int(matched.group("n_acyl_oxygen") or "1")
-    n_acyl_suffix = "(OH)" if n_acyl_oxygen_count == 1 else f"({n_acyl_oxygen_count}OH)"
-    return (
-        f"AHexCer {lcb_prefix}{matched.group('lcb')}"
-        f"({matched.group('o_acyl')})/{matched.group('n_acyl')}{n_acyl_suffix}"
-    )
+    return canonical
 
 
 def _canonicalize_sphingoid_base_identity(
@@ -101,8 +101,8 @@ def _canonicalize_sphingoid_base_identity(
     lipid_chain_name: object,
 ) -> tuple[str, str, str]:
     cls = str(compound_class or "").strip()
-    name = str(lipid_name or "").strip()
-    chain_name = str(lipid_chain_name or "").strip()
+    name = canonicalize_multichain_sphingolipid_name(lipid_name, cls)
+    chain_name = canonicalize_multichain_sphingolipid_name(lipid_chain_name, cls)
     if cls == "AHexCer":
         canonical_ahexcer = _canonicalize_ahexcer_name(chain_name)
         if canonical_ahexcer is not None:
@@ -149,25 +149,6 @@ def _without_d18_1_300_lcb_marker(record: LibraryRecord) -> LibraryRecord:
     if len(fragments) == len(record.fragments):
         return record
     return replace(record, fragments=fragments)
-
-
-def _fragment_with_role(fragment: FragmentRecord, fragment_type: str) -> FragmentRecord:
-    return replace(
-        fragment,
-        fragment_type=fragment_type,
-        required_group=_required_group_for_fragment(fragment_type),
-    )
-
-
-def _synthetic_fragment(mz: float, name: str, fragment_type: str) -> FragmentRecord:
-    return FragmentRecord(
-        mz=float(mz),
-        intensity=100.0,
-        name=name,
-        fragment_type=fragment_type,
-        weight=1.0,
-        required_group=_required_group_for_fragment(fragment_type),
-    )
 
 
 def _fatty_acid_anion_mz(carbons: int, double_bonds: int) -> float:
@@ -668,6 +649,13 @@ def _normalize_fragment_type(
     cls = str(compound_class or "").strip()
     ftype = str(fragment_type or "").strip()
     name = str(fragment_name or "").strip()
+    if (
+        cls == "PS"
+        and str(adduct or "").strip() == "[M+H]+"
+        and re.sub(r"\s+", "", name).upper()
+        in {"[M-C3H8O6NP+H]+", "[M-C3H8NO6P+H]+"}
+    ):
+        return "Diagnostic_HG"
     if _is_named_negative_headgroup_fragment(ftype, name, adduct):
         return "Diagnostic_HG"
     if cls == "MG" and _is_positive_mg_adduct(adduct):
@@ -802,6 +790,11 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 lipid_name,
                 lipid_chain_name,
             )
+            lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, main_class)
+            lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(
+                lipid_chain_name,
+                main_class,
+            )
             formula = ""
             if "formula" in group_df.columns and not group_df["formula"].isna().all():
                 formula = str(group_df["formula"].dropna().iloc[0])
@@ -834,6 +827,20 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 fragments,
             )
             fragments = _normalize_targeted_positive_sphingolipid_fragments(
+                str(main_class),
+                str(lipid_chain_name),
+                float(precursor_mz),
+                str(adduct),
+                fragments,
+            )
+            fragments = _normalize_special_aminophospholipid_fragments(
+                str(main_class),
+                str(lipid_chain_name),
+                float(precursor_mz),
+                str(adduct),
+                fragments,
+            )
+            fragments = _normalize_tg_est_fragments(
                 str(main_class),
                 str(lipid_chain_name),
                 float(precursor_mz),
@@ -1004,12 +1011,31 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
             current.get("ms1_name", current.get("name", "")),
             current.get("name", ""),
         )
+        lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, compound_class)
+        lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(
+            lipid_chain_name,
+            compound_class,
+        )
         normalized_fragments = _ensure_positive_choline_common_fragments(
             compound_class,
             adduct,
             normalized_fragments,
         )
         normalized_fragments = _normalize_targeted_positive_sphingolipid_fragments(
+            compound_class,
+            lipid_chain_name,
+            float(current["precursormz"]),
+            adduct,
+            normalized_fragments,
+        )
+        normalized_fragments = _normalize_special_aminophospholipid_fragments(
+            compound_class,
+            lipid_chain_name,
+            float(current["precursormz"]),
+            adduct,
+            normalized_fragments,
+        )
+        normalized_fragments = _normalize_tg_est_fragments(
             compound_class,
             lipid_chain_name,
             float(current["precursormz"]),

@@ -10,8 +10,18 @@ from typing import Dict, Iterable, List, Sequence
 import pandas as pd
 
 from .library import canonicalize_adduct, load_library
+from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
+from .ranking_policy import (
+    build_original_rank_tiers,
+    multiplicity_adjusted_fragment_count,
+)
+from .resolution_policy import fragment_is_chain_evidence
 from .rules import DEFAULT_RULES, RuleSet
+from .sphingolipid_naming import (
+    canonicalize_multichain_sphingolipid_name,
+    has_complete_multichain_sphingolipid_identity,
+)
 from .scoring_policy import (
     FAH_ONLY_FALLBACK_REASON,
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
@@ -28,6 +38,7 @@ from .scoring import (
     _fragment_counts_as_effective_loss,
     _fragment_counts_as_fa_loss_gate,
     _matched_fah_tokens,
+    _precursor_dominance_quality_overrides,
     _positive_glyceride_rco_gate_passes,
     _record_fa_loss_fragment_count,
     _record_expected_fah_tokens,
@@ -78,6 +89,7 @@ except ImportError:  # pragma: no cover
 class LipidMS2Searcher:
     RANK_PPM_FULL_SCORE = 10.0
     DEFAULT_MIN_TOTAL_SCORE = 50.0
+    SHARED_CHAIN_PEAK_INTENSITY_FACTOR = 0.5
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
     SPHINGO_HG_ONLY_FALLBACK_CLASSES = {
         "HEXCER",
@@ -568,12 +580,21 @@ class LipidMS2Searcher:
         if not passed_results or top_n <= 0:
             return []
         selected = [passed_results[0]]
+        current_rank = 1
+        previous_result = passed_results[0]
         for result in passed_results[1:]:
-            tied_with_last_selected = self._results_share_rank(result, selected[-1])
-            if len(selected) >= top_n and not tied_with_last_selected:
+            next_rank = self._next_result_rank(
+                result,
+                current_rank,
+                previous_result,
+            )
+            tied_with_previous = next_rank == current_rank
+            if len(selected) >= top_n and not tied_with_previous:
                 break
-            if tied_with_last_selected or self._qualifies_secondary_result(result):
+            if tied_with_previous or self._qualifies_secondary_result(result):
                 selected.append(result)
+            current_rank = next_rank
+            previous_result = result
         return selected
 
     @staticmethod
@@ -582,14 +603,7 @@ class LipidMS2Searcher:
 
     @classmethod
     def _results_share_rank(cls, left: CandidateScore, right: CandidateScore) -> bool:
-        if not cls._scores_tied(left.total_score, right.total_score):
-            return False
-        same_class = cls._normal_class_key(left.record.compound_class) == cls._normal_class_key(
-            right.record.compound_class
-        )
-        if same_class:
-            return len(left.matched_fragments) == len(right.matched_fragments)
-        return True
+        return cls._scores_tied(left.total_score, right.total_score)
 
     @classmethod
     def _next_result_rank(
@@ -600,9 +614,27 @@ class LipidMS2Searcher:
     ) -> int:
         if current_rank <= 0:
             return 1
+        if current_rank == 1 and bool(
+            getattr(result, "_demoted_from_top1_by_fragment_count", False)
+        ):
+            return 2
+        if (
+            current_rank == 1
+            and previous_result is not None
+            and cls._scores_tied(result.total_score, previous_result.total_score)
+            and cls._normal_class_key(result.record.compound_class)
+            == cls._normal_class_key(previous_result.record.compound_class)
+            and cls._multiplicity_adjusted_fragment_count(result)
+            != cls._multiplicity_adjusted_fragment_count(previous_result)
+        ):
+            return 2
         if previous_result is not None and cls._results_share_rank(result, previous_result):
             return current_rank
         return current_rank + 1
+
+    @staticmethod
+    def _multiplicity_adjusted_fragment_count(result: CandidateScore) -> int:
+        return multiplicity_adjusted_fragment_count(result)
 
     @classmethod
     def _normal_class_key(cls, lipid_class: object) -> str:
@@ -803,6 +835,106 @@ class LipidMS2Searcher:
         best.downgrade_reason = "tentative_missing_hg_fa_full_loss"
         return [best]
 
+    @staticmethod
+    def _is_chain_evidence_match(record: LibraryRecord, match: FragmentMatch) -> bool:
+        return fragment_is_chain_evidence(record, match.fragment)
+
+    @classmethod
+    def _chain_evidence_peak_ids(cls, result: CandidateScore) -> set[int]:
+        return {
+            id(match.experimental_peak)
+            for match in result.matched_fragments
+            if cls._is_chain_evidence_match(result.record, match)
+        }
+
+    def _rescore_with_shared_chain_peak_penalty(
+        self,
+        spectrum: ExperimentalSpectrum,
+        result: CandidateScore,
+        chain_peak_usage_counts: Dict[int, int],
+    ) -> None:
+        shared_matches = [
+            match
+            for match in result.matched_fragments
+            if self._is_chain_evidence_match(result.record, match)
+            and chain_peak_usage_counts.get(id(match.experimental_peak), 0) > 0
+        ]
+        if not shared_matches:
+            return
+
+        base_overrides = _precursor_dominance_quality_overrides(
+            spectrum,
+            result.record,
+            result.matched_fragments,
+        )
+
+        def effective_relative_intensity(match: FragmentMatch) -> float:
+            return float(
+                base_overrides.get(id(match), match.experimental_peak.relative_intensity)
+            )
+
+        strongest_shared_match = max(shared_matches, key=effective_relative_intensity)
+        adjusted_overrides = dict(base_overrides)
+        adjusted_overrides[id(strongest_shared_match)] = (
+            effective_relative_intensity(strongest_shared_match)
+            * (
+                self.SHARED_CHAIN_PEAK_INTENSITY_FACTOR
+                ** chain_peak_usage_counts[id(strongest_shared_match.experimental_peak)]
+            )
+        )
+        pool_scores = _calculate_pool_scores(
+            result.matched_fragments,
+            result.record,
+            self.rules.get(result.record.compound_class),
+            quality_relative_intensity_overrides=adjusted_overrides,
+        )
+        result.pool_scores = pool_scores
+        result.total_score = round(_total_score_from_pool_scores(pool_scores), 4)
+
+    def _rerank_with_shared_chain_peak_penalty(
+        self,
+        spectrum: ExperimentalSpectrum,
+        results: Sequence[CandidateScore],
+    ) -> list[CandidateScore]:
+        ordered = list(results)
+        if not ordered:
+            return []
+        original_metrics = self._compute_rank_metrics(ordered)
+        self._sort_by_rank_metrics(ordered, original_metrics)
+
+        rank_tiers = build_original_rank_tiers(
+            ordered,
+            scores_tied=self._scores_tied,
+            class_key=self._normal_class_key,
+        )
+
+        selected: list[CandidateScore] = []
+        chain_peak_usage_counts: Dict[int, int] = {}
+        for tier_index, tier in enumerate(rank_tiers):
+            # The complete original Top1 tier is intentionally left untouched:
+            # before selecting a winner there is no justified prior candidate
+            # whose chain evidence should suppress another tied Top1 candidate.
+            if tier_index > 0 and chain_peak_usage_counts:
+                for result in tier:
+                    self._rescore_with_shared_chain_peak_penalty(
+                        spectrum,
+                        result,
+                        chain_peak_usage_counts,
+                    )
+                tier_metrics = self._compute_rank_metrics(tier)
+                self._sort_by_rank_metrics(tier, tier_metrics)
+
+            retained_tier = [result for result in tier if self._passes_min_total_score(result)]
+            selected.extend(retained_tier)
+
+            # Candidates in the same original rank tier never penalize one
+            # another. Register the entire tier only after all its candidates
+            # have been rescored, so the next tier sees cumulative use.
+            for result in retained_tier:
+                for peak_id in self._chain_evidence_peak_ids(result):
+                    chain_peak_usage_counts[peak_id] = chain_peak_usage_counts.get(peak_id, 0) + 1
+        return selected
+
     @classmethod
     def _compute_rank_metrics(cls, passed_results) -> Dict[int, Dict[str, float]]:
         if not passed_results:
@@ -898,8 +1030,8 @@ class LipidMS2Searcher:
             main_results = self._resolve_trihydroxy_lcb_isomers(main_results)
             main_results = self._collapse_report_equivalent_results(main_results)
             if main_results:
+                main_results = self._rerank_with_shared_chain_peak_penalty(spectrum, main_results)
                 main_metrics = self._compute_rank_metrics(main_results)
-                self._sort_by_rank_metrics(main_results, main_metrics)
                 rank_metrics.update(main_metrics)
                 scoped_results.extend(
                     (item, "main", True)
@@ -982,6 +1114,21 @@ class LipidMS2Searcher:
 
     @staticmethod
     def _canonicalize_chain_name(lipid_chain_name: str, compound_class: str | None = None) -> str:
+        canonical_sphingolipid_name = canonicalize_multichain_sphingolipid_name(
+            lipid_chain_name,
+            compound_class,
+        )
+        if has_complete_multichain_sphingolipid_identity(
+            canonical_sphingolipid_name,
+            compound_class,
+        ):
+            return canonical_sphingolipid_name
+        lipid_chain_name = canonical_sphingolipid_name
+        if str(compound_class or "").strip().upper() in {"NAPE", "NAPS"}:
+            return canonicalize_n_acyl_glycerophospholipid_name(
+                lipid_chain_name,
+                compound_class,
+            )
         if str(compound_class or "").strip().upper() == "AHEXCER" and re.match(
             r"^AHexCer\s+[mdt]\d+:\d+\(O-\d+:\d+\)/\d+:\d+\([^)]*OH\)$",
             str(lipid_chain_name or ""),
@@ -1128,14 +1275,21 @@ def _contains_one_determined_chain(lipid_name: object) -> bool:
     return len(chain_tokens) == 1
 
 
-def annotation_level_label(resolution_level: object, matched_name: object = "") -> str:
+def annotation_level_label(
+    resolution_level: object,
+    matched_name: object = "",
+    compound_class: object = "",
+) -> str:
     normalized = str(resolution_level or "").strip().lower()
     if normalized in {
         "double_bond_level",
         "tentative_double_bond_level",
         "chain_level",
         "tentative_chain_level",
-    } or _contains_one_determined_chain(matched_name):
+    } or _contains_one_determined_chain(matched_name) or has_complete_multichain_sphingolipid_identity(
+        matched_name,
+        compound_class,
+    ):
         return "链水平"
     return "分子种类水平"
 
@@ -1227,9 +1381,14 @@ def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
         export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
     if "resolution_level" in export_df.columns:
         matched_names = export_df.get("matched_name", pd.Series("", index=export_df.index))
+        compound_classes = export_df.get("compound_class", pd.Series("", index=export_df.index))
         export_df["注释水平"] = [
-            annotation_level_label(level, matched_name)
-            for level, matched_name in zip(export_df["resolution_level"], matched_names)
+            annotation_level_label(level, matched_name, compound_class)
+            for level, matched_name, compound_class in zip(
+                export_df["resolution_level"],
+                matched_names,
+                compound_classes,
+            )
         ]
     elif "注释水平" not in export_df.columns:
         export_df["注释水平"] = "分子种类水平"

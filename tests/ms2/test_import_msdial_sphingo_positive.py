@@ -20,10 +20,10 @@ class ImportMsdialSphingoPositiveTests(unittest.TestCase):
             ("SL(m17:0/16:1)(OH)", "SL(m33:1)(OH)"),
         )
 
-    def test_asm_names_keep_source_detail_but_gain_local_class_prefix(self) -> None:
+    def test_asm_extra_fatty_acid_uses_explicit_o_acyl_notation(self) -> None:
         self.assertEqual(
             transform_source_name("ASM", "SM 30:1;2O(FA 14:0)"),
-            ("ASM 30:1;2O(FA 14:0)", "ASM 30:1;2O"),
+            ("ASM 30:1;2O(O-14:0)", "ASM 30:1;2O"),
         )
 
     def test_ahexcer_names_fallback_to_source_name_when_not_sure(self) -> None:

@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Iterable
 
 from .models import FragmentRecord, LibraryRecord
+from .sphingolipid_naming import canonicalize_multichain_sphingolipid_name
 
 
 FREE_SPHINGOID_BASE_CLASSES = {"SPB", "Sph", "DHSph", "PhytoSph"}
@@ -211,7 +212,7 @@ def transform_source_name(compound_class: str, source_name: str) -> tuple[str, s
         species = re.sub(r"^SM\s+", "ASM ", name)
         species = re.sub(r"\(FA\s+[^)]+\)", "", species).strip()
         detail = re.sub(r"^SM\s+", "ASM ", detail)
-        return detail, species
+        return canonicalize_multichain_sphingolipid_name(detail, "ASM"), species
 
     return name, name
 

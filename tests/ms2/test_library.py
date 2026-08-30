@@ -12,9 +12,14 @@ import pandas as pd
 
 from lipidgate.ms2.library import (
     canonicalize_adduct,
+    canonicalize_n_acyl_glycerophospholipid_name,
     convert_excel_directory_to_msp,
     load_library,
     load_standard_msp,
+)
+from lipidgate.ms2.sphingolipid_naming import (
+    canonicalize_multichain_sphingolipid_name,
+    has_complete_multichain_sphingolipid_identity,
 )
 
 
@@ -25,11 +30,253 @@ def workspace_temp_dir():
 
 
 class LibraryConversionTests(unittest.TestCase):
+    def test_multichain_sphingolipid_names_use_attachment_site_notation(self) -> None:
+        examples = [
+            (
+                "Cer-EOS(d14:1/12:1-O-18:1)",
+                "Cer-EOS",
+                "Cer-EOS d14:1/12:1(O-18:1)",
+                True,
+            ),
+            (
+                "Cer-EODS(d14:0/12:0-O-18:1)",
+                "Cer-EODS",
+                "Cer-EODS d14:0/12:0(O-18:1)",
+                True,
+            ),
+            (
+                "AHexCer(16:0/18:1;2O/22:0;O)",
+                "AHexCer",
+                "AHexCer d18:1(O-16:0)/22:0(OH)",
+                True,
+            ),
+            (
+                "AHexCer(16:0/40:1;O)",
+                "AHexCer",
+                "AHexCer 40:1;O(O-16:0)",
+                False,
+            ),
+            (
+                "ASM(d18:1/16:0-O-18:1)",
+                "ASM",
+                "ASM d18:1/16:0(O-18:1)",
+                True,
+            ),
+            (
+                "ASM 34:1;2O(FA 18:1)",
+                "ASM",
+                "ASM 34:1;2O(O-18:1)",
+                False,
+            ),
+        ]
+        for source, compound_class, expected, is_complete in examples:
+            with self.subTest(source=source):
+                canonical = canonicalize_multichain_sphingolipid_name(source, compound_class)
+                self.assertEqual(canonical, expected)
+                self.assertEqual(
+                    has_complete_multichain_sphingolipid_identity(canonical, compound_class),
+                    is_complete,
+                )
+
     def test_historical_acetate_adduct_spellings_are_canonicalized(self) -> None:
         self.assertEqual(canonicalize_adduct("[M+CH3COO]-"), "[M+CH3COO]-")
         self.assertEqual(canonicalize_adduct("[M+Hac-H]-"), "[M+CH3COO]-")
         self.assertEqual(canonicalize_adduct(" [M+Hac]- "), "[M+CH3COO]-")
         self.assertEqual(canonicalize_adduct("[M-H]-"), "[M-H]-")
+
+    def test_tg_est_library_gates_on_fa1_fa2_and_fahfa_only(self) -> None:
+        with workspace_temp_dir() as tmp_dir:
+            msp_path = tmp_dir / "tg_est.msp"
+            msp_path.write_text(
+                "\n".join(
+                    [
+                        "Name: TG-EST 16:0_18:2_14:0;O(FA 20:1)",
+                        "PrecursorMZ: 1129.0104",
+                        "PrecursorType: [M+NH4]+",
+                        "CompoundClass: TG-EST",
+                        "Comment: MS1_name=TG-EST 48:2;polarity=+",
+                        "Num Peaks: 4",
+                        '575.5034 100.00 "[M+H-O-acyl hydroxy FA]+(14:0;O/FA 20:1)" "Diagnostic_FA_Loss"',
+                        '831.7436 100.00 "[M+H-FA]+(18:2)" "Diagnostic_FA_Loss"',
+                        '855.7436 100.00 "[M+H-FA]+(16:0)" "Diagnostic_FA_Loss"',
+                        '1129.0104 100.00 "[M+NH4]+" "Precursor Ion"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = load_standard_msp(msp_path)[0]
+
+        loss_fragments = [
+            fragment for fragment in record.fragments if fragment.fragment_type == "Diagnostic_FA_Loss"
+        ]
+        ordinary_fragments = [
+            fragment for fragment in record.fragments if fragment.fragment_type == "Common"
+        ]
+        self.assertEqual(
+            {fragment.name for fragment in loss_fragments},
+            {
+                "[M+H-FA]+(16:0)",
+                "[M+H-FA]+(18:2)",
+                "[M+H-FAHFA]+(14:0;O/FA 20:1)",
+            },
+        )
+        self.assertEqual(len(ordinary_fragments), 5)
+        self.assertIn("[M+H]+", {fragment.name for fragment in ordinary_fragments})
+        self.assertEqual(
+            len([fragment for fragment in ordinary_fragments if fragment.name.startswith("(R=O)+")]),
+            4,
+        )
+        self.assertNotIn("[M+H-FA]+(20:1)", {fragment.name for fragment in loss_fragments})
+
+    def test_tg_est_duplicate_fa1_fa2_requires_two_physical_loss_peaks(self) -> None:
+        with workspace_temp_dir() as tmp_dir:
+            msp_path = tmp_dir / "tg_est_duplicate.msp"
+            msp_path.write_text(
+                "\n".join(
+                    [
+                        "Name: TG-EST 16:0_16:0_14:0;O(FA 20:1)",
+                        "PrecursorMZ: 1106.9948",
+                        "PrecursorType: [M+NH4]+",
+                        "CompoundClass: TG-EST",
+                        "Comment: MS1_name=TG-EST 46:0;polarity=+",
+                        "Num Peaks: 2",
+                        '553.4878 100.00 "[M+H-O-acyl hydroxy FA]+(14:0;O/FA 20:1)" "Diagnostic_FA_Loss"',
+                        '1106.9948 100.00 "[M+NH4]+" "Precursor Ion"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = load_standard_msp(msp_path)[0]
+
+        loss_fragments = [
+            fragment for fragment in record.fragments
+            if fragment.fragment_type == "Diagnostic_FA_Loss"
+        ]
+        self.assertEqual(
+            {fragment.name for fragment in loss_fragments},
+            {
+                "[M+H-FA]+(16:0)",
+                "[M+H-FAHFA]+(14:0;O/FA 20:1)",
+            },
+        )
+
+    def test_positive_ps_uses_185_loss_gate_and_post_185_ketene_chain_ions(self) -> None:
+        with workspace_temp_dir() as tmp_dir:
+            msp_path = tmp_dir / "positive_ps.msp"
+            msp_path.write_text(
+                "\n".join(
+                    [
+                        "Name: PS(16:0_22:4)",
+                        "PrecursorMZ: 812.5416",
+                        "PrecursorType: [M+H]+",
+                        "CompoundClass: PS",
+                        "Comment: MS1_name=PS(38:4);polarity=+",
+                        "Num Peaks: 5",
+                        '239.2369 100.00 "(R=O)+(16:0)" "FA_Frag"',
+                        '339.2894 100.00 "[M-R=O-C3H8O6NP+H]+(16:0)" "Diagnostic_FA_Loss"',
+                        '627.5352 100.00 "[M-C3H8O6NP+H]+" "Diagnostic_FA_Loss"',
+                        '725.5078 100.00 "[M-C3H5O2N+H]+" "Diagnostic_FA_Loss"',
+                        '812.5416 100.00 "[M+H]+" "Precursor Ion"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = load_standard_msp(msp_path)[0]
+
+        fragment_types = {fragment.name: fragment.fragment_type for fragment in record.fragments}
+        self.assertEqual(fragment_types["[M-C3H8O6NP+H]+"], "Diagnostic_HG")
+        self.assertEqual(
+            fragment_types["[M-R=O-C3H8O6NP+H]+(16:0)"],
+            "Diagnostic_FA_Loss",
+        )
+        self.assertNotIn("[M-C3H5O2N+H]+", fragment_types)
+        self.assertEqual(fragment_types["(R=O)+(16:0)"], "Common")
+        self.assertIn("[M-R=O-C3H8O6NP+H]+(22:4)", fragment_types)
+
+    def test_naps_n_acyl_first_name_is_reordered_to_glycerol_first(self) -> None:
+        self.assertEqual(
+            canonicalize_n_acyl_glycerophospholipid_name(
+                "NAPS(18:2-N-8:0_9:1)",
+                "NAPS",
+            ),
+            "NAPS(8:0_9:1-N-18:2)",
+        )
+        self.assertEqual(
+            canonicalize_n_acyl_glycerophospholipid_name(
+                "NAPS(13:1_13:1-N-9:0)",
+                "NAPS",
+            ),
+            "NAPS(13:1_13:1-N-9:0)",
+        )
+        self.assertEqual(
+            canonicalize_n_acyl_glycerophospholipid_name(
+                "NAPS(36:1-N-16:0)",
+                "NAPS",
+            ),
+            "NAPS(36:1-N-16:0)",
+        )
+
+    def test_positive_am_ps_library_is_rebuilt_around_347_da_hg_loss(self) -> None:
+        msp_text = """Name: Am-PS(16:0_18:1)
+PrecursorMZ: 924.5808
+PrecursorType: [M+H]+
+CompoundClass: Am-PS
+Formula: C46H86O15NP
+Comment: MS1_name=Am-PS(34:1);polarity=+
+Num Peaks: 4
+239.2369 100.00 "(R=O)+(16:0)" "FA_Frag"
+265.2526 100.00 "(R=O)+(18:1)" "FA_Frag"
+313.2737 100.00 "[M-R=O-C9H18O11NP+H]+(18:1)" "Diagnostic_FA_Loss"
+924.5808 100.00 "[M+H]+" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            path = temp_path / "am_ps_positive.msp"
+            path.write_text(msp_text, encoding="utf-8")
+            record = load_standard_msp(path)[0]
+
+        by_name = {fragment.name: fragment for fragment in record.fragments}
+        self.assertEqual(by_name["[M-C9H18NO11P+H]+"].fragment_type, "Diagnostic_HG")
+        self.assertAlmostEqual(by_name["[M-C9H18NO11P+H]+"].mz, 577.5191, places=3)
+        self.assertEqual(by_name["(R=O)+(16:0)"].fragment_type, "Diagnostic_FA")
+        self.assertEqual(by_name["(R=O)+(18:1)"].fragment_type, "Diagnostic_FA")
+        self.assertNotIn("[M-R=O-C9H18O11NP+H]+(18:1)", by_name)
+        self.assertEqual(by_name["[M+H]+"].fragment_type, "Common")
+        self.assertIn("[M-3H2O+H]+", by_name)
+
+    def test_negative_naps_uses_only_pa_h_as_hg_and_rcoo_as_fah(self) -> None:
+        msp_text = """Name: NAPS(18:2-N-8:0_9:1)
+PrecursorMZ: 700.0000
+PrecursorType: [M-H]-
+CompoundClass: NAPS
+Formula: C35H60NO11P
+Comment: MS1_name=NAPS(35:3);polarity=-
+Num Peaks: 6
+78.9591 100.00 "[PO3]-" "Common"
+152.9953 100.00 "[C3H6O5P]-" "Diagnostic_HG"
+143.1078 100.00 "[RCOO]-(8:0)" "Diagnostic_FA"
+155.1078 100.00 "[RCOO]-(9:1)" "Diagnostic_FA"
+423.2153 100.00 "[PA-H]-" "Diagnostic_HG"
+700.0000 100.00 "[M-H]-" "Precursor Ion"
+"""
+        with workspace_temp_dir() as temp_path:
+            path = temp_path / "naps_negative.msp"
+            path.write_text(msp_text, encoding="utf-8")
+            record = load_standard_msp(path)[0]
+
+        self.assertEqual(record.lipid_chain_name, "NAPS(8:0_9:1-N-18:2)")
+        roles = {fragment.name: fragment.fragment_type for fragment in record.fragments}
+        self.assertEqual(roles["[PA-H]-"], "Diagnostic_HG")
+        self.assertEqual(roles["[C3H6O5P]-"], "Common")
+        self.assertEqual(roles["[PO3]-"], "Common")
+        self.assertEqual(roles["[RCOO]-(8:0)"], "Diagnostic_FA")
+        self.assertEqual(roles["[RCOO]-(9:1)"], "Diagnostic_FA")
+        self.assertEqual(roles["[M-H]-"], "Common")
 
     def test_msdial_ahexcer_name_and_fragments_are_canonicalized(self) -> None:
         msp_text = """Name: AHexCer (O-16:0)18:1;2O/22:0;O

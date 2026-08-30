@@ -4,7 +4,7 @@ import unittest
 
 from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
 from lipidgate.ms2.rules import DEFAULT_RULES
-from lipidgate.ms2.scoring import score_candidate
+from lipidgate.ms2.scoring import _extract_chain_tokens, score_candidate
 
 
 def build_record() -> LibraryRecord:
@@ -38,6 +38,291 @@ class ScoringTests(unittest.TestCase):
     def setUp(self) -> None:
         self.record = build_record()
         self.rule = DEFAULT_RULES.get("PC")
+
+    def test_multichain_sphingolipid_tokenization_keeps_all_three_chains(self) -> None:
+        self.assertEqual(
+            _extract_chain_tokens("Cer-EOS d14:1/12:1(O-18:1)"),
+            ["d14:1", "12:1", "O-18:1"],
+        )
+
+    def test_positive_tg_est_requires_fa1_fa2_and_fahfa_but_not_fa3(self) -> None:
+        record = LibraryRecord(
+            record_id=9001,
+            compound_class="TG-EST",
+            lipid_name="TG-EST 48:2",
+            lipid_chain_name="TG-EST 16:0_18:2_14:0;O(FA 20:1)",
+            precursor_mz=1129.0104,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(575.5034, "[M+H-FAHFA]+(14:0;O/FA 20:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(831.7436, "[M+H-FA]+(18:2)", "Diagnostic_FA_Loss"),
+                FragmentRecord(855.7436, "[M+H-FA]+(16:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(1111.9839, "[M+H]+", "Common"),
+                FragmentRecord(265.2526, "(R=O)+(18:2)", "Common"),
+            ],
+        )
+        all_losses = ExperimentalSpectrum(
+            "tg_est_all_losses",
+            1129.0104,
+            5.0,
+            "+",
+            normalize_peaks(
+                [
+                    (575.5034, 900.0),
+                    (831.7436, 800.0),
+                    (855.7436, 750.0),
+                    (1111.9839, 500.0),
+                ]
+            ),
+        )
+        missing_fa2_loss = ExperimentalSpectrum(
+            "tg_est_missing_fa2_loss",
+            1129.0104,
+            5.0,
+            "+",
+            normalize_peaks(
+                [
+                    (575.5034, 900.0),
+                    (855.7436, 750.0),
+                    (1111.9839, 500.0),
+                ]
+            ),
+        )
+        missing_fahfa_loss = ExperimentalSpectrum(
+            "tg_est_missing_fahfa_loss",
+            1129.0104,
+            5.0,
+            "+",
+            normalize_peaks(
+                [
+                    (831.7436, 800.0),
+                    (855.7436, 750.0),
+                    (1111.9839, 500.0),
+                ]
+            ),
+        )
+        rule = DEFAULT_RULES.get("TG-EST")
+
+        passing = score_candidate(all_losses, record, rule)
+        missing_fa2 = score_candidate(missing_fa2_loss, record, rule)
+        missing_fahfa = score_candidate(missing_fahfa_loss, record, rule)
+
+        self.assertTrue(passing.passed_required_gates)
+        self.assertFalse(missing_fa2.passed_required_gates)
+        self.assertFalse(missing_fahfa.passed_required_gates)
+        self.assertIn("tg_est_all_losses", missing_fa2.missing_required_groups)
+        self.assertIn("tg_est_all_losses", missing_fahfa.missing_required_groups)
+
+    def test_positive_tg_est_duplicate_fa1_fa2_passes_with_two_loss_peaks(self) -> None:
+        record = LibraryRecord(
+            record_id=9003,
+            compound_class="TG-EST",
+            lipid_name="TG-EST 46:0",
+            lipid_chain_name="TG-EST 16:0_16:0_14:0;O(FA 20:1)",
+            precursor_mz=1106.9948,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(553.4878, "[M+H-FAHFA]+(14:0;O/FA 20:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(833.7280, "[M+H-FA]+(16:0)", "Diagnostic_FA_Loss"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            "tg_est_duplicate",
+            1106.9948,
+            5.0,
+            "+",
+            normalize_peaks([(553.4878, 900.0), (833.7280, 800.0)]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("TG-EST"))
+
+        self.assertTrue(result.passed_required_gates)
+
+    def test_positive_ps_headgroup_only_match_stays_at_species_level(self) -> None:
+        record = LibraryRecord(
+            record_id=9002,
+            compound_class="PS",
+            lipid_name="PS(38:4)",
+            lipid_chain_name="PS(16:0_22:4)",
+            precursor_mz=812.5416,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(627.5352, "[M-C3H8O6NP+H]+", "Diagnostic_HG"),
+                FragmentRecord(812.5416, "[M+H]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            "ps_hg_only",
+            812.5416,
+            5.0,
+            "+",
+            normalize_peaks(
+                [
+                    (627.5352, 900.0),
+                    (812.5416, 700.0),
+                ]
+            ),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("PS"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertEqual(result.resolution_level, "tentative_species_level")
+        self.assertEqual(result.downgrade_reason, "low_confidence_hg_only")
+
+    def test_positive_ps_requires_185_da_gate_and_one_post_gate_ketene_resolves_chains(self) -> None:
+        record = LibraryRecord(
+            record_id=9004,
+            compound_class="PS",
+            lipid_name="PS(34:1)",
+            lipid_chain_name="PS(16:0_18:1)",
+            precursor_mz=762.5290,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(239.2369, "(R=O)+(16:0)", "FA_Frag"),
+                FragmentRecord(313.2737, "[M-R=O-C3H8O6NP+H]+(18:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(339.2894, "[M-R=O-C3H8O6NP+H]+(16:0)", "Diagnostic_FA_Loss"),
+                FragmentRecord(577.5201, "[M-C3H8O6NP+H]+", "Diagnostic_HG"),
+            ],
+        )
+        ketene_with_gate = ExperimentalSpectrum(
+            "ps_one_ketene",
+            762.5290,
+            5.0,
+            "+",
+            normalize_peaks([(339.2894, 800.0), (577.5201, 1000.0)]),
+        )
+        ketene_without_gate = ExperimentalSpectrum(
+            "ps_no_185_gate",
+            762.5290,
+            5.0,
+            "+",
+            normalize_peaks([(239.2369, 1000.0), (339.2894, 800.0)]),
+        )
+        rco_with_gate = ExperimentalSpectrum(
+            "ps_rco_not_chain",
+            762.5290,
+            5.0,
+            "+",
+            normalize_peaks([(239.2369, 800.0), (577.5201, 1000.0)]),
+        )
+        rule = DEFAULT_RULES.get("PS")
+
+        chain_result = score_candidate(ketene_with_gate, record, rule)
+        no_gate_result = score_candidate(ketene_without_gate, record, rule)
+        rco_result = score_candidate(rco_with_gate, record, rule)
+
+        self.assertTrue(chain_result.passed_required_gates)
+        self.assertEqual(chain_result.resolution_level, "chain_level")
+        self.assertFalse(no_gate_result.passed_required_gates)
+        self.assertIn("hg", no_gate_result.missing_required_groups)
+        self.assertTrue(rco_result.passed_required_gates)
+        self.assertNotIn(rco_result.resolution_level, {"chain_level", "tentative_chain_level"})
+
+    def test_negative_ps_accepts_either_153_or_87_da_loss_but_not_78(self) -> None:
+        record = LibraryRecord(
+            record_id=300,
+            compound_class="PS",
+            lipid_name="PS(35:0)",
+            lipid_chain_name="PS(16:0_19:0)",
+            precursor_mz=776.5447,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(78.9591, "[PO3]-", "Common"),
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG"),
+                FragmentRecord(255.2330, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(297.2799, "[RCOO]-(19:0)", "Diagnostic_FA"),
+                FragmentRecord(689.5127, "[M-C3H5O2N-H]-", "Diagnostic_HG"),
+            ],
+        )
+        common = [(255.2330, 1000.0), (297.2799, 900.0)]
+        only_153 = ExperimentalSpectrum(
+            "ps_only_153", 776.5447, 5.0, "-", normalize_peaks(common + [(152.9953, 700.0)]),
+        )
+        only_87 = ExperimentalSpectrum(
+            "ps_only_87", 776.5447, 5.0, "-", normalize_peaks(common + [(689.5127, 700.0)]),
+        )
+        both = ExperimentalSpectrum(
+            "ps_both", 776.5447, 5.0, "-", normalize_peaks(common + [(152.9953, 700.0), (689.5127, 600.0)]),
+        )
+        phosphate_only = ExperimentalSpectrum(
+            "ps_phosphate_only", 776.5447, 5.0, "-", normalize_peaks(common + [(78.9591, 700.0)]),
+        )
+        rule = DEFAULT_RULES.get("PS")
+
+        self.assertTrue(score_candidate(only_153, record, rule).passed_required_gates)
+        self.assertTrue(score_candidate(only_87, record, rule).passed_required_gates)
+        self.assertTrue(score_candidate(both, record, rule).passed_required_gates)
+        self.assertFalse(score_candidate(phosphate_only, record, rule).passed_required_gates)
+
+    def test_ce_pe_negative_requires_all_rcoo_and_two_of_three_hg(self) -> None:
+        record = LibraryRecord(
+            record_id=301,
+            compound_class="CE-PE",
+            lipid_name="CE-PE(34:1)",
+            lipid_chain_name="CE-PE(16:0_18:1)",
+            precursor_mz=788.5447,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG"),
+                FragmentRecord(212.0334, "[C5H11NO6P]-", "Diagnostic_HG"),
+                FragmentRecord(255.2330, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(268.0601, "[C8H15NO7P]-", "Diagnostic_HG"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("CE-PE")
+        complete = ExperimentalSpectrum(
+            "cepe_complete", 788.5447, 5.0, "-",
+            normalize_peaks([(152.9953, 300.0), (212.0334, 500.0), (255.2330, 1000.0), (281.2486, 900.0)]),
+        )
+        one_hg = ExperimentalSpectrum(
+            "cepe_one_hg", 788.5447, 5.0, "-",
+            normalize_peaks([(212.0334, 500.0), (255.2330, 1000.0), (281.2486, 900.0)]),
+        )
+        missing_chain = ExperimentalSpectrum(
+            "cepe_missing_chain", 788.5447, 5.0, "-",
+            normalize_peaks([(152.9953, 300.0), (212.0334, 500.0), (281.2486, 900.0)]),
+        )
+
+        self.assertTrue(score_candidate(complete, record, rule).passed_required_gates)
+        self.assertFalse(score_candidate(one_hg, record, rule).passed_required_gates)
+        self.assertFalse(score_candidate(missing_chain, record, rule).passed_required_gates)
+
+    def test_ce_pe_positive_hg_only_falls_back_to_species_and_rco_resolves_chains(self) -> None:
+        record = LibraryRecord(
+            record_id=302,
+            compound_class="CE-PE",
+            lipid_name="CE-PE(34:1)",
+            lipid_chain_name="CE-PE(16:0_18:1)",
+            precursor_mz=790.5592,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(239.2369, "(R=O)+(16:0)", "Diagnostic_FA"),
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "Diagnostic_FA"),
+                FragmentRecord(577.5190, "[M-C5H12NO6P+H]+", "Diagnostic_HG"),
+                FragmentRecord(790.5592, "[M+H]+", "Common"),
+            ],
+        )
+        rule = DEFAULT_RULES.get("CE-PE")
+        hg_only = ExperimentalSpectrum(
+            "cepe_hg_only", 790.5592, 5.0, "+", normalize_peaks([(577.5190, 1000.0)]),
+        )
+        complete = ExperimentalSpectrum(
+            "cepe_positive_complete", 790.5592, 5.0, "+",
+            normalize_peaks([(239.2369, 800.0), (265.2526, 900.0), (577.5190, 1000.0)]),
+        )
+
+        species = score_candidate(hg_only, record, rule)
+        chain = score_candidate(complete, record, rule)
+        self.assertTrue(species.passed_required_gates)
+        self.assertEqual(species.resolution_level, "species_level")
+        self.assertTrue(chain.passed_required_gates)
+        self.assertEqual(chain.resolution_level, "chain_level")
+        self.assertEqual(
+            _extract_chain_tokens("AHexCer d18:1(O-16:0)/22:0(OH)"),
+            ["d18:1", "O-16:0", "22:0(OH)"],
+        )
 
     def test_normalize_peaks_filters_acetonitrile_ammonium_before_scaling(self) -> None:
         normalized = normalize_peaks([
@@ -205,9 +490,9 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.pool_scores["fah"].matched_count, 3)
         self.assertEqual(result.pool_scores["other"].total_count, 6)
         self.assertEqual(result.pool_scores["other"].matched_count, 2)
-        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 74.25)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 73.7916666667)
         self.assertAlmostEqual(result.pool_scores["other"].pool_score, 25.0 * 2.0 / 3.0)
-        self.assertAlmostEqual(result.total_score, 74.25 + 25.0 * 2.0 / 3.0, places=4)
+        self.assertAlmostEqual(result.total_score, 73.7916666667 + 25.0 * 2.0 / 3.0, places=4)
 
     def test_other_pool_saturates_at_three_or_all_available_fragments(self) -> None:
         cases = [
@@ -1047,7 +1332,7 @@ class ScoringTests(unittest.TestCase):
 
         self.assertEqual(passing_scores[0], passing_scores[1])
 
-    def test_naps_uses_default_half_hg_gate_and_requires_all_rcoo_fragments(self) -> None:
+    def test_negative_naps_requires_pa_loss_and_all_glycerol_rcoo_fragments(self) -> None:
         record = LibraryRecord(
             record_id=104,
             compound_class="NAPS",
@@ -1058,7 +1343,7 @@ class ScoringTests(unittest.TestCase):
             fragments=[
                 FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA", required_group="fah"),
                 FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA", required_group="fah"),
-                FragmentRecord(152.9953, "[C3H6O5P]-", "Diagnostic_HG", required_group="hg"),
+                FragmentRecord(152.9953, "[C3H6O5P]-", "Common"),
                 FragmentRecord(423.2153, "[PA-H]-", "Diagnostic_HG", required_group="hg"),
                 FragmentRecord(78.9591, "[PO3]-", "Common"),
                 FragmentRecord(96.9696, "[H2PO4]-", "Common"),
@@ -1109,13 +1394,138 @@ class ScoringTests(unittest.TestCase):
         one_rcoo_result = score_candidate(one_rcoo_spectrum, record, rule)
         full_hg_result = score_candidate(full_hg_spectrum, record, rule)
 
-        self.assertTrue(one_hg_result.passed_required_gates)
-        self.assertEqual(one_hg_result.pool_scores["hg"].total_count, 2)
-        self.assertEqual(one_hg_result.pool_scores["hg"].matched_count, 1)
-        self.assertEqual(one_hg_result.pool_scores["other"].total_count, 5)
+        self.assertFalse(one_hg_result.passed_required_gates)
+        self.assertIn("hg", one_hg_result.missing_required_groups)
+        self.assertEqual(one_hg_result.pool_scores["hg"].total_count, 1)
+        self.assertEqual(one_hg_result.pool_scores["hg"].matched_count, 0)
+        self.assertEqual(one_hg_result.pool_scores["other"].total_count, 6)
         self.assertFalse(one_rcoo_result.passed_required_gates)
         self.assertIn("fah", one_rcoo_result.missing_required_groups)
         self.assertTrue(full_hg_result.passed_required_gates)
+
+    def test_positive_nape_requires_both_dag_and_n_acyl_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=204,
+            compound_class="NAPE",
+            lipid_name="NAPE(55:2)",
+            lipid_chain_name="NAPE(36:2-N-19:0)",
+            precursor_mz=1041.8569,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(324.3261, "[N(RC=O)+C2H4N+H]+", "Diagnostic_HG"),
+                FragmentRecord(603.5347, "[DAG-H2O+H]+", "Diagnostic_HG"),
+                FragmentRecord(1041.8569, "[M+NH4]+", "Common"),
+            ],
+        )
+        one_signature = ExperimentalSpectrum(
+            scan_id="scan_nape_one_signature",
+            precursor_mz=1041.8569,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(603.5347, 1000.0), (1041.8569, 100.0)]),
+        )
+        both_signatures = ExperimentalSpectrum(
+            scan_id="scan_nape_both_signatures",
+            precursor_mz=1041.8569,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(324.3261, 800.0), (603.5347, 1000.0)]),
+        )
+
+        one_result = score_candidate(one_signature, record, DEFAULT_RULES.get("NAPE"))
+        both_result = score_candidate(both_signatures, record, DEFAULT_RULES.get("NAPE"))
+
+        self.assertFalse(one_result.passed_required_gates)
+        self.assertIn("hg", one_result.missing_required_groups)
+        self.assertTrue(both_result.passed_required_gates)
+
+    def test_positive_naps_requires_both_complementary_structural_fragments(self) -> None:
+        record = LibraryRecord(
+            record_id=205,
+            compound_class="NAPS",
+            lipid_name="NAPS(52:1)",
+            lipid_chain_name="NAPS(36:1-N-16:0)",
+            precursor_mz=1045.8155,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(326.2690, "[N-acylserine-H2O+H]+", "Diagnostic_HG"),
+                FragmentRecord(605.5503, "[DAG-H2O+H]+", "Diagnostic_HG"),
+                FragmentRecord(1045.8155, "[M+NH4]+", "Common"),
+            ],
+        )
+        dag_only = ExperimentalSpectrum(
+            scan_id="scan_naps_dag_only",
+            precursor_mz=1045.8155,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(605.5503, 1000.0)]),
+        )
+        complete = ExperimentalSpectrum(
+            scan_id="scan_naps_complete",
+            precursor_mz=1045.8155,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(326.2690, 800.0), (605.5503, 1000.0)]),
+        )
+
+        dag_only_result = score_candidate(dag_only, record, DEFAULT_RULES.get("NAPS"))
+        complete_result = score_candidate(complete, record, DEFAULT_RULES.get("NAPS"))
+
+        self.assertFalse(dag_only_result.passed_required_gates)
+        self.assertIn("hg", dag_only_result.missing_required_groups)
+        self.assertTrue(complete_result.passed_required_gates)
+
+    def test_positive_am_ps_requires_347_loss_and_uses_rco_only_for_chain_level(self) -> None:
+        record = LibraryRecord(
+            record_id=206,
+            compound_class="Am-PS",
+            lipid_name="Am-PS(34:1)",
+            lipid_chain_name="Am-PS(16:0_18:1)",
+            precursor_mz=924.5808,
+            adduct="[M+H]+",
+            fragments=[
+                FragmentRecord(239.2369, "(R=O)+(16:0)", "Diagnostic_FA"),
+                FragmentRecord(265.2526, "(R=O)+(18:1)", "Diagnostic_FA"),
+                FragmentRecord(577.5191, "[M-C9H18NO11P+H]+", "Diagnostic_HG"),
+                FragmentRecord(924.5808, "[M+H]+", "Common"),
+            ],
+        )
+        rco_without_hg = ExperimentalSpectrum(
+            scan_id="scan_am_ps_rco_without_hg",
+            precursor_mz=924.5808,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(239.2369, 800.0), (265.2526, 1000.0)]),
+        )
+        hg_without_rco = ExperimentalSpectrum(
+            scan_id="scan_am_ps_hg_without_rco",
+            precursor_mz=924.5808,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(577.5191, 1000.0)]),
+        )
+        complete = ExperimentalSpectrum(
+            scan_id="scan_am_ps_complete",
+            precursor_mz=924.5808,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([
+                (239.2369, 800.0),
+                (265.2526, 900.0),
+                (577.5191, 1000.0),
+            ]),
+        )
+
+        missing_hg = score_candidate(rco_without_hg, record, DEFAULT_RULES.get("Am-PS"))
+        species = score_candidate(hg_without_rco, record, DEFAULT_RULES.get("Am-PS"))
+        chain = score_candidate(complete, record, DEFAULT_RULES.get("Am-PS"))
+
+        self.assertFalse(missing_hg.passed_required_gates)
+        self.assertIn("hg", missing_hg.missing_required_groups)
+        self.assertTrue(species.passed_required_gates)
+        self.assertEqual(species.resolution_level, "species_level")
+        self.assertTrue(chain.passed_required_gates)
+        self.assertEqual(chain.resolution_level, "chain_level")
 
     def test_negative_lps_accepts_either_headgroup_marker_but_requires_rcoo(self) -> None:
         record = LibraryRecord(
@@ -2066,6 +2476,53 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result.missing_required_groups, [])
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.pool_scores["hg"].matched_count, 1)
+
+    def test_positive_tg_top_half_quality_uses_distinct_chain_peaks(self) -> None:
+        repeated_record = LibraryRecord(
+            record_id=9010,
+            compound_class="TG",
+            lipid_name="TG(44:4)",
+            lipid_chain_name="TG(18:2_18:2_8:0)",
+            precursor_mz=760.6451,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(463.3774, "[M-NH3-(ROOH)+NH4]+(18:2)", "Diagnostic_FA_Loss"),
+                FragmentRecord(599.5061, "[M-NH3-(ROOH)+NH4]+(8:0)", "Diagnostic_FA_Loss"),
+            ],
+        )
+        distinct_record = LibraryRecord(
+            record_id=9011,
+            compound_class="TG",
+            lipid_name="TG(44:4)",
+            lipid_chain_name="TG(10:1_16:1_18:2)",
+            precursor_mz=760.6451,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(463.3774, "[M-NH3-(ROOH)+NH4]+(18:2)", "Diagnostic_FA_Loss"),
+                FragmentRecord(489.3953, "[M-NH3-(ROOH)+NH4]+(16:1)", "Diagnostic_FA_Loss"),
+                FragmentRecord(573.4871, "[M-NH3-(ROOH)+NH4]+(10:1)", "Diagnostic_FA_Loss"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            "tg_top_half",
+            760.6451,
+            13.393,
+            "+",
+            normalize_peaks([
+                (463.3774, 1000.0),
+                (599.5061, 100.0),
+                (489.3953, 500.0),
+                (573.4871, 50.0),
+            ]),
+        )
+
+        repeated = score_candidate(spectrum, repeated_record, DEFAULT_RULES.get("TG"))
+        distinct = score_candidate(spectrum, distinct_record, DEFAULT_RULES.get("TG"))
+
+        self.assertTrue(repeated.passed_required_gates)
+        self.assertTrue(distinct.passed_required_gates)
+        self.assertLess(repeated.total_score, distinct.total_score)
+        self.assertLess(distinct.total_score, 100.0)
 
     def test_naglyser_hg_only_class_can_pass_with_headgroup_match(self) -> None:
         hg_only_record = LibraryRecord(

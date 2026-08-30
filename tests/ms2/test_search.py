@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 import unittest
 from unittest.mock import patch
 
 import pandas as pd
+import lipidgate.ms2.search as search_module
 
 from lipidgate.ms2.models import (
     CandidateScore,
@@ -69,6 +71,179 @@ def build_match(mz: float, fragment_type: str, rel: float, name: str | None = No
 class SearchSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
+
+    def test_shared_chain_peak_penalty_starts_after_original_top1_tier(self) -> None:
+        self.searcher.rules = DEFAULT_RULES
+        self.searcher.min_total_score = 0.0
+        shared_peak = ExperimentalPeak(mz=255.2329, intensity=1000.0, relative_intensity=1.0)
+        top1_unique_peak = ExperimentalPeak(mz=281.2486, intensity=800.0, relative_intensity=0.8)
+        top1_hg_peak = ExperimentalPeak(mz=184.0733, intensity=700.0, relative_intensity=0.7)
+        top2_unique_peak = ExperimentalPeak(mz=227.2016, intensity=300.0, relative_intensity=0.3)
+        top2_hg_peak = ExperimentalPeak(mz=140.0118, intensity=600.0, relative_intensity=0.6)
+        top3_unique_peak = ExperimentalPeak(mz=253.2173, intensity=250.0, relative_intensity=0.25)
+        top3_hg_peak = ExperimentalPeak(mz=171.0064, intensity=550.0, relative_intensity=0.55)
+
+        def candidate(
+            record_id: int,
+            compound_class: str,
+            name: str,
+            unique_mz: float,
+            unique_peak: ExperimentalPeak,
+            hg_mz: float,
+            hg_peak: ExperimentalPeak,
+            raw_score: float,
+        ) -> CandidateScore:
+            shared_fragment = FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA")
+            unique_chain = re.findall(r"\d+:\d+", name)[-1]
+            unique_fragment = FragmentRecord(unique_mz, f"[RCOO]-({unique_chain})", "Diagnostic_FA")
+            hg_fragment = FragmentRecord(hg_mz, "headgroup", "Diagnostic_HG")
+            fragments = [shared_fragment, unique_fragment, hg_fragment]
+            return CandidateScore(
+                record=LibraryRecord(
+                    record_id=record_id,
+                    compound_class=compound_class,
+                    lipid_name=name,
+                    lipid_chain_name=name,
+                    precursor_mz=760.0,
+                    adduct="[M-H]-",
+                    fragments=fragments,
+                ),
+                total_score=raw_score,
+                passed_required_gates=True,
+                missing_required_groups=[],
+                ppm_error=0.0,
+                resolution_level="chain_level",
+                matched_fragments=[
+                    FragmentMatch(shared_fragment, shared_peak, 0.0),
+                    FragmentMatch(unique_fragment, unique_peak, 0.0),
+                    FragmentMatch(hg_fragment, hg_peak, 0.0),
+                ],
+            )
+
+        top1 = candidate(1, "PC", "PC(16:0_18:1)", 281.2486, top1_unique_peak, 184.0733, top1_hg_peak, 100.0)
+        top2 = candidate(2, "PE", "PE(16:0_14:0)", 227.2016, top2_unique_peak, 140.0118, top2_hg_peak, 99.0)
+        top3 = candidate(3, "PG", "PG(16:0_16:1)", 253.2173, top3_unique_peak, 171.0064, top3_hg_peak, 98.0)
+        spectrum = ExperimentalSpectrum(
+            "shared_chain",
+            760.0,
+            5.0,
+            "-",
+            [
+                shared_peak,
+                top1_unique_peak,
+                top1_hg_peak,
+                top2_unique_peak,
+                top2_hg_peak,
+                top3_unique_peak,
+                top3_hg_peak,
+            ],
+        )
+
+        captured_overrides = []
+        original_calculate = search_module._calculate_pool_scores
+
+        def capture_calculation(*args, **kwargs):
+            captured_overrides.append(dict(kwargs.get("quality_relative_intensity_overrides") or {}))
+            return original_calculate(*args, **kwargs)
+
+        with patch.object(search_module, "_calculate_pool_scores", side_effect=capture_calculation):
+            ranked = self.searcher._rerank_with_shared_chain_peak_penalty(
+                spectrum,
+                [top1, top2, top3],
+            )
+
+        self.assertEqual([item.record.record_id for item in ranked], [1, 2, 3])
+        self.assertEqual(top1.total_score, 100.0)
+        self.assertLess(top2.total_score, 99.0)
+        self.assertAlmostEqual(captured_overrides[-1][id(top3.matched_fragments[0])], 0.25)
+
+    def test_shared_chain_peak_penalty_does_not_split_tied_top1(self) -> None:
+        self.searcher.rules = DEFAULT_RULES
+        self.searcher.min_total_score = 0.0
+        shared_peak = ExperimentalPeak(mz=255.2329, intensity=1000.0, relative_intensity=1.0)
+        hg_peak = ExperimentalPeak(mz=184.0733, intensity=700.0, relative_intensity=0.7)
+
+        def tied_candidate(record_id: int, name: str) -> CandidateScore:
+            shared_fragment = FragmentRecord(255.2329, f"shared-{record_id}", "Diagnostic_FA")
+            hg_fragment = FragmentRecord(184.0733, "headgroup", "Diagnostic_HG")
+            return CandidateScore(
+                record=LibraryRecord(
+                    record_id=record_id,
+                    compound_class="TG",
+                    lipid_name=name,
+                    lipid_chain_name=name,
+                    precursor_mz=760.0,
+                    adduct="[M+NH4]+",
+                    fragments=[shared_fragment, hg_fragment],
+                ),
+                total_score=100.0,
+                passed_required_gates=True,
+                missing_required_groups=[],
+                ppm_error=0.0,
+                resolution_level="chain_level",
+                matched_fragments=[
+                    FragmentMatch(shared_fragment, shared_peak, 0.0),
+                    FragmentMatch(hg_fragment, hg_peak, 0.0),
+                ],
+            )
+
+        first = tied_candidate(1, "TG(16:0_18:1_18:1)")
+        second = tied_candidate(2, "TG(16:0_16:0_20:2)")
+        spectrum = ExperimentalSpectrum(
+            "tied_top1",
+            760.0,
+            5.0,
+            "+",
+            [shared_peak, hg_peak],
+        )
+
+        with patch.object(
+            self.searcher,
+            "_rescore_with_shared_chain_peak_penalty",
+            wraps=self.searcher._rescore_with_shared_chain_peak_penalty,
+        ) as rescore:
+            ranked = self.searcher._rerank_with_shared_chain_peak_penalty(
+                spectrum,
+                [first, second],
+            )
+
+        self.assertEqual([item.record.record_id for item in ranked], [1, 2])
+        self.assertEqual([item.total_score for item in ranked], [100.0, 100.0])
+        rescore.assert_not_called()
+        self.assertTrue(self.searcher._results_share_rank(ranked[0], ranked[1]))
+
+    def test_only_top1_tie_is_split_by_adjusted_fragment_count(self) -> None:
+        candidates = [
+            build_candidate(
+                record_id,
+                f"TG(16:0_18:1_{18 + record_id}:1)",
+                100.0,
+                0.0,
+                0.0,
+                [
+                    build_match(255.2329 + offset, "Diagnostic_FA", 1.0)
+                    for offset in range(fragment_count)
+                ],
+                [],
+                compound_class="TG",
+                adduct="[M+NH4]+",
+            )
+            for record_id, fragment_count in ((1, 2), (2, 2), (3, 1), (4, 0))
+        ]
+
+        ranks = []
+        current_rank = 0
+        previous_result = None
+        for result in candidates:
+            current_rank = self.searcher._next_result_rank(
+                result,
+                current_rank,
+                previous_result,
+            )
+            ranks.append(current_rank)
+            previous_result = result
+
+        self.assertEqual(ranks, [1, 1, 2, 2])
 
     def test_candidate_charge_gate_rejects_double_charge_for_singly_charged_scan(self) -> None:
         spectrum = ExperimentalSpectrum(
@@ -411,7 +586,7 @@ class SearchSelectionTests(unittest.TestCase):
 
         self.assertTrue(self.searcher._qualifies_secondary_result(result))
 
-    def test_same_class_equal_scores_prefer_more_fragment_matches(self) -> None:
+    def test_same_class_equal_top_scores_prefer_more_fragment_matches(self) -> None:
         primary = build_candidate(
             422,
             "TG(16:0_18:1_20:2)",
@@ -1021,6 +1196,36 @@ class SearchSelectionTests(unittest.TestCase):
         }]))
 
         self.assertEqual(export.loc[0, "注释水平"], "链水平")
+
+    def test_export_marks_complete_three_chain_sphingolipids_as_chain_level(self) -> None:
+        export = prepare_ms2_result_export_df(pd.DataFrame([
+            {
+                "compound_class": "Cer-EOS",
+                "matched_name": "Cer-EOS(d14:1/12:1-O-18:1)",
+                "resolution_level": "species_level",
+            },
+            {
+                "compound_class": "AHexCer",
+                "matched_name": "AHexCer d18:1(O-16:0)/22:0(OH)",
+                "resolution_level": "species_level",
+            },
+            {
+                "compound_class": "ASM",
+                "matched_name": "ASM d18:1/16:0(O-18:1)",
+                "resolution_level": "species_level",
+            },
+        ]))
+
+        self.assertEqual(export["注释水平"].tolist(), ["链水平", "链水平", "链水平"])
+
+    def test_export_keeps_partial_asm_identity_at_species_level(self) -> None:
+        export = prepare_ms2_result_export_df(pd.DataFrame([{
+            "compound_class": "ASM",
+            "matched_name": "ASM 34:1;2O(O-18:1)",
+            "resolution_level": "species_level",
+        }]))
+
+        self.assertEqual(export.loc[0, "注释水平"], "分子种类水平")
 
     def test_searcher_filters_library_by_adduct_and_class(self) -> None:
         records = [

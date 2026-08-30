@@ -25,10 +25,15 @@ The current v1 workflow keeps MS1 / peak-truth results and MS2 identification re
   - Rule-based MSP search and scoring.
   - Important files:
     - `library.py`: MSP loading.
+    - `library_fragment_policy.py`: curated runtime fragment normalization.
     - `models.py`: spectra, library records, fragment matches, scoring data models.
-    - `rules.py`: class-level matching gates and score profile defaults.
-    - `scoring.py`: candidate gate checks, pool scoring, resolution logic, key-fragment intensity penalties.
-    - `search.py`: mzML searcher, candidate ranking, FA independent channel, export shaping.
+    - `chain_utils.py`: shared chain parsing and repeated-chain multiplicity.
+    - `gate_policy.py`: special class-level evidence gates.
+    - `rules.py`: data-driven matching requirements and score profile defaults.
+    - `resolution_policy.py`: chain/species reporting decisions.
+    - `scoring.py`: candidate gate orchestration and pool scoring.
+    - `ranking_policy.py`: Top1 tie handling and effective fragment counts.
+    - `search.py`: mzML orchestration, shared-peak iteration, FA channel, and export shaping.
     - `workflow.py`: GUI/CLI workflow wrapper returning structured result objects.
 
 - `src/lipidgate/ecn_filter/`
@@ -146,11 +151,17 @@ ECN interaction:
 
 Current MS2 invariants:
 
-- Equal final scores share the same result rank; a perfect-score tie is therefore
-  reported as multiple Top1 candidates rather than arbitrarily ordered ranks.
-- A fragment assigned to a chain token also supports every repeated occurrence of
-  that same chain in the library composition (for example, one 18:1 loss supports
-  TG(18:1_18:1_18:1) three times).
+- Only the highest-score tie is split by effective fragment count, independently
+  within each lipid subclass. Lower ties are not split by fragment count.
+- A repeated-chain fragment supports every repeated structural position for the
+  gate and Top1 fragment count, but one physical peak occupies only one TG
+  intensity slot.
+- Shared-chain-peak penalties begin after the complete original Top1 tier and
+  compound iteratively by 0.5 for each earlier-tier use.
+- Positive PS uses the 185 Da headgroup loss and post-185 ketene-loss chain ions;
+  the invalid positive-mode 87 Da loss is excluded.
+- TG-EST requires the physically distinct FA1/FA2 losses and the FAHFA loss; the
+  FA attached inside FAHFA is not an additional mandatory loss.
 - PE-O and PE-P negative-mode headgroup evidence is unified on 140/196; obsolete
   153 evidence is not part of the HG pool. HG requires at least one match and FAH
   follows the shared phospholipid gate rather than a subclass-only special gate.

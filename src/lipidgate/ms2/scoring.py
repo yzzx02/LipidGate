@@ -3,10 +3,30 @@ from __future__ import annotations
 import bisect
 import math
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
+from .chain_utils import (
+    chain_token_multiplicity as _chain_token_multiplicity,
+    extract_chain_tokens as _extract_chain_tokens,
+    extract_fragment_chain_token as _extract_fragment_chain_token,
+)
+from .gate_policy import (
+    is_positive_ps as _is_positive_ps_record,
+    is_positive_ps_chain_ketene_loss as _is_positive_ps_headgroup_ketene_loss,
+    is_positive_ps_headgroup_loss as _is_positive_ps_headgroup_loss,
+    is_positive_tg_est_full_loss_record as _is_positive_tg_est_full_loss_gate_record,
+    is_positive_tg_full_chain_record as _is_positive_tg_full_chain_gate_record,
+    positive_tg_est_full_loss_gate_passes as _positive_tg_est_full_loss_gate_passes,
+    positive_tg_full_chain_gate_passes as _positive_tg_full_chain_gate_passes,
+)
 from .models import CandidateScore, ExperimentalPeak, ExperimentalSpectrum, FragmentMatch, FragmentRecord, LibraryRecord, PoolScore
+from .resolution_policy import (
+    CHAIN_LEVEL_INFO_MISSING_REASON,
+    fragment_is_chain_evidence,
+    get_chain_evidence_profile,
+    profile_chain_resolution,
+)
 from .rules import ClassRule
 from .scoring_policy import (
     FAH_ONLY_FALLBACK_HG_DOMINANT_MIN_POOL_SCORE,
@@ -57,15 +77,12 @@ SPB_UNASSIGNED_DIAGNOSTIC_NAMES = {
     "SPB-Diagnostic-1",
     "SPB-Diagnostic-2",
 }
-CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
-POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI", "PS"}
+POSITIVE_FA_FRAG_AS_LOSS_CLASSES = {"PA", "PE", "PG", "PI"}
 POSITIVE_GLYCERIDE_RCO_GATE_CLASSES = {"TG", "DG", "TGO", "OXTG"}
-POSITIVE_TG_FULL_CHAIN_GATE_CLASSES = {"TG"}
 ETHER_GLYCERIDE_HALF_RCO_GATE_CLASSES = {"TGO"}
 POSITIVE_GLYCERIDE_RCO_MIN_HITS = 2
-FAH_ONLY_FALLBACK_BLOCKED_CLASSES = {"ASM"}
+FAH_ONLY_FALLBACK_BLOCKED_CLASSES = {"ASM", "AMPS"}
 CANDIDATE_HG_FRAGMENT_TYPE = "Candidate_HG"
-POSITIVE_PC_CHAIN_LOSS_STRICT_CLASSES = {"PC", "PCO", "PCP"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_CLASSES = {
     "PA",
     "PC",
@@ -134,12 +151,6 @@ PRECURSOR_FRAGMENT_REQUIRED_CLASSES = {"NAASP"}
 POSITIVE_HG_CHAIN_LEVEL_CLASSES = {
     "CL", "MLCL", "NAPE", "LNAPE",
 }
-FA_CHAIN_TOKEN_RE = re.compile(
-    r"(?P<prefix>[OP]-)?(?P<base>\d+:\d+)"
-    r"(?:(?:\((?P<paren_ox>\d*)O\))|(?:,O(?P<comma_ox>\d*))|(?:;\(?(?P<oh_count>\d+)OH\)?))?"
-)
-
-
 def _is_positive_adduct(adduct: str) -> bool:
     return str(adduct or "").strip().endswith("+")
 
@@ -180,13 +191,6 @@ def _uses_positive_support_pool_scoring(record: LibraryRecord) -> bool:
 def _is_positive_glyceride_rco_gate_record(record: LibraryRecord) -> bool:
     cls = _normalized_class_key(record.compound_class)
     return _is_positive_adduct(record.adduct) and cls in POSITIVE_GLYCERIDE_RCO_GATE_CLASSES
-
-
-def _is_positive_tg_full_chain_gate_record(record: LibraryRecord) -> bool:
-    return (
-        _is_positive_adduct(record.adduct)
-        and _normalized_class_key(record.compound_class) in POSITIVE_TG_FULL_CHAIN_GATE_CLASSES
-    )
 
 
 def _is_rco_fragment_name(fragment_name: str) -> bool:
@@ -272,6 +276,11 @@ def _fa_frag_counts_as_effective_loss(record: LibraryRecord) -> bool:
 
 
 def _fragment_counts_as_effective_loss(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if _is_positive_ps_record(record):
+        return (
+            fragment.fragment_type == "Diagnostic_FA_Loss"
+            and _is_positive_ps_headgroup_ketene_loss(fragment)
+        )
     if _is_positive_glyceride_rco_c3h6o2_fragment(record, fragment):
         return False
     return (
@@ -281,6 +290,11 @@ def _fragment_counts_as_effective_loss(record: LibraryRecord, fragment: Fragment
 
 
 def _fragment_counts_as_fa_loss_gate(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if _is_positive_ps_record(record):
+        return (
+            fragment.fragment_type == "Diagnostic_FA_Loss"
+            and _is_positive_ps_headgroup_ketene_loss(fragment)
+        )
     return (
         (
             fragment.fragment_type == "Diagnostic_FA_Loss"
@@ -291,13 +305,8 @@ def _fragment_counts_as_fa_loss_gate(record: LibraryRecord, fragment: FragmentRe
 
 
 def _fragment_counts_as_chain_resolving_loss(record: LibraryRecord, fragment: FragmentRecord) -> bool:
-    if _is_positive_adduct(record.adduct):
-        cls = _normalized_class_key(record.compound_class)
-        if cls in POSITIVE_PC_CHAIN_LOSS_STRICT_CLASSES:
-            return (
-                fragment.fragment_type == "Diagnostic_FA_Loss"
-                or (_fa_frag_counts_as_effective_loss(record) and fragment.fragment_type == "FA_Frag")
-            )
+    if get_chain_evidence_profile(record) is not None:
+        return fragment_is_chain_evidence(record, fragment)
     return _fragment_counts_as_effective_loss(record, fragment)
 
 
@@ -314,6 +323,8 @@ def _record_has_candidate_hg(record: LibraryRecord) -> bool:
 
 
 def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if _is_positive_ps_record(record):
+        return _is_positive_ps_headgroup_loss(fragment)
     if _is_positive_mg_record(record):
         return _is_class_specific_hg_fragment(record, fragment)
     if fragment.fragment_type == "Diagnostic_HG":
@@ -332,6 +343,15 @@ def _pool_for_fragment(record: LibraryRecord, fragment: FragmentRecord) -> str:
 
 
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
+    if _is_positive_ps_record(record):
+        if _is_positive_ps_headgroup_loss(fragment):
+            return "hg"
+        if (
+            fragment.fragment_type == "Diagnostic_FA_Loss"
+            and _is_positive_ps_headgroup_ketene_loss(fragment)
+        ):
+            return "fah"
+        return "other"
     if (
         _normalized_class_key(record.compound_class) in {"FA", "OXFA"}
         and fragment.fragment_type == "Precursor Ion"
@@ -367,35 +387,6 @@ def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, 
     if _fragment_counts_as_hg(record, fragment):
         return "hg"
     return "other"
-
-
-def _canonical_fa_chain_match(match: re.Match[str]) -> str:
-    prefix = match.group("prefix") or ""
-    token = f"{prefix}{match.group('base')}"
-    ox_count = match.group("paren_ox")
-    if ox_count is None:
-        ox_count = match.group("comma_ox")
-    if ox_count is not None:
-        return f"{token};O{ox_count or '1'}"
-    oh_count = match.group("oh_count")
-    if oh_count is not None:
-        return f"{token};{oh_count}OH"
-    return token
-
-
-def _extract_fragment_chain_token(fragment_name: str) -> str | None:
-    matched = FA_CHAIN_TOKEN_RE.search(fragment_name)
-    if not matched:
-        return None
-    return _canonical_fa_chain_match(matched)
-
-
-def _chain_token_multiplicity(record: LibraryRecord) -> Counter[str]:
-    return Counter(
-        token
-        for token in _extract_chain_tokens(record.lipid_chain_name)
-        if token and token != "0:0"
-    )
 
 
 def _chain_evidence_count_for_fragments(
@@ -532,37 +523,6 @@ def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence
         _positive_glyceride_rco_gate_available(record)
         and _matched_positive_glyceride_rco_fragment_count(record, matches) >= required_hits
     )
-
-
-def _is_positive_tg_ammonia_fatty_acid_loss(
-    record: LibraryRecord,
-    fragment: FragmentRecord,
-) -> bool:
-    if not _is_positive_tg_full_chain_gate_record(record):
-        return False
-    if fragment.fragment_type != "Diagnostic_FA_Loss":
-        return False
-    fragment_name = re.sub(r"\s+", "", str(fragment.name or "")).upper()
-    if "M-NH3-(ROOH)+NH4" not in fragment_name:
-        return False
-    return _extract_fragment_chain_token(fragment.name) is not None
-
-
-def _positive_tg_full_chain_gate_passes(
-    record: LibraryRecord,
-    matches: Sequence[FragmentMatch],
-) -> bool:
-    expected_chain_count = _count_positive_nonzero_chains(
-        _extract_chain_tokens(record.lipid_chain_name)
-    )
-    if expected_chain_count <= 0:
-        return False
-    matched_chain_count = _chain_evidence_count_for_matches(
-        record,
-        matches,
-        _is_positive_tg_ammonia_fatty_acid_loss,
-    )
-    return matched_chain_count >= expected_chain_count
 
 
 def _record_positive_signature_fragment_count(record: LibraryRecord) -> int:
@@ -756,6 +716,46 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
     return rule.score_profile.pool_weights
 
 
+def _positive_tg_top_half_chain_quality(
+    record: LibraryRecord,
+    matches: Sequence[FragmentMatch],
+    quality_relative_intensity_overrides: Dict[int, float] | None,
+    half_saturation: float,
+) -> float:
+    """Average the strongest half of TG positions using distinct chain peaks.
+
+    Repeated-chain multiplicity determines that a three-position TG uses two
+    chain signals, but one physical peak cannot occupy both intensity slots.
+    Multiplicity is handled separately by the Top1 fragment-count tie-break.
+    """
+
+    multiplicity = _chain_token_multiplicity(record)
+    if not multiplicity:
+        return 0.0
+    strongest_quality_by_chain: Dict[str, float] = {}
+    for match in matches:
+        token = _extract_fragment_chain_token(match.fragment.name)
+        if token is None or token not in multiplicity:
+            continue
+        quality = _saturation_fragment_quality(
+            _match_relative_intensity(
+                match,
+                quality_relative_intensity_overrides=quality_relative_intensity_overrides,
+            ),
+            half_saturation,
+        )
+        strongest_quality_by_chain[token] = max(
+            strongest_quality_by_chain.get(token, 0.0),
+            quality,
+        )
+    distinct_chain_qualities = sorted(strongest_quality_by_chain.values(), reverse=True)
+    required_chains = min(
+        max(1, math.ceil(sum(multiplicity.values()) / 2)),
+        len(multiplicity),
+    )
+    return sum(distinct_chain_qualities[:required_chains]) / required_chains
+
+
 def _calculate_pool_scores(
     matches: Sequence[FragmentMatch],
     record: LibraryRecord,
@@ -821,19 +821,27 @@ def _calculate_pool_scores(
                 if pool_name == primary_pool
                 else SECONDARY_POOL_SATURATION_HALF_INTENSITY
             )
-            pool_quality = max(
-                (
-                    _saturation_fragment_quality(
-                        _match_relative_intensity(
-                            match,
-                            quality_relative_intensity_overrides=quality_relative_intensity_overrides,
-                        ),
-                        half_saturation,
-                    )
-                    for match in pool_matches
-                ),
-                default=0.0,
-            )
+            if pool_name == "fah" and _is_positive_tg_full_chain_gate_record(record):
+                pool_quality = _positive_tg_top_half_chain_quality(
+                    record,
+                    pool_matches,
+                    quality_relative_intensity_overrides,
+                    half_saturation,
+                )
+            else:
+                pool_quality = max(
+                    (
+                        _saturation_fragment_quality(
+                            _match_relative_intensity(
+                                match,
+                                quality_relative_intensity_overrides=quality_relative_intensity_overrides,
+                            ),
+                            half_saturation,
+                        )
+                        for match in pool_matches
+                    ),
+                    default=0.0,
+                )
         intensity_ratio = pool_quality
         if total_count and original_active_weight_sum > 0.0:
             dynamic_pool_weight = (
@@ -1034,6 +1042,11 @@ def _missing_required_groups(
         if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
             missing.append("precursor")
 
+        if _is_positive_tg_est_full_loss_gate_record(record):
+            if not _positive_tg_est_full_loss_gate_passes(record, matches):
+                missing.append("tg_est_all_losses")
+            return missing
+
         if _is_positive_tg_full_chain_gate_record(record):
             if not _positive_tg_full_chain_gate_passes(record, matches):
                 missing.append("tg_all_chains")
@@ -1098,15 +1111,6 @@ def _missing_required_groups(
         if matched_loss_count < 1:
             missing.append("loss")
     return missing
-
-
-def _extract_chain_tokens(lipid_chain_name: str) -> List[str]:
-    if "(" in lipid_chain_name and ")" in lipid_chain_name:
-        inner = lipid_chain_name.split("(", 1)[1].rsplit(")", 1)[0]
-        if "/" in inner or "_" in inner:
-            tokens = re.split(r"[/_]", inner)
-            return [token for token in tokens if token]
-    return re.findall(r"(?:O-|P-)?\d+:\d+", lipid_chain_name)
 
 
 def _count_fah_expected_chains(chain_tokens: Sequence[str]) -> int:
@@ -1227,6 +1231,9 @@ def _determine_resolution(
     chain_tokens = _extract_chain_tokens(record.lipid_chain_name)
     if not chain_tokens:
         return "species_level", "missing_chain_annotation"
+    configured_resolution = profile_chain_resolution(record, matches)
+    if configured_resolution is not None and configured_resolution[0] == "chain_level":
+        return configured_resolution
     if is_positive_mode:
         matched_hg_count = _matched_hg_fragment_count(record, matches)
         matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
@@ -1257,6 +1264,8 @@ def _determine_resolution(
                 return "chain_level", ""
         if matched_hg_count >= 1:
             has_library_loss = any(_fragment_counts_as_effective_loss(record, fragment) for fragment in record.fragments)
+            if configured_resolution is not None:
+                return configured_resolution
             if record.compound_class in POSITIVE_HG_CHAIN_LEVEL_CLASSES:
                 return "chain_level", ""
             if not expected_fah_tokens and not has_library_loss:
