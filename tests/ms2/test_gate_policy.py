@@ -1,8 +1,10 @@
 from lipidgate.ms2.gate_policy import (
+    glyceride_substituent_group_multiplicity,
     is_positive_ps_chain_ketene_loss,
     is_positive_ps_headgroup_loss,
     positive_tg_est_full_loss_gate_passes,
     positive_tg_full_chain_gate_passes,
+    positive_tg_o_full_loss_gate_passes,
 )
 from lipidgate.ms2.models import (
     ExperimentalPeak,
@@ -69,6 +71,38 @@ def test_tg_est_gate_requires_unique_fa_losses_and_fahfa_only() -> None:
         [matched(fa), matched(fahfa)],
     )
     assert not positive_tg_est_full_loss_gate_passes(record, [matched(fa)])
+
+
+def test_tg_o_duplicate_acyl_uses_two_physical_losses_for_three_positions() -> None:
+    ether = FragmentRecord(
+        500.0,
+        "[M-R1-OH+H]+(O-16:0)",
+        "Diagnostic_FA_Loss",
+    )
+    repeated_acyl = FragmentRecord(
+        600.0,
+        "[M-NH3-(ROOH)+NH4]+(18:1)",
+        "Diagnostic_FA_Loss",
+    )
+    record = LibraryRecord(
+        3,
+        "TG-O",
+        "TG-O 52:2",
+        "TG-O(O-16:0_18:1_18:1)",
+        860.0,
+        "[M+NH4]+",
+        fragments=[ether, repeated_acyl],
+    )
+
+    assert glyceride_substituent_group_multiplicity(record) == {
+        "ether:O-16:0": 1,
+        "acyl:18:1": 2,
+    }
+    assert positive_tg_o_full_loss_gate_passes(
+        record,
+        [matched(ether), matched(repeated_acyl)],
+    )
+    assert not positive_tg_o_full_loss_gate_passes(record, [matched(repeated_acyl)])
 
 
 def test_positive_ps_gate_and_chain_evidence_are_distinct() -> None:

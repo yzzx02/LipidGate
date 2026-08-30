@@ -120,6 +120,48 @@ def _parse_tg_est_chains(name: str) -> tuple[str, str, str, str] | None:
     )
 
 
+def normalize_tg_o_fragments(
+    compound_class: str,
+    lipid_chain_name: str,
+    adduct: str,
+    fragments: Iterable[FragmentRecord],
+) -> list[FragmentRecord]:
+    """Assign TG-O ether/acyl losses to its three-substituent evidence pool."""
+
+    source = list(fragments)
+    if str(compound_class or "").strip().upper().replace("-", "") != "TGO":
+        return source
+    if str(adduct or "").strip() not in {"[M+NH4]+", "[M+H]+"}:
+        return source
+    matched = re.fullmatch(
+        r"TG-O\((?P<ether>O-\d+:\d+)_(?P<fa1>\d+:\d+)_(?P<fa2>\d+:\d+)\)",
+        str(lipid_chain_name or "").strip(),
+        flags=re.IGNORECASE,
+    )
+    if matched is None:
+        return source
+
+    ether_token = matched.group("ether")
+    curated: list[FragmentRecord] = []
+    for fragment in source:
+        compact_name = re.sub(r"\s+", "", str(fragment.name or "")).upper()
+        if compact_name == "[M-R1-OH+H]+":
+            curated.append(
+                fragment_with_role(
+                    replace(fragment, name=f"[M-R1-OH+H]+({ether_token})"),
+                    "Diagnostic_FA_Loss",
+                )
+            )
+        elif (
+            fragment.fragment_type == "Diagnostic_FA_Loss"
+            and "M-NH3-(ROOH)+NH4" in compact_name
+        ):
+            curated.append(fragment_with_role(fragment, "Diagnostic_FA_Loss"))
+        else:
+            curated.append(fragment)
+    return sorted(curated, key=lambda fragment: fragment.mz)
+
+
 def normalize_tg_est_fragments(
     compound_class: str,
     lipid_chain_name: str,

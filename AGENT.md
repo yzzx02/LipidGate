@@ -162,6 +162,9 @@ Current MS2 invariants:
   the invalid positive-mode 87 Da loss is excluded.
 - TG-EST requires the physically distinct FA1/FA2 losses and the FAHFA loss; the
   FA attached inside FAHFA is not an additional mandatory loss.
+- TG-O requires its ether-chain loss plus the physically distinct losses of
+  both acyl positions. TG-O and TG-EST use the same strongest-two-substituent
+  intensity aggregation as TG.
 - PE-O and PE-P negative-mode headgroup evidence is unified on 140/196; obsolete
   153 evidence is not part of the HG pool. HG requires at least one match and FAH
   follows the shared phospholipid gate rather than a subclass-only special gate.

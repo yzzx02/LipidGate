@@ -30,6 +30,16 @@ bypass a required gate.
 - Repeated-chain multiplicity is retained only for gate coverage and the
   effective-fragment-count Top1 tie-break.
 
+### TG-O
+
+- TG-O is treated as three glycerol substituents: one ether chain and two acyl
+  chains.
+- The gate requires the ether-chain loss plus every physically distinct acyl
+  loss. When the two acyl chains are identical, their one shared physical loss
+  represents both positions.
+- Its FAH intensity score uses the strongest two distinct substituent-loss
+  groups, exactly like TG.
+
 ### TG-EST
 
 - The glycerol backbone has two ordinary FA substituents and one FAHFA
@@ -40,6 +50,9 @@ bypass a required gate.
   both positions; a third duplicate peak is not required.
 - Loss of the FA attached inside FAHFA is supporting evidence and is not a
   mandatory gate.
+- Its FAH intensity score uses the strongest two distinct groups among FA1,
+  FA2 and FAHFA. FAHFA remains its own group even when its HFA composition
+  equals FA1 or FA2.
 
 ## Locked PS positive-mode rules
 

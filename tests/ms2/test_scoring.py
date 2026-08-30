@@ -2524,6 +2524,69 @@ class ScoringTests(unittest.TestCase):
         self.assertLess(repeated.total_score, distinct.total_score)
         self.assertLess(distinct.total_score, 100.0)
 
+    def test_tg_o_and_tg_est_scores_use_the_strongest_two_substituent_groups(self) -> None:
+        cases = [
+            (
+                "TG-O",
+                "TG-O(O-16:0_18:1_18:2)",
+                [
+                    FragmentRecord(500.0, "[M-R1-OH+H]+(O-16:0)", "Diagnostic_FA_Loss"),
+                    FragmentRecord(600.0, "[M-NH3-(ROOH)+NH4]+(18:1)", "Diagnostic_FA_Loss"),
+                    FragmentRecord(700.0, "[M-NH3-(ROOH)+NH4]+(18:2)", "Diagnostic_FA_Loss"),
+                ],
+            ),
+            (
+                "TG-EST",
+                "TG-EST 16:0_18:1_14:0;O(FA 20:1)",
+                [
+                    FragmentRecord(500.0, "[M+H-FAHFA]+(14:0;O/FA 20:1)", "Diagnostic_FA_Loss"),
+                    FragmentRecord(600.0, "[M+H-FA]+(16:0)", "Diagnostic_FA_Loss"),
+                    FragmentRecord(700.0, "[M+H-FA]+(18:1)", "Diagnostic_FA_Loss"),
+                ],
+            ),
+        ]
+
+        for compound_class, chain_name, fragments in cases:
+            with self.subTest(compound_class=compound_class):
+                record = LibraryRecord(
+                    record_id=9012,
+                    compound_class=compound_class,
+                    lipid_name=chain_name,
+                    lipid_chain_name=chain_name,
+                    precursor_mz=1000.0,
+                    adduct="[M+NH4]+",
+                    fragments=fragments,
+                )
+                weak_third = ExperimentalSpectrum(
+                    f"{compound_class}_weak_third",
+                    1000.0,
+                    5.0,
+                    "+",
+                    normalize_peaks([(500.0, 1000.0), (600.0, 500.0), (700.0, 50.0)]),
+                )
+                stronger_but_still_third = ExperimentalSpectrum(
+                    f"{compound_class}_stronger_third",
+                    1000.0,
+                    5.0,
+                    "+",
+                    normalize_peaks([(500.0, 1000.0), (600.0, 500.0), (700.0, 250.0)]),
+                )
+
+                weak_result = score_candidate(
+                    weak_third,
+                    record,
+                    DEFAULT_RULES.get(compound_class),
+                )
+                stronger_result = score_candidate(
+                    stronger_but_still_third,
+                    record,
+                    DEFAULT_RULES.get(compound_class),
+                )
+
+                self.assertTrue(weak_result.passed_required_gates)
+                self.assertTrue(stronger_result.passed_required_gates)
+                self.assertEqual(weak_result.total_score, stronger_result.total_score)
+
     def test_naglyser_hg_only_class_can_pass_with_headgroup_match(self) -> None:
         hg_only_record = LibraryRecord(
             record_id=42,
@@ -3746,7 +3809,7 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(complete.passed_required_gates)
         self.assertEqual(complete.resolution_level, "chain_level")
 
-    def test_positive_tg_o_one_of_two_available_rco_resolves_chain(self) -> None:
+    def test_positive_tg_o_requires_ether_and_both_acyl_loss_groups(self) -> None:
         record = LibraryRecord(
             record_id=108,
             compound_class="TG-O",
@@ -3756,24 +3819,70 @@ class ScoringTests(unittest.TestCase):
             adduct="[M+NH4]+",
             polarity="+",
             fragments=[
+                FragmentRecord(
+                    577.5195,
+                    "[M-R1-OH+H]+(O-16:0)",
+                    "Diagnostic_FA_Loss",
+                ),
+                FragmentRecord(
+                    603.5352,
+                    "[M-NH3-(ROOH)+NH4]+(18:1)",
+                    "Diagnostic_FA_Loss",
+                ),
+                FragmentRecord(
+                    601.5195,
+                    "[M-NH3-(ROOH)+NH4]+(18:2)",
+                    "Diagnostic_FA_Loss",
+                ),
                 FragmentRecord(265.2526, "(R=O)+(18:1)", "FA_Frag"),
                 FragmentRecord(263.2369, "(R=O)+(18:2)", "FA_Frag"),
                 FragmentRecord(860.0, "[M+NH4]+", "Precursor Ion"),
             ],
         )
-        spectrum = ExperimentalSpectrum(
-            scan_id="scan_tg_o_half_rco",
+        incomplete_spectrum = ExperimentalSpectrum(
+            scan_id="scan_tg_o_missing_acyl_loss",
             precursor_mz=860.0,
             rt_minutes=5.0,
             polarity="+",
-            peaks=normalize_peaks([(265.2526, 1000.0)]),
+            peaks=normalize_peaks(
+                [
+                    (577.5195, 1000.0),
+                    (603.5352, 800.0),
+                    (265.2526, 600.0),
+                    (263.2369, 500.0),
+                ]
+            ),
+        )
+        complete_spectrum = ExperimentalSpectrum(
+            scan_id="scan_tg_o_all_losses",
+            precursor_mz=860.0,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks(
+                [
+                    (577.5195, 1000.0),
+                    (603.5352, 800.0),
+                    (601.5195, 300.0),
+                ]
+            ),
         )
 
-        result = score_candidate(record=record, spectrum=spectrum, rule=DEFAULT_RULES.get("TG-O"))
+        incomplete = score_candidate(
+            record=record,
+            spectrum=incomplete_spectrum,
+            rule=DEFAULT_RULES.get("TG-O"),
+        )
+        complete = score_candidate(
+            record=record,
+            spectrum=complete_spectrum,
+            rule=DEFAULT_RULES.get("TG-O"),
+        )
 
-        self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.missing_required_groups, [])
-        self.assertEqual(result.resolution_level, "chain_level")
+        self.assertFalse(incomplete.passed_required_gates)
+        self.assertIn("tg_o_all_losses", incomplete.missing_required_groups)
+        self.assertTrue(complete.passed_required_gates)
+        self.assertEqual(complete.missing_required_groups, [])
+        self.assertEqual(complete.resolution_level, "chain_level")
 
     def test_nat_uses_default_half_taurine_headgroup_gate(self) -> None:
         record = LibraryRecord(

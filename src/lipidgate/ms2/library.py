@@ -24,6 +24,7 @@ from .library_fragment_policy import (
     fragment_with_role as _fragment_with_role,
     normalize_special_aminophospholipid_fragments as _normalize_special_aminophospholipid_fragments,
     normalize_tg_est_fragments as _normalize_tg_est_fragments,
+    normalize_tg_o_fragments as _normalize_tg_o_fragments,
     synthetic_fragment as _synthetic_fragment,
 )
 from .models import FragmentRecord, LibraryRecord
@@ -33,7 +34,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 29
+LIBRARY_CACHE_VERSION = 30
 
 CANONICAL_ACETATE_ADDUCT = "[M+CH3COO]-"
 ACETATE_ADDUCT_ALIASES = frozenset(
@@ -840,6 +841,12 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 str(adduct),
                 fragments,
             )
+            fragments = _normalize_tg_o_fragments(
+                str(main_class),
+                str(lipid_chain_name),
+                str(adduct),
+                fragments,
+            )
             fragments = _normalize_tg_est_fragments(
                 str(main_class),
                 str(lipid_chain_name),
@@ -1032,6 +1039,12 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
             compound_class,
             lipid_chain_name,
             float(current["precursormz"]),
+            adduct,
+            normalized_fragments,
+        )
+        normalized_fragments = _normalize_tg_o_fragments(
+            compound_class,
+            lipid_chain_name,
             adduct,
             normalized_fragments,
         )

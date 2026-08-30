@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from .chain_utils import chain_token_multiplicity, extract_fragment_chain_token
+from .gate_policy import (
+    glyceride_substituent_evidence_group,
+    glyceride_substituent_group_multiplicity,
+)
 from .models import CandidateScore
 
 
@@ -10,8 +14,16 @@ def multiplicity_adjusted_fragment_count(result: CandidateScore) -> int:
     """Count matched fragments while honoring repeated structural chains."""
 
     multiplicity = chain_token_multiplicity(result.record)
+    substituent_multiplicity = glyceride_substituent_group_multiplicity(result.record)
     effective_count = 0
     for match in result.matched_fragments:
+        substituent_group = glyceride_substituent_evidence_group(
+            result.record,
+            match.fragment,
+        )
+        if substituent_group is not None:
+            effective_count += substituent_multiplicity.get(substituent_group, 1)
+            continue
         token = extract_fragment_chain_token(match.fragment)
         effective_count += multiplicity.get(token, 1) if token is not None else 1
     return effective_count

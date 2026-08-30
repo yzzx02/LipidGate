@@ -12,13 +12,18 @@ from .chain_utils import (
     extract_fragment_chain_token as _extract_fragment_chain_token,
 )
 from .gate_policy import (
+    expected_glyceride_substituent_groups,
+    glyceride_substituent_evidence_group,
     is_positive_ps as _is_positive_ps_record,
     is_positive_ps_chain_ketene_loss as _is_positive_ps_headgroup_ketene_loss,
     is_positive_ps_headgroup_loss as _is_positive_ps_headgroup_loss,
     is_positive_tg_est_full_loss_record as _is_positive_tg_est_full_loss_gate_record,
     is_positive_tg_full_chain_record as _is_positive_tg_full_chain_gate_record,
+    is_positive_tg_o_full_loss_record as _is_positive_tg_o_full_loss_gate_record,
+    is_positive_three_substituent_glyceride,
     positive_tg_est_full_loss_gate_passes as _positive_tg_est_full_loss_gate_passes,
     positive_tg_full_chain_gate_passes as _positive_tg_full_chain_gate_passes,
+    positive_tg_o_full_loss_gate_passes as _positive_tg_o_full_loss_gate_passes,
 )
 from .models import CandidateScore, ExperimentalPeak, ExperimentalSpectrum, FragmentMatch, FragmentRecord, LibraryRecord, PoolScore
 from .resolution_policy import (
@@ -716,26 +721,26 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
     return rule.score_profile.pool_weights
 
 
-def _positive_tg_top_half_chain_quality(
+def _positive_three_substituent_top_half_quality(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
     quality_relative_intensity_overrides: Dict[int, float] | None,
     half_saturation: float,
 ) -> float:
-    """Average the strongest half of TG positions using distinct chain peaks.
+    """Average the strongest half of three substituents using distinct peaks.
 
-    Repeated-chain multiplicity determines that a three-position TG uses two
-    chain signals, but one physical peak cannot occupy both intensity slots.
-    Multiplicity is handled separately by the Top1 fragment-count tie-break.
+    TG, TG-O and TG-EST each use two evidence groups. Repeated substituents can
+    share one physical diagnostic loss, while ether and FAHFA groups remain
+    distinct even when their chain compositions equal an ordinary FA chain.
     """
 
-    multiplicity = _chain_token_multiplicity(record)
-    if not multiplicity:
+    expected_groups = expected_glyceride_substituent_groups(record)
+    if not expected_groups:
         return 0.0
-    strongest_quality_by_chain: Dict[str, float] = {}
+    strongest_quality_by_group: Dict[str, float] = {}
     for match in matches:
-        token = _extract_fragment_chain_token(match.fragment.name)
-        if token is None or token not in multiplicity:
+        group = glyceride_substituent_evidence_group(record, match.fragment)
+        if group is None or group not in expected_groups:
             continue
         quality = _saturation_fragment_quality(
             _match_relative_intensity(
@@ -744,16 +749,13 @@ def _positive_tg_top_half_chain_quality(
             ),
             half_saturation,
         )
-        strongest_quality_by_chain[token] = max(
-            strongest_quality_by_chain.get(token, 0.0),
+        strongest_quality_by_group[group] = max(
+            strongest_quality_by_group.get(group, 0.0),
             quality,
         )
-    distinct_chain_qualities = sorted(strongest_quality_by_chain.values(), reverse=True)
-    required_chains = min(
-        max(1, math.ceil(sum(multiplicity.values()) / 2)),
-        len(multiplicity),
-    )
-    return sum(distinct_chain_qualities[:required_chains]) / required_chains
+    distinct_group_qualities = sorted(strongest_quality_by_group.values(), reverse=True)
+    required_groups = min(2, len(expected_groups))
+    return sum(distinct_group_qualities[:required_groups]) / required_groups
 
 
 def _calculate_pool_scores(
@@ -821,8 +823,8 @@ def _calculate_pool_scores(
                 if pool_name == primary_pool
                 else SECONDARY_POOL_SATURATION_HALF_INTENSITY
             )
-            if pool_name == "fah" and _is_positive_tg_full_chain_gate_record(record):
-                pool_quality = _positive_tg_top_half_chain_quality(
+            if pool_name == "fah" and is_positive_three_substituent_glyceride(record):
+                pool_quality = _positive_three_substituent_top_half_quality(
                     record,
                     pool_matches,
                     quality_relative_intensity_overrides,
@@ -1045,6 +1047,11 @@ def _missing_required_groups(
         if _is_positive_tg_est_full_loss_gate_record(record):
             if not _positive_tg_est_full_loss_gate_passes(record, matches):
                 missing.append("tg_est_all_losses")
+            return missing
+
+        if _is_positive_tg_o_full_loss_gate_record(record):
+            if not _positive_tg_o_full_loss_gate_passes(record, matches):
+                missing.append("tg_o_all_losses")
             return missing
 
         if _is_positive_tg_full_chain_gate_record(record):

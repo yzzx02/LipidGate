@@ -164,6 +164,43 @@ class LibraryConversionTests(unittest.TestCase):
             },
         )
 
+    def test_positive_tg_o_promotes_ether_loss_into_three_substituent_pool(self) -> None:
+        with workspace_temp_dir() as tmp_dir:
+            msp_path = tmp_dir / "tg_o.msp"
+            msp_path.write_text(
+                "\n".join(
+                    [
+                        "Name: TG-O(O-16:0_18:1_18:2)",
+                        "PrecursorMZ: 860.0",
+                        "PrecursorType: [M+NH4]+",
+                        "CompoundClass: TG-O",
+                        "Comment: MS1_name=TG-O(52:3);polarity=+",
+                        "Num Peaks: 6",
+                        '263.2369 100.00 "(R=O)+(18:2)" "FA_Frag"',
+                        '265.2526 100.00 "(R=O)+(18:1)" "FA_Frag"',
+                        '577.5195 100.00 "[M-R1-OH+H]+" "Common"',
+                        '601.5195 100.00 "[M-NH3-(ROOH)+NH4]+(18:2)" "Diagnostic_FA_Loss"',
+                        '603.5352 100.00 "[M-NH3-(ROOH)+NH4]+(18:1)" "Diagnostic_FA_Loss"',
+                        '860.0000 100.00 "[M+NH4]+" "Precursor Ion"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = load_standard_msp(msp_path)[0]
+
+        by_name = {fragment.name: fragment.fragment_type for fragment in record.fragments}
+        self.assertEqual(
+            by_name["[M-R1-OH+H]+(O-16:0)"],
+            "Diagnostic_FA_Loss",
+        )
+        self.assertEqual(
+            by_name["[M-NH3-(ROOH)+NH4]+(18:1)"],
+            "Diagnostic_FA_Loss",
+        )
+        self.assertEqual(by_name["(R=O)+(18:1)"], "FA_Frag")
+
     def test_positive_ps_uses_185_loss_gate_and_post_185_ketene_chain_ions(self) -> None:
         with workspace_temp_dir() as tmp_dir:
             msp_path = tmp_dir / "positive_ps.msp"
