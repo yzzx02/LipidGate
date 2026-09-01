@@ -212,6 +212,108 @@ class SearchSelectionTests(unittest.TestCase):
         rescore.assert_not_called()
         self.assertTrue(self.searcher._results_share_rank(ranked[0], ranked[1]))
 
+    def test_shared_chain_peak_penalty_reorders_all_remaining_candidates(self) -> None:
+        self.searcher.rules = DEFAULT_RULES
+        self.searcher.min_total_score = 0.0
+        shared_peak = ExperimentalPeak(mz=255.2329, intensity=1000.0, relative_intensity=1.0)
+        unique_peak = ExperimentalPeak(mz=281.2486, intensity=800.0, relative_intensity=0.8)
+
+        def candidate(
+            record_id: int,
+            name: str,
+            score: float,
+            peak: ExperimentalPeak,
+        ) -> CandidateScore:
+            fragment = FragmentRecord(
+                peak.mz,
+                f"[RCOO]-({re.findall(r'\d+:\d+', name)[0]})",
+                "Diagnostic_FA",
+            )
+            return build_candidate(
+                record_id,
+                name,
+                score,
+                peak.intensity,
+                peak.relative_intensity,
+                [FragmentMatch(fragment, peak, 0.0)],
+                [fragment],
+                compound_class="TG",
+                adduct="[M+NH4]+",
+            )
+
+        top1 = candidate(1, "TG(16:0_18:1_18:2)", 100.0, shared_peak)
+        formerly_top2 = candidate(2, "TG(16:0_16:1_20:2)", 99.0, shared_peak)
+        formerly_top3 = candidate(3, "TG(18:1_18:2_18:2)", 98.0, unique_peak)
+        spectrum = ExperimentalSpectrum(
+            "iterative_rerank",
+            760.0,
+            5.0,
+            "+",
+            [shared_peak, unique_peak],
+        )
+
+        def rescore(_spectrum, result, _usage_counts):
+            if result.record.record_id == 2:
+                result.total_score = 70.0
+
+        with patch.object(
+            self.searcher,
+            "_rescore_with_shared_chain_peak_penalty",
+            side_effect=rescore,
+        ):
+            ranked = self.searcher._rerank_with_shared_chain_peak_penalty(
+                spectrum,
+                [top1, formerly_top2, formerly_top3],
+            )
+
+        self.assertEqual([item.record.record_id for item in ranked], [1, 3, 2])
+        self.assertEqual([item.total_score for item in ranked], [100.0, 98.0, 70.0])
+
+    def test_shared_chain_peak_penalty_retains_different_prior_peak_penalties(self) -> None:
+        self.searcher.rules = DEFAULT_RULES
+        first_peak = ExperimentalPeak(mz=255.2329, intensity=1000.0, relative_intensity=1.0)
+        second_peak = ExperimentalPeak(mz=281.2486, intensity=800.0, relative_intensity=0.8)
+        first_fragment = FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA")
+        second_fragment = FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA")
+        result = build_candidate(
+            4,
+            "PE(16:0_18:1)",
+            95.0,
+            1800.0,
+            1.8,
+            [
+                FragmentMatch(first_fragment, first_peak, 0.0),
+                FragmentMatch(second_fragment, second_peak, 0.0),
+            ],
+            [first_fragment, second_fragment],
+            compound_class="PE",
+            adduct="[M-H]-",
+        )
+        spectrum = ExperimentalSpectrum(
+            "different_shared_peaks",
+            760.0,
+            5.0,
+            "-",
+            [first_peak, second_peak],
+        )
+
+        captured_overrides = []
+        original_calculate = search_module._calculate_pool_scores
+
+        def capture_calculation(*args, **kwargs):
+            captured_overrides.append(dict(kwargs["quality_relative_intensity_overrides"]))
+            return original_calculate(*args, **kwargs)
+
+        with patch.object(search_module, "_calculate_pool_scores", side_effect=capture_calculation):
+            self.searcher._rescore_with_shared_chain_peak_penalty(
+                spectrum,
+                result,
+                [{id(first_peak)}, {id(second_peak)}],
+            )
+
+        self.assertAlmostEqual(captured_overrides[-1][id(result.matched_fragments[0])], 0.5)
+        self.assertAlmostEqual(captured_overrides[-1][id(result.matched_fragments[1])], 0.4)
+
     def test_only_top1_tie_is_split_by_adjusted_fragment_count(self) -> None:
         candidates = [
             build_candidate(

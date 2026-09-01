@@ -38,7 +38,7 @@ from .scoring import (
     _fragment_counts_as_effective_loss,
     _fragment_counts_as_fa_loss_gate,
     _matched_fah_tokens,
-    _precursor_dominance_quality_overrides,
+    _non_precursor_quality_overrides,
     _positive_glyceride_rco_gate_passes,
     _record_fa_loss_fragment_count,
     _record_expected_fah_tokens,
@@ -362,7 +362,16 @@ class LipidMS2Searcher:
         matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
         matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
         rules = getattr(self, "rules", DEFAULT_RULES)
-        pool_scores = _calculate_pool_scores(matches, record, rules.get(record.compound_class))
+        pool_scores = _calculate_pool_scores(
+            matches,
+            record,
+            rules.get(record.compound_class),
+            quality_relative_intensity_overrides=_non_precursor_quality_overrides(
+                spectrum,
+                record,
+                matches,
+            ),
+        )
         total_score = _total_score_from_pool_scores(pool_scores)
         standard_gate_passed = name_gate_passed and type_gate_passed
         if standard_gate_passed and class_key == "GM3" and adduct == "[M-H]-":
@@ -851,18 +860,9 @@ class LipidMS2Searcher:
         self,
         spectrum: ExperimentalSpectrum,
         result: CandidateScore,
-        chain_peak_usage_counts: Dict[int, int],
+        selected_chain_peak_groups: Sequence[set[int]],
     ) -> None:
-        shared_matches = [
-            match
-            for match in result.matched_fragments
-            if self._is_chain_evidence_match(result.record, match)
-            and chain_peak_usage_counts.get(id(match.experimental_peak), 0) > 0
-        ]
-        if not shared_matches:
-            return
-
-        base_overrides = _precursor_dominance_quality_overrides(
+        base_overrides = _non_precursor_quality_overrides(
             spectrum,
             result.record,
             result.matched_fragments,
@@ -873,15 +873,40 @@ class LipidMS2Searcher:
                 base_overrides.get(id(match), match.experimental_peak.relative_intensity)
             )
 
-        strongest_shared_match = max(shared_matches, key=effective_relative_intensity)
+        chain_matches = [
+            match
+            for match in result.matched_fragments
+            if self._is_chain_evidence_match(result.record, match)
+        ]
+        penalty_counts: Dict[int, int] = {}
+        matches_by_id: Dict[int, FragmentMatch] = {}
+        for selected_peak_ids in selected_chain_peak_groups:
+            shared_matches = [
+                match
+                for match in chain_matches
+                if id(match.experimental_peak) in selected_peak_ids
+            ]
+            if not shared_matches:
+                continue
+            # Each previously selected candidate penalizes only its strongest
+            # shared diagnostic peak.  Retaining the count per match makes the
+            # effect cumulative: the same peak shared with two selected
+            # candidates is quartered, while different shared peaks each keep
+            # their own half penalty instead of an earlier penalty vanishing.
+            strongest_shared_match = max(shared_matches, key=effective_relative_intensity)
+            match_id = id(strongest_shared_match)
+            matches_by_id[match_id] = strongest_shared_match
+            penalty_counts[match_id] = penalty_counts.get(match_id, 0) + 1
+        if not penalty_counts:
+            return
+
         adjusted_overrides = dict(base_overrides)
-        adjusted_overrides[id(strongest_shared_match)] = (
-            effective_relative_intensity(strongest_shared_match)
-            * (
-                self.SHARED_CHAIN_PEAK_INTENSITY_FACTOR
-                ** chain_peak_usage_counts[id(strongest_shared_match.experimental_peak)]
+        for match_id, usage_count in penalty_counts.items():
+            shared_match = matches_by_id[match_id]
+            adjusted_overrides[match_id] = (
+                effective_relative_intensity(shared_match)
+                * (self.SHARED_CHAIN_PEAK_INTENSITY_FACTOR ** usage_count)
             )
-        )
         pool_scores = _calculate_pool_scores(
             result.matched_fragments,
             result.record,
@@ -902,37 +927,65 @@ class LipidMS2Searcher:
         original_metrics = self._compute_rank_metrics(ordered)
         self._sort_by_rank_metrics(ordered, original_metrics)
 
-        rank_tiers = build_original_rank_tiers(
+        original_rank_tiers = build_original_rank_tiers(
             ordered,
             scores_tied=self._scores_tied,
             class_key=self._normal_class_key,
         )
 
-        selected: list[CandidateScore] = []
-        chain_peak_usage_counts: Dict[int, int] = {}
-        for tier_index, tier in enumerate(rank_tiers):
-            # The complete original Top1 tier is intentionally left untouched:
-            # before selecting a winner there is no justified prior candidate
-            # whose chain evidence should suppress another tied Top1 candidate.
-            if tier_index > 0 and chain_peak_usage_counts:
-                for result in tier:
+        # The complete original Top1 tier is intentionally left untouched:
+        # before selecting a winner there is no justified prior candidate
+        # whose chain evidence should suppress another tied Top1 candidate.
+        # Every later tier is selected from all remaining rescored candidates;
+        # otherwise a penalized lower score can incorrectly remain ahead of a
+        # higher final score from a later original tier.
+        selected = list(original_rank_tiers[0])
+        remaining = [
+            result
+            for tier in original_rank_tiers[1:]
+            for result in tier
+        ]
+        selected_chain_peak_groups: list[set[int]] = []
+        for result in selected:
+            peak_ids = self._chain_evidence_peak_ids(result)
+            if peak_ids:
+                selected_chain_peak_groups.append(peak_ids)
+
+        while remaining:
+            if selected_chain_peak_groups:
+                for result in remaining:
                     self._rescore_with_shared_chain_peak_penalty(
                         spectrum,
                         result,
-                        chain_peak_usage_counts,
+                        selected_chain_peak_groups,
                     )
-                tier_metrics = self._compute_rank_metrics(tier)
-                self._sort_by_rank_metrics(tier, tier_metrics)
+            remaining = [
+                result for result in remaining if self._passes_min_total_score(result)
+            ]
+            if not remaining:
+                break
 
-            retained_tier = [result for result in tier if self._passes_min_total_score(result)]
-            selected.extend(retained_tier)
+            remaining_metrics = self._compute_rank_metrics(remaining)
+            self._sort_by_rank_metrics(remaining, remaining_metrics)
+            next_score = remaining[0].total_score
+            next_tier = [
+                result
+                for result in remaining
+                if self._scores_tied(result.total_score, next_score)
+            ]
+            next_tier_ids = {id(result) for result in next_tier}
+            remaining = [
+                result for result in remaining if id(result) not in next_tier_ids
+            ]
+            selected.extend(next_tier)
 
-            # Candidates in the same original rank tier never penalize one
-            # another. Register the entire tier only after all its candidates
-            # have been rescored, so the next tier sees cumulative use.
-            for result in retained_tier:
-                for peak_id in self._chain_evidence_peak_ids(result):
-                    chain_peak_usage_counts[peak_id] = chain_peak_usage_counts.get(peak_id, 0) + 1
+            # Candidates tied in the newly selected tier do not penalize one
+            # another. Register their evidence only after the whole tier has
+            # been selected, so the next iteration sees cumulative use.
+            for result in next_tier:
+                peak_ids = self._chain_evidence_peak_ids(result)
+                if peak_ids:
+                    selected_chain_peak_groups.append(peak_ids)
         return selected
 
     @classmethod

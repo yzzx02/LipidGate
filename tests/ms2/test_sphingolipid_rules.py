@@ -682,6 +682,35 @@ class SphingolipidRuleTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertFalse(missing_chain.passed_required_gates)
 
+    def test_negative_sl_structural_score_excludes_precursor_cluster(self) -> None:
+        record = LibraryRecord(
+            record_id=1301,
+            compound_class="SL",
+            lipid_name="SL(30:1)",
+            lipid_chain_name="SL(14:0;O/16:1)",
+            precursor_mz=544.4041,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(544.4041, "[M-H]-", "Precursor Ion"),
+                FragmentRecord(79.9574, "[SO3]-", "Diagnostic_HG"),
+                FragmentRecord(308.1901, "SL chain fragment(14:0;O/16:1)", "Diagnostic_FA"),
+            ],
+        )
+
+        result = _score(
+            record,
+            [
+                (79.9574, 4.0),
+                (308.1901, 8.0),
+                (544.4041, 249.0),
+                (545.4075, 180.0),
+            ],
+        )
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertGreater(result.total_score, 90.0)
+        self.assertGreater(result.pool_scores["fah"].pool_score, 55.0)
+
     def test_negative_ahexcer_requires_fa_and_structural_evidence(self) -> None:
         record = LibraryRecord(
             record_id=14,

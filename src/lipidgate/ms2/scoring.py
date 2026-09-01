@@ -12,8 +12,8 @@ from .chain_utils import (
     extract_fragment_chain_token as _extract_fragment_chain_token,
 )
 from .gate_policy import (
-    expected_glyceride_substituent_groups,
     glyceride_substituent_evidence_group,
+    glyceride_substituent_group_multiplicity,
     is_positive_ps as _is_positive_ps_record,
     is_positive_ps_chain_ketene_loss as _is_positive_ps_headgroup_ketene_loss,
     is_positive_ps_headgroup_loss as _is_positive_ps_headgroup_loss,
@@ -47,9 +47,14 @@ POOL_NAMES = ("fah", "hg", "other")
 FRAGMENT_QUALITY_FULL_SCORE_RELATIVE_INTENSITY = 0.10
 PRIMARY_POOL_SATURATION_HALF_INTENSITY = 0.10
 SECONDARY_POOL_SATURATION_HALF_INTENSITY = 0.05
+IDENTICAL_THREE_CHAIN_SECOND_EVIDENCE_MULTIPLIER = 0.50
 POSITIVE_FAH_ONLY_FALLBACK_MIN_INTENSITY_QUALITY = 0.50
-PRECURSOR_DOMINANCE_EXCLUSION_DA = 2.0
-PRECURSOR_DOMINANCE_MIN_RATIO = 5.0
+# Exclude the selected precursor and its practical isotope envelope when
+# structural-fragment intensities are normalized.  A 4.1 Da window covers
+# M through M+4 for singly charged lipids and is necessarily sufficient for
+# the more closely spaced isotope peaks of multiply charged precursors.
+PRECURSOR_CLUSTER_EXCLUSION_DA = 4.1
+NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS = frozenset({"FA", "OXFA"})
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
@@ -721,6 +726,32 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
     return rule.score_profile.pool_weights
 
 
+def _effective_pool_weights(
+    pool_weights: Dict[str, float],
+    active_pools: Sequence[str],
+) -> Dict[str, float]:
+    """Align the dominant structural weight with the available evidence.
+
+    The score profiles describe a dominant structural pool (FAH or HG), a
+    secondary structural pool and ordinary support.  Some lipid classes only
+    have one structural pool in their library records.  In that case the sole
+    structural pool is the dominant pool; leaving it at the secondary 20-point
+    weight would incorrectly turn a structural/support score into 50/50.
+    """
+
+    effective = dict(pool_weights)
+    active_structural_pools = [
+        pool_name for pool_name in ("fah", "hg") if pool_name in active_pools
+    ]
+    if len(active_structural_pools) == 1:
+        dominant_structural_weight = max(
+            max(float(pool_weights.get("fah", 0.0)), 0.0),
+            max(float(pool_weights.get("hg", 0.0)), 0.0),
+        )
+        effective[active_structural_pools[0]] = dominant_structural_weight
+    return effective
+
+
 def _positive_three_substituent_top_half_quality(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -734,7 +765,8 @@ def _positive_three_substituent_top_half_quality(
     distinct even when their chain compositions equal an ordinary FA chain.
     """
 
-    expected_groups = expected_glyceride_substituent_groups(record)
+    substituent_multiplicity = glyceride_substituent_group_multiplicity(record)
+    expected_groups = frozenset(substituent_multiplicity)
     if not expected_groups:
         return 0.0
     strongest_quality_by_group: Dict[str, float] = {}
@@ -754,6 +786,17 @@ def _positive_three_substituent_top_half_quality(
             quality,
         )
     distinct_group_qualities = sorted(strongest_quality_by_group.values(), reverse=True)
+    if len(expected_groups) == 1 and sum(substituent_multiplicity.values()) == 3:
+        # One physical loss legitimately represents all three identical acyl
+        # substituents, so the gate must not demand duplicate peaks.  It also
+        # must not receive the same confidence as two independently observed
+        # chains: use one full-quality observation and one half-quality virtual
+        # replicate for the top-half (two-of-three) structural score.
+        strongest_quality = distinct_group_qualities[0] if distinct_group_qualities else 0.0
+        return (
+            strongest_quality
+            + strongest_quality * IDENTICAL_THREE_CHAIN_SECOND_EVIDENCE_MULTIPLIER
+        ) / 2.0
     required_groups = min(2, len(expected_groups))
     return sum(distinct_group_qualities[:required_groups]) / required_groups
 
@@ -782,8 +825,9 @@ def _calculate_pool_scores(
         for pool_name in POOL_NAMES
         if total_fragments_by_pool.get(pool_name)
     ]
+    effective_pool_weights = _effective_pool_weights(pool_weights, active_pools)
     original_active_weight_sum = sum(
-        max(float(pool_weights.get(pool_name, 0.0)), 0.0)
+        max(float(effective_pool_weights.get(pool_name, 0.0)), 0.0)
         for pool_name in active_pools
     )
     equal_active_weight = 100.0 / len(active_pools) if active_pools else 0.0
@@ -795,7 +839,7 @@ def _calculate_pool_scores(
     primary_pool = (
         max(
             structural_active_pools,
-            key=lambda pool_name: float(pool_weights.get(pool_name, 0.0)),
+            key=lambda pool_name: float(effective_pool_weights.get(pool_name, 0.0)),
         )
         if structural_active_pools
         else None
@@ -847,7 +891,7 @@ def _calculate_pool_scores(
         intensity_ratio = pool_quality
         if total_count and original_active_weight_sum > 0.0:
             dynamic_pool_weight = (
-                max(float(pool_weights.get(pool_name, 0.0)), 0.0)
+                max(float(effective_pool_weights.get(pool_name, 0.0)), 0.0)
                 / original_active_weight_sum
                 * 100.0
             )
@@ -889,49 +933,37 @@ def _saturation_fragment_quality(relative_intensity: float, half_saturation: flo
     )
 
 
-def _precursor_cluster_max_intensity(spectrum: ExperimentalSpectrum) -> float:
-    return max(
-        (
-            peak.intensity
-            for peak in spectrum.peaks
-            if abs(float(peak.mz) - float(spectrum.precursor_mz)) <= PRECURSOR_DOMINANCE_EXCLUSION_DA
-        ),
-        default=0.0,
-    )
-
-
 def _non_precursor_base_intensity(spectrum: ExperimentalSpectrum) -> float:
     return max(
         (
             peak.intensity
             for peak in spectrum.peaks
-            if abs(float(peak.mz) - float(spectrum.precursor_mz)) > PRECURSOR_DOMINANCE_EXCLUSION_DA
+            if abs(float(peak.mz) - float(spectrum.precursor_mz)) > PRECURSOR_CLUSTER_EXCLUSION_DA
         ),
         default=0.0,
     )
 
 
-def _precursor_dominance_quality_overrides(
+def _non_precursor_quality_overrides(
     spectrum: ExperimentalSpectrum,
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
 ) -> Dict[int, float]:
-    if not _is_positive_glyceride_rco_gate_record(record):
+    # Free fatty acids are intentionally precursor-driven.  Their precursor
+    # evidence must retain the spectrum-wide normalization used by the
+    # dedicated FA/OxFA scoring path.
+    if _normalized_class_key(record.compound_class) in NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS:
         return {}
 
-    precursor_cluster_intensity = _precursor_cluster_max_intensity(spectrum)
     non_precursor_base_intensity = _non_precursor_base_intensity(spectrum)
     if non_precursor_base_intensity <= 0.0:
-        return {}
-    if precursor_cluster_intensity < non_precursor_base_intensity * PRECURSOR_DOMINANCE_MIN_RATIO:
         return {}
 
     overrides: Dict[int, float] = {}
     for match in matches:
         if match.fragment.fragment_type == "Precursor Ion":
             continue
-        pool_name = _pool_for_scoring_fragment(record, match.fragment, matched=True)
-        if pool_name not in {"fah", "hg"}:
+        if abs(float(match.experimental_peak.mz) - float(spectrum.precursor_mz)) <= PRECURSOR_CLUSTER_EXCLUSION_DA:
             continue
         adjusted_relative_intensity = min(
             float(match.experimental_peak.intensity) / non_precursor_base_intensity,
@@ -1492,7 +1524,7 @@ def score_candidate(
         matches,
         record,
         rule,
-        quality_relative_intensity_overrides=_precursor_dominance_quality_overrides(
+        quality_relative_intensity_overrides=_non_precursor_quality_overrides(
             spectrum,
             record,
             matches,

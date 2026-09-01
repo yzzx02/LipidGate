@@ -15,6 +15,10 @@ def multiplicity_adjusted_fragment_count(result: CandidateScore) -> int:
 
     multiplicity = chain_token_multiplicity(result.record)
     substituent_multiplicity = glyceride_substituent_group_multiplicity(result.record)
+    if len(substituent_multiplicity) == 1 and sum(substituent_multiplicity.values()) == 3:
+        # A single physical peak may support three identical TG chains for the
+        # gate, but it remains one observed fragment in a Top1 tie-break.
+        return len(result.matched_fragments)
     effective_count = 0
     for match in result.matched_fragments:
         substituent_group = glyceride_substituent_evidence_group(

@@ -2,9 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
+from lipidgate.ms2.models import (
+    ExperimentalPeak,
+    ExperimentalSpectrum,
+    FragmentMatch,
+    FragmentRecord,
+    LibraryRecord,
+    normalize_peaks,
+)
 from lipidgate.ms2.rules import DEFAULT_RULES
-from lipidgate.ms2.scoring import _extract_chain_tokens, score_candidate
+from lipidgate.ms2.scoring import (
+    _extract_chain_tokens,
+    _non_precursor_quality_overrides,
+    score_candidate,
+)
 
 
 def build_record() -> LibraryRecord:
@@ -43,6 +54,58 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(
             _extract_chain_tokens("Cer-EOS d14:1/12:1(O-18:1)"),
             ["d14:1", "12:1", "O-18:1"],
+        )
+
+    def test_non_precursor_normalization_exempts_fa_and_oxfa(self) -> None:
+        spectrum = ExperimentalSpectrum(
+            scan_id="free_fatty_acid",
+            precursor_mz=281.2486,
+            rt_minutes=5.0,
+            polarity="-",
+            peaks=normalize_peaks([(97.0, 100.0), (281.2486, 1000.0)]),
+        )
+        fragment = FragmentRecord(97.0, "support", "Common")
+        match = FragmentMatch(fragment, spectrum.peaks[0], 0.0)
+
+        for compound_class in ("FA", "OxFA"):
+            with self.subTest(compound_class=compound_class):
+                record = LibraryRecord(
+                    record_id=90000,
+                    compound_class=compound_class,
+                    lipid_name=f"{compound_class}(18:1)",
+                    lipid_chain_name=f"{compound_class}(18:1)",
+                    precursor_mz=281.2486,
+                    adduct="[M-H]-",
+                    fragments=[fragment],
+                )
+                self.assertEqual(
+                    _non_precursor_quality_overrides(spectrum, record, [match]),
+                    {},
+                )
+
+    def test_precursor_only_record_has_no_non_precursor_normalization_override(self) -> None:
+        spectrum = ExperimentalSpectrum(
+            scan_id="precursor_only",
+            precursor_mz=500.0,
+            rt_minutes=5.0,
+            polarity="+",
+            peaks=normalize_peaks([(100.0, 20.0), (500.0, 1000.0)]),
+        )
+        fragment = FragmentRecord(500.0, "[M+H]+", "Precursor Ion")
+        match = FragmentMatch(fragment, spectrum.peaks[1], 0.0)
+        record = LibraryRecord(
+            record_id=90001,
+            compound_class="Test",
+            lipid_name="Test(1:0)",
+            lipid_chain_name="Test(1:0)",
+            precursor_mz=500.0,
+            adduct="[M+H]+",
+            fragments=[fragment],
+        )
+
+        self.assertEqual(
+            _non_precursor_quality_overrides(spectrum, record, [match]),
+            {},
         )
 
     def test_positive_tg_est_requires_fa1_fa2_and_fahfa_but_not_fa3(self) -> None:
@@ -2183,8 +2246,10 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(weak_result.passed_required_gates)
         self.assertTrue(strong_result.passed_required_gates)
-        self.assertGreater(weak_result.total_score, 50.0)
-        self.assertLess(weak_result.total_score, 60.0)
+        # With one structural and one supporting pool, the structural pool is
+        # dominant (75/25).  A very weak HG must not pass 50 merely because the
+        # precursor support ion matched.
+        self.assertLess(weak_result.total_score, 50.0)
         self.assertEqual(strong_result.total_score, 100.0)
 
     def test_representative_strong_pe_outranks_weak_lnape_on_same_spectrum(self) -> None:
@@ -2286,8 +2351,11 @@ class ScoringTests(unittest.TestCase):
 
         result = score_candidate(spectrum, record, DEFAULT_RULES.get("PC"))
 
-        self.assertAlmostEqual(result.pool_scores["hg"].pool_score, 33.0, places=4)
-        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 14.0, places=4)
+        # The precursor is ten times stronger than every fragment, so it is
+        # excluded as the structural-intensity denominator.  All three pools
+        # therefore receive full credit.
+        self.assertAlmostEqual(result.pool_scores["hg"].pool_score, 60.0, places=4)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 20.0, places=4)
         self.assertAlmostEqual(result.pool_scores["other"].pool_score, 20.0, places=4)
 
     def test_secondary_pool_uses_low_intensity_friendly_saturation_curve(self) -> None:
@@ -2523,6 +2591,38 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(distinct.passed_required_gates)
         self.assertLess(repeated.total_score, distinct.total_score)
         self.assertLess(distinct.total_score, 100.0)
+
+    def test_positive_tg_three_identical_chains_discount_virtual_second_observation(self) -> None:
+        record = LibraryRecord(
+            record_id=90101,
+            compound_class="TG",
+            lipid_name="TG(48:3)",
+            lipid_chain_name="TG(16:1_16:1_16:1)",
+            precursor_mz=818.7232,
+            adduct="[M+NH4]+",
+            fragments=[
+                FragmentRecord(
+                    547.4721,
+                    "[M-NH3-(ROOH)+NH4]+(16:1)",
+                    "Diagnostic_FA_Loss",
+                ),
+                FragmentRecord(818.7232, "[M+NH4]+", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            "tg_three_identical_chains",
+            818.7232,
+            13.5,
+            "+",
+            normalize_peaks([(547.4721, 1000.0), (818.7232, 500.0)]),
+        )
+
+        result = score_candidate(spectrum, record, DEFAULT_RULES.get("TG"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 56.25)
+        self.assertAlmostEqual(result.pool_scores["other"].pool_score, 25.0)
+        self.assertAlmostEqual(result.total_score, 81.25)
 
     def test_tg_o_and_tg_est_scores_use_the_strongest_two_substituent_groups(self) -> None:
         cases = [
@@ -3026,6 +3126,61 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
         self.assertEqual(result.downgrade_reason, "")
+
+        headgroup_only = ExperimentalSpectrum(
+            scan_id="scan_ce_headgroup_only",
+            precursor_mz=670.6497,
+            rt_minutes=15.31,
+            polarity="+",
+            peaks=normalize_peaks([(369.3516, 999.0)]),
+        )
+        headgroup_only_result = score_candidate(
+            headgroup_only,
+            ce_record,
+            DEFAULT_RULES.get("CE"),
+        )
+        self.assertAlmostEqual(headgroup_only_result.pool_scores["hg"].pool_score, 75.0)
+        self.assertAlmostEqual(headgroup_only_result.total_score, 75.0)
+
+    def test_negative_pi_structural_quality_excludes_precursor_isotope_cluster(self) -> None:
+        pi_record = LibraryRecord(
+            record_id=460,
+            compound_class="PI",
+            lipid_name="PI(34:1)",
+            lipid_chain_name="PI(16:0_18:1)",
+            precursor_mz=835.5342,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(223.0013, "[C6H8O7P]-", "Diagnostic_HG"),
+                FragmentRecord(241.0119, "[C6H10O8P]-", "Diagnostic_HG"),
+                FragmentRecord(255.2330, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA"),
+                FragmentRecord(835.5342, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+        spectrum = ExperimentalSpectrum(
+            scan_id="scan_pi_precursor_isotope_dominant",
+            precursor_mz=835.5342,
+            rt_minutes=8.529,
+            polarity="-",
+            peaks=normalize_peaks([
+                (223.0013, 400.0),
+                (241.0119, 600.0),
+                (255.2330, 1000.0),
+                (281.2486, 800.0),
+                (835.5342, 15000.0),
+                (836.5376, 18000.0),
+                (837.5409, 20000.0),
+                (838.5443, 16000.0),
+            ]),
+        )
+
+        result = score_candidate(spectrum, pi_record, DEFAULT_RULES.get("PI"))
+
+        self.assertTrue(result.passed_required_gates)
+        self.assertAlmostEqual(result.pool_scores["fah"].pool_score, 60.0)
+        self.assertGreater(result.pool_scores["hg"].pool_score, 19.0)
+        self.assertGreater(result.total_score, 99.0)
 
     def test_positive_record_without_library_loss_can_stay_chain_level(self) -> None:
         positive_record = LibraryRecord(
@@ -3574,7 +3729,7 @@ class ScoringTests(unittest.TestCase):
     def test_hg_only_negative_classes_can_pass_without_fa_fragments(self) -> None:
         cases = [
             ("SSulfate", "ST 27:0;O;S", 467.3201, [(96.9601, "[HSO4]-", "Diagnostic_HG")]),
-            ("BA", "BA 24:0;O3;T", 514.2844, [(96.9601, "[HSO4]-", "Diagnostic_HG"), (124.0074, "[Taurine-H]-", "Diagnostic_HG")]),
+            ("BA", "BA 24:1;O3;T", 498.28948, [(124.0074, "[Taurine-H]-", "Diagnostic_HG")]),
             ("BASulfate", "ST 20:0;O3;S", 401.2003, [(96.9601, "[HSO4]-", "Diagnostic_HG")]),
         ]
         for lipid_class, name, precursor_mz, hg_fragments in cases:

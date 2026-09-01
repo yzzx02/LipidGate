@@ -105,3 +105,33 @@ def test_tg_o_and_tg_est_repeat_counts_follow_three_substituent_groups() -> None
         )
 
         assert multiplicity_adjusted_fragment_count(result) == 3
+
+
+def test_three_identical_tg_chains_do_not_triple_count_one_physical_fragment() -> None:
+    fragment = FragmentRecord(
+        547.4721,
+        "[M-NH3-(ROOH)+NH4]+(16:1)",
+        "Diagnostic_FA_Loss",
+    )
+    record = LibraryRecord(
+        20,
+        "TG",
+        "TG(48:3)",
+        "TG(16:1_16:1_16:1)",
+        818.7232,
+        "[M+NH4]+",
+        fragments=[fragment],
+    )
+    result = CandidateScore(
+        record=record,
+        total_score=81.25,
+        passed_required_gates=True,
+        missing_required_groups=[],
+        ppm_error=0.0,
+        resolution_level="chain_level",
+        matched_fragments=[
+            FragmentMatch(fragment, ExperimentalPeak(fragment.mz, 1000.0, 1.0), 0.0),
+        ],
+    )
+
+    assert multiplicity_adjusted_fragment_count(result) == 1
