@@ -87,6 +87,9 @@ def test_pymzml_numpy_peak_array_is_normalized(monkeypatch) -> None:
         selected_precursors = [{"mz": 445.34}]
         ID = "20"
 
+        def get(self, name):
+            return name == "positive scan"
+
         def peaks(self, kind: str):
             assert kind == "raw"
             return np.array([[100.0, 20.0], [101.0, 10.0]])

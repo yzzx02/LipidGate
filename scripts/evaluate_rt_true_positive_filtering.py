@@ -11,7 +11,6 @@ from lipidgate.ecn_filter.workflow import ECNFilterConfig, apply_ecn_filter
 
 
 ONTOLOGY_TO_SUBCLASS = {
-    "BA_Conjugated": "BA",
     "BA_Unconjugated": "ST",
     "BASulfate": "BASULFATE",
     "BMP": "BMP",

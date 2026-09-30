@@ -182,15 +182,12 @@ def plot_eic(
         y_top = 1.0
         y_bottom = -0.08
         ax.set_ylim(y_bottom, y_top)
-        y_step = 0.5
     else:
         y_arr = np.asarray(y, dtype=float)
         y_max = float(np.max(y_arr)) if y_arr.size else 0.0
         y_top = max(y_max * 1.15, 0.5)
         y_bottom = -0.08 * y_top
         ax.set_ylim(y_bottom, y_top)
-        y_range = max(y_top - y_bottom, 0.5)
-        y_step = max(0.5, _nice_step(y_range / 5.0))
 
     # Fixed tick spacing for consistent 2-min window visualization.
     x_step = 0.5

@@ -1,5 +1,11 @@
 # LipidGate Agent Memory
 
+## Current baseline — 2026-09-20
+
+The current product workflow and defaults are documented in README.md and docs/core_review_20260920.md. Those descriptions supersede historical notes below. Peak truth has been removed from the product; old sources are archived. GUI uses project → import → MS1 parameters → MS2 parameters → optional score/ordered ECN filtering → export. pipeline.py and final_results.py are the production execution path. Preserve conditional HG gating (check HG only when defined), existing scoring and observed-point RT behavior. The historical sections below must not be used to restore obsolete peak-truth pages or old ECN rules.
+
+## Historical notes (superseded where inconsistent)
+
 ## Project Purpose
 
 LipidGate is a desktop-oriented lipid identification project that combines:

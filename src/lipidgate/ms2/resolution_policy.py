@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .chain_utils import (
+    FRAGMENT_CHAIN_TOKEN_RE,
+    canonical_chain_token,
     chain_token_multiplicity,
     extract_chain_tokens,
     extract_fragment_chain_token,
@@ -13,6 +15,13 @@ from .models import FragmentMatch, FragmentRecord, LibraryRecord
 
 
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
+PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON = "insufficient_independent_chain_evidence"
+SINGLE_CHAIN_COVERAGE_REASON = "multiple_fragments_single_chain_coverage"
+POSITIVE_DIACYL_CHAIN_CONFIRMATION_CLASSES = frozenset({
+    "PC", "PE", "PG", "PS", "PA", "PI", "PDPT", "MMPE", "DMPE", "PSC",
+    "PMEOH", "PETOH", "PHEG", "CDPDG", "CEPE", "AMPS", "PIP", "PIP2", "PIP3",
+    "OXPC", "OXPE",
+})
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,12 @@ _POSITIVE_PC_CHAIN_LOSS_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA_Loss"}),
     r"^\[M-\(?R(?:OOH|=O)\)?\+H\]\+\(",
 )
+_POSITIVE_PC_SODIUM_LOSS_RULE = FragmentEvidenceRule(
+    frozenset({"Diagnostic_FA_Loss"}), r"^\[M\+NA-(?:59-)?(?:NA)?FA\]\+\(",
+)
+_POSITIVE_PC_P_VINYL_LOSS_RULE = FragmentEvidenceRule(
+    frozenset({"Diagnostic_FA_Loss"}), r"^\[M-\(RCH2=CH-OH\)\+H\]\+\(P-",
+)
 _POSITIVE_LCB_RULE = FragmentEvidenceRule(frozenset({"LCB碎片"}))
 _POSITIVE_LCB_LEGACY_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA"}),
@@ -92,10 +107,15 @@ CHAIN_EVIDENCE_PROFILES: tuple[ChainEvidenceProfile, ...] = (
     ),
     ChainEvidenceProfile(
         name="positive_pc",
-        class_keys=frozenset({"PC", "PCO", "PCP"}),
+        class_keys=frozenset({"PC", "PCO"}),
         polarity="+",
-        evidence_rules=(_POSITIVE_PC_CHAIN_LOSS_RULE,),
+        evidence_rules=(_POSITIVE_PC_CHAIN_LOSS_RULE, _POSITIVE_PC_SODIUM_LOSS_RULE),
         required_coverage="infer_remaining_chain",
+    ),
+    ChainEvidenceProfile(
+        name="positive_pc_p", class_keys=frozenset({"PCP"}), polarity="+",
+        evidence_rules=(_POSITIVE_PC_CHAIN_LOSS_RULE, _POSITIVE_PC_P_VINYL_LOSS_RULE),
+        required_coverage="one",
     ),
     ChainEvidenceProfile(
         name="positive_sm",
@@ -165,6 +185,44 @@ def _compact_name(name: object) -> str:
     return re.sub(r"\s+", "", str(name or "")).upper()
 
 
+def positive_phospholipid_chain_resolution(
+    record: LibraryRecord, matches: Sequence[FragmentMatch],
+) -> tuple[str, str] | None:
+    """Separate the two-physical-peak gate from coverage confidence.
+
+    Two losses of one chain retain chain-level reporting at low confidence.
+    HG-only candidates and explicit ether/lyso exceptions keep their policies.
+    """
+    if (normalized_class_key(record.compound_class) not in POSITIVE_DIACYL_CHAIN_CONFIRMATION_CLASSES
+            or record_polarity(record) != "+"):
+        return None
+    tokens = extract_chain_tokens(record.lipid_chain_name)
+    if len(tokens) != 2 or any(token.upper().startswith(("O-", "P-")) for token in tokens):
+        return None
+    chain_matches = [match for match in matches if fragment_is_chain_evidence(record, match.fragment)]
+    if not chain_matches:
+        return None
+    expected = {canonical_chain_token(match) for match in FRAGMENT_CHAIN_TOKEN_RE.finditer(record.lipid_chain_name)}
+    observed = {
+        extract_fragment_chain_token(match.fragment)
+        for match in chain_matches
+    }
+    peaks = {
+        float(match.experimental_peak.mz)
+        for match in chain_matches
+    }
+    if len(peaks) < 2:
+        return "tentative_species_level", PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON
+    if len(expected.intersection(observed)) < 2 or not expected.issubset(observed):
+        return "chain_level", SINGLE_CHAIN_COVERAGE_REASON
+    return "chain_level", ""
+
+
+def positive_phospholipid_chain_confirmation_missing(record, matches) -> bool:
+    decision = positive_phospholipid_chain_resolution(record, matches)
+    return decision is not None and decision[1] == PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON
+
+
 def chain_evidence_count(
     record: LibraryRecord,
     fragments_or_matches: Sequence[FragmentRecord | FragmentMatch],
@@ -210,6 +268,9 @@ def profile_chain_resolution(
     profile = get_chain_evidence_profile(record)
     if profile is None:
         return None
+    decision = positive_phospholipid_chain_resolution(record, matches)
+    if decision is not None:
+        return decision
     required_hits = required_chain_evidence_hits(record, profile)
     if required_hits <= 0:
         if profile.applies_without_library_evidence and profile.species_fallback_without_chain:

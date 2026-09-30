@@ -20,8 +20,9 @@ def extract_xcms_params(config):
     sn = peak_picking.get("snthresh", 3)
     prefilter = peak_picking.get("prefilter_val", 3)
     mzdiff = peak_picking.get("mzdiff", 0.001)
-    min_maxo = peak_picking.get("min_maxo", None)
+    min_maxo = peak_picking.get("min_peak_height", peak_picking.get("min_maxo", None))
     frac = peak_picking.get("minFraction", peak_picking.get("frac", 0.2))
+    min_samples = peak_picking.get("minSamples", peak_picking.get("min_samples", 1))
 
     return {
         "polarity": polarity,
@@ -34,6 +35,7 @@ def extract_xcms_params(config):
         "prefilter": prefilter,
         "min_maxo": min_maxo,
         "frac": frac,
+        "min_samples": int(min_samples),
     }
 
 
@@ -50,6 +52,7 @@ def run_xcms(
     mzdiff=0.001,
     min_maxo=None,
     frac=0.2,
+    min_samples=1,
 ):
     r_script_path = os.path.join(os.path.dirname(__file__), "xcms.R")
     cmd = [
@@ -65,6 +68,7 @@ def run_xcms(
         "--prefilter", str(prefilter),
         "--mzdiff", str(mzdiff),
         "--frac", str(frac),
+        "--min_samples", str(int(min_samples)),
     ]
     if min_maxo is not None:
         cmd.extend(["--min_maxo", str(min_maxo)])

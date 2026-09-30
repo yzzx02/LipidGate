@@ -65,6 +65,7 @@ ANNOTATION_LEVEL_COLUMN_ALIASES = (
 RT_RULE_PASS_COLUMN = "是否满足RT规律"
 FITTED_MODEL_TYPES = {"linear", "quadratic"}
 RETAINED_ACTIONS = {
+    "ms2_only_not_evaluated",
     "pass",
     "suspect",
     "retain_unmodeled",
@@ -214,8 +215,9 @@ def _rt_minutes(series: pd.Series, column_name: str) -> pd.Series:
 
 
 def _chain_level_mask(df: pd.DataFrame, columns: _ColumnMap) -> pd.Series:
+    supported = ~df.get("ms1_support_status", pd.Series("", index=df.index)).eq("MS2-only")
     if columns.annotation_level is None:
-        return pd.Series(True, index=df.index, dtype=bool)
+        return supported
     normalized = (
         df[columns.annotation_level]
         .fillna("")
@@ -224,7 +226,7 @@ def _chain_level_mask(df: pd.DataFrame, columns: _ColumnMap) -> pd.Series:
         .str.casefold()
         .str.replace(r"[\s_-]+", "", regex=True)
     )
-    return normalized.isin({"链水平", "chainlevel", "chainresolved"})
+    return normalized.isin({"链水平", "chainlevel", "chainresolved"}) & supported
 
 
 def _assign_numeric_clusters(
@@ -740,6 +742,12 @@ def _apply_ecn_filter_core(
     out.loc[species_level, "RT_filter_action"] = "species_not_evaluated"
     out.loc[species_level, "RT_outlier_reason"] = "species_level_excluded"
     out.loc[species_level, "RT_review_status"] = "分子种类水平，不参与保留时间过滤"
+    ms2_only = full_table.get("ms1_support_status", pd.Series("", index=full_table.index)).eq("MS2-only")
+    out.loc[ms2_only, "rt_model_type"] = "not_applicable_ms2_only"
+    out.loc[ms2_only, "RT_filter_method"] = "ms2_only_excluded"
+    out.loc[ms2_only, "RT_filter_action"] = "ms2_only_not_evaluated"
+    out.loc[ms2_only, "RT_outlier_reason"] = "no_reliable_ms1_peak"
+    out.loc[ms2_only, "RT_review_status"] = "仅二级谱证据，不参与保留时间过滤"
 
     summaries: list[dict[str, object]] = []
     group_keys = (
@@ -770,6 +778,7 @@ def _apply_ecn_filter_core(
         )
         species_mask = (
             species_level
+            & ~ms2_only
             & out["subclass"].eq(subclass)
             & pd.to_numeric(out["total_DB"], errors="coerce").eq(total_db)
         )

@@ -209,10 +209,9 @@ def transform_source_name(compound_class: str, source_name: str) -> tuple[str, s
 
     if cls == "ASM":
         detail = name
-        species = re.sub(r"^SM\s+", "ASM ", name)
-        species = re.sub(r"\(FA\s+[^)]+\)", "", species).strip()
         detail = re.sub(r"^SM\s+", "ASM ", detail)
-        return canonicalize_multichain_sphingolipid_name(detail, "ASM"), species
+        canonical = canonicalize_multichain_sphingolipid_name(detail, "ASM")
+        return canonical, canonical
 
     return name, name
 

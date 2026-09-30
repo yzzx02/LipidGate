@@ -32,13 +32,13 @@ Num Peaks: 5
             return load_standard_msp(path)[0]
 
     def test_acetate_m_ch3_is_hg_but_224_and_chain_loss_remain_other(self) -> None:
-        record = self._load_record("[M+Hac-H]-", "[M-CH3COOCH3+Hac-H]-")
+        record = self._load_record("[M+CH3COO]-", "[M-CH3]-")
         by_name = {fragment.name: fragment for fragment in record.fragments}
 
-        self.assertEqual(by_name["[M-CH3COOCH3+Hac-H]-"].fragment_type, "Diagnostic_HG")
-        self.assertEqual(by_name["[M-CH3COOCH3+Hac-H]-"].required_group, "hg")
+        self.assertEqual(by_name["[M-CH3]-"].fragment_type, "Diagnostic_HG")
+        self.assertEqual(by_name["[M-CH3]-"].required_group, "hg")
         self.assertEqual(by_name["[C7H15NO5P]-"].fragment_type, "Common")
-        self.assertEqual(by_name["M-R2COOH-CH3COOCH3"].fragment_type, "Common")
+        self.assertEqual(by_name["M-R2COOH-CH3COOCH3(18:1)"].fragment_type, "Common")
 
     def test_formate_m_ch3_is_hg_without_candidate_hg_pool(self) -> None:
         record = self._load_record("[M+HCOO]-", "[M-CH3]-")
@@ -49,7 +49,7 @@ Num Peaks: 5
         self.assertEqual(by_name["[C7H15NO5P]-"].fragment_type, "Common")
 
     def test_pc_p_requires_both_m_ch3_hg_and_fatty_acid_evidence(self) -> None:
-        record = self._load_record("[M+Hac-H]-", "[M-CH3COOCH3+Hac-H]-")
+        record = self._load_record("[M+CH3COO]-", "[M-CH3]-")
         rule = DEFAULT_RULES.get("PC-P")
         fa_only = ExperimentalSpectrum(
             scan_id="fa_only",

@@ -43,6 +43,61 @@ CE_PE_POSITIVE_HEADGROUP_NEUTRAL_LOSS_MASS = (
     + 6 * OXYGEN_MONOISOTOPIC_MASS
     + PHOSPHORUS_MONOISOTOPIC_MASS
 )
+PE_HEADGROUP_NEUTRAL_LOSS_MASS = (
+    2 * CARBON_MONOISOTOPIC_MASS + 8 * HYDROGEN_MONOISOTOPIC_MASS
+    + NITROGEN_MONOISOTOPIC_MASS + 4 * OXYGEN_MONOISOTOPIC_MASS
+    + PHOSPHORUS_MONOISOTOPIC_MASS
+)
+
+
+def curate_positive_lyso_pe_fragments(
+    compound_class: str, precursor_mz: float, adduct: str,
+    fragments: Iterable[FragmentRecord],
+) -> list[FragmentRecord]:
+    """Keep the distinct LPE-O and LPE-P positive-mode diagnostic patterns."""
+    source = list(fragments)
+    if adduct != "[M+H]+" or compound_class not in {"LPE-O", "LPE-P"}:
+        return source
+    precursor = float(precursor_mz)
+
+    def ion(loss: float, name: str, role: str) -> FragmentRecord:
+        return synthetic_fragment(round(precursor - loss, 4), name, role)
+
+    if compound_class == "LPE-O":
+        return [
+            ion(PE_HEADGROUP_NEUTRAL_LOSS_MASS, "[M+H-141]+", "Diagnostic_HG"),
+            ion(WATER_MONOISOTOPIC_MASS, "[M+H-H2O]+", "Common"),
+            ion(0, "[M+H]+", "Common"),
+        ]
+    glycerol_phosphate_plus_pe = (
+        3 * CARBON_MONOISOTOPIC_MASS + 11 * HYDROGEN_MONOISOTOPIC_MASS
+        + NITROGEN_MONOISOTOPIC_MASS + 5 * OXYGEN_MONOISOTOPIC_MASS
+        + PHOSPHORUS_MONOISOTOPIC_MASS
+    )
+    glycerol_phosphate_plus_pe_minus_water = (
+        3 * CARBON_MONOISOTOPIC_MASS + 9 * HYDROGEN_MONOISOTOPIC_MASS
+        + NITROGEN_MONOISOTOPIC_MASS + 4 * OXYGEN_MONOISOTOPIC_MASS
+        + PHOSPHORUS_MONOISOTOPIC_MASS
+    )
+    return [
+        ion(glycerol_phosphate_plus_pe, "LPE-P diagnostic 294", "Diagnostic_HG"),
+        ion(glycerol_phosphate_plus_pe_minus_water, "LPE-P diagnostic 312", "Diagnostic_HG"),
+        ion(3 * CARBON_MONOISOTOPIC_MASS + 6 * HYDROGEN_MONOISOTOPIC_MASS
+            + 2 * OXYGEN_MONOISOTOPIC_MASS, "[P-chain+PEtn]+", "Common"),
+        ion(WATER_MONOISOTOPIC_MASS, "[M+H-H2O]+", "Common"),
+        ion(0, "[M+H]+", "Common"),
+    ]
+
+
+def without_pi_ammonium_acyl_losses(
+    compound_class: str, adduct: str, fragments: Iterable[FragmentRecord],
+) -> list[FragmentRecord]:
+    source = list(fragments)
+    if compound_class != "PI" or adduct != "[M+NH4]+":
+        return source
+    return [fragment for fragment in source if re.match(
+        r'^\[M-\((?:ROOH|R=O)\)\+H\]\+', str(fragment.name or "")
+    ) is None]
 
 
 def required_group_for_fragment(fragment_type: str) -> str | None:
@@ -145,7 +200,7 @@ def normalize_tg_o_fragments(
     curated: list[FragmentRecord] = []
     for fragment in source:
         compact_name = re.sub(r"\s+", "", str(fragment.name or "")).upper()
-        if compact_name == "[M-R1-OH+H]+":
+        if compact_name == "[M-R1-OH+H]+" or compact_name == f"[M-R1-OH+H]+({ether_token})".upper():
             curated.append(
                 fragment_with_role(
                     replace(fragment, name=f"[M-R1-OH+H]+({ether_token})"),
@@ -462,6 +517,10 @@ def _positive_ce_pe(
     return sorted(curated, key=lambda fragment: fragment.mz)
 
 
+def is_lnape_n_acyl_headgroup(name: str) -> bool:
+    return re.fullmatch(r"\[C\d+H\d+O5NP\(\d+:\d+\)\]-", str(name).strip()) is not None
+
+
 def normalize_special_aminophospholipid_fragments(
     compound_class: str,
     lipid_chain_name: str,
@@ -474,6 +533,12 @@ def normalize_special_aminophospholipid_fragments(
     class_name = str(compound_class or "").strip()
     adduct_text = str(adduct or "").strip()
     source = list(fragments)
+    if class_name == "LNAPE" and adduct_text.endswith("-"):
+        return [
+            replace(fragment, name=fragment.name.strip(), fragment_type="Diagnostic_HG", required_group="hg")
+            if is_lnape_n_acyl_headgroup(fragment.name) else fragment
+            for fragment in source
+        ]
     if class_name == "PS" and adduct_text == "[M+H]+":
         return _positive_ps(lipid_chain_name, precursor_mz, source)
     if class_name == "Am-PS" and adduct_text == "[M+H]+":

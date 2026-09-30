@@ -42,6 +42,13 @@ def _pc_row(
     }
 
 
+def test_tg_est_composition_includes_all_four_chains() -> None:
+    for name in ["TG-EST 16:0_16:0_14:0;O(FA 20:2)", "TG-EST(16:0_16:0_14:0;O(FA 20:2))"]:
+        info = parse_lipid_name(name)
+        assert (info.subclass, info.total_C, info.total_DB) == ("TG-EST", 66, 2)
+        assert info.lipidname_norm == name
+
+
 def test_parse_lipid_name_sorts_sn_agnostic_chains_and_sums_composition() -> None:
     info = parse_lipid_name("PC 18:1_16:0")
 

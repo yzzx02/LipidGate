@@ -1,29 +1,39 @@
 from __future__ import annotations
 
 import bisect
-import math
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
 import pandas as pd
+from lipidbench.utils.ascii_paths import ascii_mzml_path
 
-from .library import canonicalize_adduct, load_library
-from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name
-from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, normalize_peaks
+from .esterified_ceramide import is_esterified_ceramide
+from .workbook_export import write_workbook
+from .confidence import identification_confidence  # public compatibility export
+from .result_export import MS2_RESULT_EXPORT_COLUMNS, MS2_RESULT_NUMBER_FORMATS, annotation_level_label, prepare_ms2_result_export_df
+from .config import DEFAULT_SEARCH_CONFIG
+from .spectrum_preparation import iter_openms_spectra, make_refiner, prepare_spectrum, precursor_result_fields
+from .precursor_refinement import MS1Survey
+from .matching import match_fragments
+from .negative_gm3 import is_negative_gm3
+from .positive_pc_sodium import is_positive_pc_sodium
+from .fragment_labels import canonical_fragment_label
+
+from .library import load_library
+from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name, canonicalize_single_chain_name
+from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord
 from .ranking_policy import (
     build_original_rank_tiers,
     multiplicity_adjusted_fragment_count,
 )
-from .resolution_policy import fragment_is_chain_evidence
+from .resolution_policy import PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON, fragment_is_chain_evidence
 from .rules import DEFAULT_RULES, RuleSet
 from .sphingolipid_naming import (
     canonicalize_multichain_sphingolipid_name,
     has_complete_multichain_sphingolipid_identity,
 )
 from .scoring_policy import (
-    FAH_ONLY_FALLBACK_REASON,
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
     HG_ONLY_FALLBACK_REASON as POLICY_HG_ONLY_FALLBACK_REASON,
     SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE,
@@ -33,47 +43,20 @@ from .scoring import (
     POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
     _calculate_pool_scores,
     _chain_evidence_count_for_matches,
-    _empty_pool_scores,
-    _fah_only_low_confidence_gate_passes,
     _fragment_counts_as_effective_loss,
     _fragment_counts_as_fa_loss_gate,
     _matched_fah_tokens,
     _non_precursor_quality_overrides,
-    _positive_glyceride_rco_gate_passes,
     _record_fa_loss_fragment_count,
     _record_expected_fah_tokens,
     _total_score_from_pool_scores,
+    _with_negative_cer_match_bonus,
     score_candidate,
 )
-from .sphingolipid_rules import SPHINGOLIPID_RULEBOOK, validate_rule
+from .sphingolipid_scoring import score_sphingolipid_candidate
+from .sphingolipid_rules import SPHINGOLIPID_RULEBOOK
 
 
-MS2_RESULT_EXPORT_COLUMNS = (
-    "source_file",
-    "scan_id",
-    "rt_minutes",
-    "precursor_mz",
-    "Feature_ID",
-    "feature_mz",
-    "feature_rt",
-    "ppm_error",
-    "compound_class",
-    "matched_name",
-    "adduct",
-    "total_C",
-    "total_DB",
-    "result_rank",
-    "final_score",
-    "注释水平",
-    "matched_fragment_count",
-    "matched_fragments",
-)
-MS2_RESULT_NUMBER_FORMATS = (
-    ("rt_minutes", "0.000"),
-    ("precursor_mz", "0.0000"),
-    ("ppm_error", "0.00"),
-    ("final_score", "0.00"),
-)
 
 try:
     import pyopenms
@@ -125,8 +108,6 @@ class LipidMS2Searcher:
         "LPMEOH",
         "LPHEG",
         "LPNE",
-        "ETHERLPG",
-        "ETHERLPI",
     }
 
     def __init__(
@@ -134,10 +115,10 @@ class LipidMS2Searcher:
         library_path: str | Path,
         rules: RuleSet | None = None,
         precursor_tolerance_da: float | None = None,
-        precursor_tolerance_ppm: float = 10.0,
-        fragment_tolerance_da: float | None = 0.01,
-        fragment_tolerance_ppm: float | None = None,
-        min_relative_intensity: float = 0.005,
+        precursor_tolerance_ppm: float = DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm,
+        fragment_tolerance_da: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_da,
+        fragment_tolerance_ppm: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm,
+        min_relative_intensity: float = DEFAULT_SEARCH_CONFIG.min_relative_intensity,
         min_total_score: float = DEFAULT_MIN_TOTAL_SCORE,
         use_fragment_index: bool = True,
         fragment_prefilter_min_candidates: int = 8,
@@ -145,7 +126,7 @@ class LipidMS2Searcher:
         allowed_classes: Sequence[str] | None = None,
     ) -> None:
         allowed_adduct_set = {
-            canonicalize_adduct(value)
+            str(value).strip()
             for value in (allowed_adducts or [])
             if str(value).strip()
         }
@@ -163,6 +144,8 @@ class LipidMS2Searcher:
             (
                 record
                 for record in loaded_library
+                if not (record.compound_class == "PS" and record.adduct == "[M+NH4]+")
+                if not (record.compound_class == "LPS" and record.adduct == "[M+NH4]+")
                 if (not allowed_adduct_set or record.adduct in allowed_adduct_set)
                 and (
                     not allowed_class_keys
@@ -182,6 +165,16 @@ class LipidMS2Searcher:
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
         self.precursors = [record.precursor_mz for record in self.library]
         self.last_output_path: Path | None = None
+
+    @staticmethod
+    def prepare_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
+        return prepare_ms2_result_export_df(combined)
+
+    _prepare_result_export_df = prepare_result_export_df
+
+    @staticmethod
+    def _write_result_workbook(output_path: Path, combined: pd.DataFrame) -> Path:
+        return _write_result_workbook(output_path, combined)
 
     def _fragment_window_da(self, fragment_mz: float) -> float:
         fragment_tolerance_da = getattr(self, "fragment_tolerance_da", 0.01)
@@ -208,12 +201,20 @@ class LipidMS2Searcher:
     ) -> bool:
         observed_charge = spectrum.precursor_charge
         library_charge = cls._adduct_charge(record.adduct)
+        polarity = str(spectrum.polarity).lower()
+        if library_charge is not None:
+            if polarity in {'+', 'positive', 'pos'} and library_charge < 0:
+                return False
+            if polarity in {'-', 'negative', 'neg'} and library_charge > 0:
+                return False
         if not observed_charge or library_charge is None:
             return True
         return abs(int(observed_charge)) == abs(library_charge)
 
     @staticmethod
     def _sphingo_rule_key(record: LibraryRecord) -> str:
+        if is_esterified_ceramide(record.compound_class, record.lipid_chain_name):
+            return f"Cer-esterified_{record.adduct}"
         return f"{record.compound_class}_{record.adduct}"
 
     @staticmethod
@@ -230,222 +231,22 @@ class LipidMS2Searcher:
         record: LibraryRecord,
         experimental_mz: Sequence[float] | None = None,
     ) -> List[FragmentMatch]:
-        if experimental_mz is None:
-            experimental_mz = [peak.mz for peak in spectrum.peaks]
-        matches: List[FragmentMatch] = []
-        used_peak_indexes = set()
-        for fragment in record.fragments:
-            window_da = self._fragment_window_da(fragment.mz)
-            left = bisect.bisect_left(experimental_mz, fragment.mz - window_da)
-            right = bisect.bisect_right(experimental_mz, fragment.mz + window_da)
-            best_index = None
-            best_peak = None
-            best_error = None
-            for peak_index in range(left, right):
-                if peak_index in used_peak_indexes:
-                    continue
-                peak = spectrum.peaks[peak_index]
-                error = abs(peak.mz - fragment.mz)
-                if best_peak is None or peak.relative_intensity > best_peak.relative_intensity:
-                    best_peak = peak
-                    best_index = peak_index
-                    best_error = error
-            if best_peak is not None and best_index is not None and best_error is not None:
-                used_peak_indexes.add(best_index)
-                matches.append(FragmentMatch(fragment=fragment, experimental_peak=best_peak, mz_error=best_error))
-        return matches
+        return match_fragments(spectrum.peaks, record.fragments, self._fragment_window_da, experimental_mz)
 
     def _score_sphingo_candidate(
-        self,
-        spectrum: ExperimentalSpectrum,
-        record: LibraryRecord,
+        self, spectrum: ExperimentalSpectrum, record: LibraryRecord,
         experimental_mz: Sequence[float] | None = None,
     ) -> CandidateScore:
-        precursor_tolerance_da = getattr(self, "precursor_tolerance_da", None)
-        precursor_tolerance_ppm = getattr(self, "precursor_tolerance_ppm", 10.0)
-        ppm_error = ((spectrum.precursor_mz - record.precursor_mz) / record.precursor_mz) * 1e6
-        precursor_out_of_tolerance = (
-            abs(spectrum.precursor_mz - record.precursor_mz) > precursor_tolerance_da
-            if precursor_tolerance_da is not None
-            else abs(ppm_error) > precursor_tolerance_ppm
-        )
-        if precursor_out_of_tolerance:
-            return CandidateScore(
-                record=record,
-                total_score=0.0,
-                passed_required_gates=False,
-                missing_required_groups=["sphingo_rule"],
-                ppm_error=ppm_error,
-                resolution_level="class_level",
-                pool_scores=_empty_pool_scores(),
-                matched_intensity_sum=0.0,
-                matched_relative_intensity_sum=0.0,
-                downgrade_reason="precursor_out_of_tolerance",
-            )
-
-        matches = self._match_fragments_for_record(spectrum, record, experimental_mz=experimental_mz)
-        if not matches:
-            return CandidateScore(
-                record=record,
-                total_score=0.0,
-                passed_required_gates=False,
-                missing_required_groups=["sphingo_rule"],
-                ppm_error=ppm_error,
-                resolution_level="class_level",
-                pool_scores=_empty_pool_scores(),
-                matched_intensity_sum=0.0,
-                matched_relative_intensity_sum=0.0,
-                downgrade_reason="no_fragment_match",
-            )
-
-        rule = SPHINGOLIPID_RULEBOOK[self._sphingo_rule_key(record)]
-        matched_names = {match.fragment.name for match in matches}
-        name_gate_passed = validate_rule(rule, matched_names, self._sphingo_series(record))
-
-        library_types = {fragment.fragment_type for fragment in record.fragments}
-        matched_types = {match.fragment.fragment_type for match in matches}
-        adduct = str(record.adduct or "").strip()
-        class_key = self._normal_class_key(record.compound_class)
-        uses_negative_hg_fah_tiered_gate = (
-            (adduct == "[M-H]-" and class_key in {"CER1P", "CERP"})
-            or (adduct in {"[M+CH3COO]-", "[M+HCOO]-"} and class_key == "SM")
-        )
-        def matched_type_count(type_group: set[str]) -> int:
-            return sum(1 for match in matches if match.fragment.fragment_type in type_group)
-
-        type_gate_passed = True
-        has_explicit_type_gate = bool(
-            rule.required_type_any_groups
-            or rule.required_type_count_groups
-            or rule.required_type_count_any_groups
-            or rule.required_type_fraction_groups
-        )
-        if rule.required_type_any_groups:
-            for type_group in rule.required_type_any_groups:
-                if not (type_group & matched_types):
-                    type_gate_passed = False
-                    break
-        if type_gate_passed and rule.required_type_count_groups:
-            for type_group, minimum_count in rule.required_type_count_groups:
-                if matched_type_count(type_group) < minimum_count:
-                    type_gate_passed = False
-                    break
-        if type_gate_passed and rule.required_type_count_any_groups:
-            for alternatives in rule.required_type_count_any_groups:
-                if not any(matched_type_count(type_group) >= minimum_count for type_group, minimum_count in alternatives):
-                    type_gate_passed = False
-                    break
-        if type_gate_passed and rule.required_type_fraction_groups:
-            for type_group, minimum_fraction in rule.required_type_fraction_groups:
-                library_count = sum(
-                    1 for fragment in record.fragments if fragment.fragment_type in type_group
-                )
-                required_count = max(1, math.ceil(library_count * float(minimum_fraction)))
-                if library_count <= 0 or matched_type_count(type_group) < required_count:
-                    type_gate_passed = False
-                    break
-        if uses_negative_hg_fah_tiered_gate:
-            hg_total_count = sum(
-                1 for fragment in record.fragments if fragment.fragment_type == "Diagnostic_HG"
-            )
-            hg_matched_count = matched_type_count({"Diagnostic_HG"})
-            if hg_total_count <= 0 or hg_matched_count * 2 < hg_total_count:
-                type_gate_passed = False
-        if not has_explicit_type_gate:
-            if "Diagnostic_HG" in library_types and "Diagnostic_HG" not in matched_types:
-                type_gate_passed = False
-            if "C类碎片" in library_types and "C类碎片" not in matched_types:
-                type_gate_passed = False
-            if "LCB碎片" in library_types and "LCB碎片" not in matched_types:
-                type_gate_passed = False
-
-        matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
-        matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
-        rules = getattr(self, "rules", DEFAULT_RULES)
-        pool_scores = _calculate_pool_scores(
-            matches,
-            record,
-            rules.get(record.compound_class),
-            quality_relative_intensity_overrides=_non_precursor_quality_overrides(
-                spectrum,
-                record,
-                matches,
-            ),
-        )
-        total_score = _total_score_from_pool_scores(pool_scores)
-        standard_gate_passed = name_gate_passed and type_gate_passed
-        if standard_gate_passed and class_key == "GM3" and adduct == "[M-H]-":
-            ordinary_total = sum(1 for fragment in record.fragments if fragment.fragment_type == "Common")
-            ordinary_matched = matched_type_count({"Common"})
-            support_fraction = ordinary_matched / ordinary_total if ordinary_total else 0.0
-            total_score = 50.0 + 50.0 * support_fraction
-        has_library_hg_or_structural = bool(library_types & {"Diagnostic_HG", "C类碎片"})
-        matched_hg_or_structural = bool(matched_types & {"Diagnostic_HG", "C类碎片"})
-        hg_only_low_confidence_gate = (
-            not standard_gate_passed
-            and rule.allow_hg_only_fallback
-            and self._normal_class_key(record.compound_class) in self.SPHINGO_HG_ONLY_FALLBACK_CLASSES
-            and not uses_negative_hg_fah_tiered_gate
-            and "Diagnostic_HG" in library_types
-            and "Diagnostic_HG" in matched_types
-            and "LCB碎片" not in matched_types
-            and len(matches) >= 2
-            and pool_scores["hg"].pool_score >= self.HG_ONLY_FALLBACK_MIN_HG_SCORE
-            and any(
-                match.fragment.fragment_type == "Diagnostic_HG"
-                and match.experimental_peak.relative_intensity >= self.HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
-                for match in matches
-            )
-        )
-        fah_only_low_confidence_gate = (
-            not standard_gate_passed
-            and rule.allow_fah_only_fallback
-            and not uses_negative_hg_fah_tiered_gate
-            and has_library_hg_or_structural
-            and not matched_hg_or_structural
-            and _fah_only_low_confidence_gate_passes(
-                record,
-                pool_scores,
-                missing_groups=["sphingo_rule"],
-                has_hg_or_structural_pool=has_library_hg_or_structural,
-            )
-        )
-        passed = standard_gate_passed or fah_only_low_confidence_gate or hg_only_low_confidence_gate
-        has_negative_chain_evidence = (
-            uses_negative_hg_fah_tiered_gate
-            and matched_type_count({"Diagnostic_FA", "Diagnostic_FA_Loss"}) >= 1
-        )
-        if standard_gate_passed and class_key == "GM3" and adduct == "[M-H]-":
-            resolution_level = "species_level"
-            downgrade_reason = "sum_composition_only"
-        elif standard_gate_passed and uses_negative_hg_fah_tiered_gate and not has_negative_chain_evidence:
-            resolution_level = "species_level"
-            downgrade_reason = "missing_fah_chain_evidence"
-        elif standard_gate_passed:
-            resolution_level = "chain_level"
-            downgrade_reason = ""
-        elif fah_only_low_confidence_gate:
-            resolution_level = "tentative_chain_level"
-            downgrade_reason = FAH_ONLY_FALLBACK_REASON
-        elif hg_only_low_confidence_gate:
-            resolution_level = "tentative_species_level"
-            downgrade_reason = self.HG_ONLY_FALLBACK_REASON
-        else:
-            resolution_level = "class_level"
-            downgrade_reason = "sphingo_rule_failed"
-
-        return CandidateScore(
-            record=record,
-            total_score=round(total_score, 4),
-            passed_required_gates=passed,
-            missing_required_groups=[] if passed else ["sphingo_rule"],
-            ppm_error=ppm_error,
-            resolution_level=resolution_level,
-            matched_fragments=list(matches),
-            pool_scores=pool_scores,
-            matched_intensity_sum=matched_intensity_sum,
-            matched_relative_intensity_sum=matched_relative_intensity_sum,
-            downgrade_reason=downgrade_reason,
+        return score_sphingolipid_candidate(
+            spectrum, record,
+            matches=self._match_fragments_for_record(spectrum, record, experimental_mz),
+            rule=SPHINGOLIPID_RULEBOOK[self._sphingo_rule_key(record)], series=self._sphingo_series(record),
+            rules=getattr(self, "rules", DEFAULT_RULES),
+            precursor_tolerance_da=getattr(self, "precursor_tolerance_da", None),
+            precursor_tolerance_ppm=getattr(self, "precursor_tolerance_ppm", DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm),
+            hg_only_classes=self.SPHINGO_HG_ONLY_FALLBACK_CLASSES,
+            hg_only_min_score=self.HG_ONLY_FALLBACK_MIN_HG_SCORE,
+            hg_only_min_relative_intensity=self.HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
         )
 
     def find_candidates(self, precursor_mz: float) -> List[LibraryRecord]:
@@ -604,7 +405,17 @@ class LipidMS2Searcher:
                 selected.append(result)
             current_rank = next_rank
             previous_result = result
-        return selected
+        # TG-EST's FAHFA internal isomers often have identical scores and peaks.
+        # Top N is a row cap for this class, including ties (at most three).
+        tg_est_count = 0
+        limited = []
+        for result in selected:
+            if self._normal_class_key(result.record.compound_class) == "TGEST":
+                tg_est_count += 1
+                if tg_est_count > min(top_n, 3):
+                    continue
+            limited.append(result)
+        return limited
 
     @staticmethod
     def _scores_tied(left_score: float, right_score: float) -> bool:
@@ -701,7 +512,21 @@ class LipidMS2Searcher:
                 -abs(float(result.ppm_error)),
             )
 
+        resolved_negative_gm3_species = {
+            (result.record.adduct, result.record.lipid_name)
+            for result in results
+            if is_negative_gm3(result.record.compound_class, result.record.adduct)
+            and result.resolution_level == "chain_level"
+        }
         for result in results:
+            if (
+                is_negative_gm3(result.record.compound_class, result.record.adduct)
+                and result.resolution_level == "species_level"
+                and (result.record.adduct, result.record.lipid_name) in resolved_negative_gm3_species
+            ):
+                # A resolved chain already reports this species. Do not also
+                # output its many unmatched-P/R alternative chain templates.
+                continue
             key = (
                 cls._normal_class_key(result.record.compound_class),
                 str(result.record.adduct),
@@ -806,6 +631,8 @@ class LipidMS2Searcher:
     @classmethod
     def _qualifies_tentative_missing_hg_fallback(cls, result: CandidateScore) -> bool:
         record = result.record
+        if is_positive_pc_sodium(record):
+            return False
         if result.passed_required_gates:
             return False
         if cls._normal_class_key(record.compound_class) not in cls.TENTATIVE_MISSING_HG_CLASSES:
@@ -914,7 +741,13 @@ class LipidMS2Searcher:
             quality_relative_intensity_overrides=adjusted_overrides,
         )
         result.pool_scores = pool_scores
-        result.total_score = round(_total_score_from_pool_scores(pool_scores), 4)
+        result.total_score = round(
+            _with_negative_cer_match_bonus(
+                result.record, result.matched_fragments,
+                _total_score_from_pool_scores(pool_scores),
+            ),
+            4,
+        )
 
     def _rerank_with_shared_chain_peak_penalty(
         self,
@@ -1034,14 +867,15 @@ class LipidMS2Searcher:
         )
         parts = []
         for match in ordered:
-            label = str(match.fragment.name or "").strip()
+            label = canonical_fragment_label(str(match.fragment.name or "").strip())
             if label:
                 parts.append(f"{match.experimental_peak.mz:.4f} {label}")
             else:
                 parts.append(f"{match.experimental_peak.mz:.4f}")
         return "; ".join(parts)
 
-    def score_spectrum(self, spectrum: ExperimentalSpectrum, top_n: int = 5) -> List[Dict[str, object]]:
+    def score_spectrum(self, spectrum: ExperimentalSpectrum, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> List[Dict[str, object]]:
+        from .evidence_export import evidence_json
         left, right = self._find_candidate_index_range(spectrum.precursor_mz)
         candidate_indexes = self._candidate_indexes_with_fragment_overlap(spectrum, left, right)
         experimental_mz = [peak.mz for peak in spectrum.peaks]
@@ -1068,7 +902,15 @@ class LipidMS2Searcher:
 
             scored.append(candidate_score)
         eligible_results = [item for item in scored if self._passes_min_total_score(item)]
-        passed_results = [item for item in eligible_results if item.passed_required_gates]
+        # Partial phospholipid chains remain low-confidence sum composition.
+        # Keep the failed confirmation gate intact in the audit and display.
+        passed_results = [
+            item for item in eligible_results
+            if item.passed_required_gates or (
+                item.downgrade_reason == PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON
+                and item.missing_required_groups == ["chain_confirmation"]
+            )
+        ]
         scoped_results: list[tuple[CandidateScore, str, bool]] = []
         rank_metrics: Dict[int, Dict[str, float]] = {}
         if passed_results:
@@ -1131,6 +973,8 @@ class LipidMS2Searcher:
             )
             rows.append(
                 {
+                    **precursor_result_fields(spectrum, result.record.precursor_mz),
+                    "polarity": spectrum.polarity,
                     "scan_id": spectrum.scan_id,
                     "rt_minutes": spectrum.rt_minutes,
                     "precursor_mz": spectrum.precursor_mz,
@@ -1156,17 +1000,20 @@ class LipidMS2Searcher:
                     "downgrade_reason": result.downgrade_reason,
                     "matched_fragment_count": len(result.matched_fragments),
                     "matched_fragments": self._format_matched_fragments(result.matched_fragments),
+                    "ms2_evidence_json": evidence_json(spectrum, result),
                     "spectrum_base_peak_intensity": spectrum.base_peak_intensity,
                     "spectrum_total_ion_intensity": spectrum.total_ion_intensity,
                     "fah_score": result.pool_scores["fah"].pool_score,
                     "hg_score": result.pool_scores["hg"].pool_score,
                     "other_score": result.pool_scores["other"].pool_score,
+                    "lcb_score": result.pool_scores["lcb"].pool_score if "lcb" in result.pool_scores else 0.0,
                 }
             )
         return rows
 
     @staticmethod
     def _canonicalize_chain_name(lipid_chain_name: str, compound_class: str | None = None) -> str:
+        lipid_chain_name = canonicalize_single_chain_name(lipid_chain_name, compound_class)
         canonical_sphingolipid_name = canonicalize_multichain_sphingolipid_name(
             lipid_chain_name,
             compound_class,
@@ -1194,6 +1041,8 @@ class LipidMS2Searcher:
         cls = str(compound_class or "").strip().upper()
         if cls in {
             "CER",
+            "GM3",
+            "PE-CER",
             "HEXCER",
             "LACCER",
             "HEX2CER",
@@ -1240,65 +1089,55 @@ class LipidMS2Searcher:
     def _iter_mzml_spectra(self, mzml_path: str | Path) -> Iterable[ExperimentalSpectrum]:
         if pyopenms is not None:
             experiment = pyopenms.MSExperiment()
-            pyopenms.MzMLFile().load(str(mzml_path), experiment)
-            for index, spectrum in enumerate(experiment):
-                if spectrum.getMSLevel() != 2:
-                    continue
-                precursors = spectrum.getPrecursors()
-                if not precursors:
-                    continue
-                precursor = precursors[0]
-                mz_values, intensity_values = spectrum.get_peaks()
-                raw_peaks = list(zip(mz_values, intensity_values))
-                normalized = [peak for peak in normalize_peaks(raw_peaks) if peak.relative_intensity >= self.min_relative_intensity]
-                if not normalized:
-                    continue
-                yield ExperimentalSpectrum(
-                    scan_id=f"scan_{index + 1}",
-                    precursor_mz=float(precursor.getMZ()),
-                    rt_minutes=float(spectrum.getRT()) / 60.0,
-                    polarity="-",
-                    peaks=normalized,
-                    metadata={"source": str(mzml_path)},
-                    precursor_charge=int(precursor.getCharge()) or None,
-                )
+            with ascii_mzml_path(mzml_path) as readable_path:
+                pyopenms.MzMLFile().load(str(readable_path), experiment)
+            yield from iter_openms_spectra(experiment, source=mzml_path,
+                                           min_relative_intensity=self.min_relative_intensity)
             return
 
         if pymzml is None:
             raise ImportError("pyopenms/pymzml 未安装，无法读取 mzML")
         run = pymzml.run.Reader(str(mzml_path), obo_version="4.1.33")
-        for index, spectrum in enumerate(run, start=1):
-            if spectrum.ms_level != 2:
+        spectra = list(run)
+        surveys = []
+        for index, spectrum in enumerate(spectra, start=1):
+            if spectrum.ms_level == 1:
+                peaks = sorted(spectrum.peaks("raw"), key=lambda x: x[0])
+                surveys.append(MS1Survey(str(spectrum.ID), f"scan_{index}",
+                                         float(spectrum.scan_time_in_minutes()) * 60,
+                                         [p[0] for p in peaks], [p[1] for p in peaks],
+                                         bool(spectrum.get("centroid spectrum"))))
+        refiner = make_refiner(surveys)
+        for index, spectrum in enumerate(spectra, start=1):
+            if spectrum.ms_level != 2 or not spectrum.selected_precursors:
                 continue
-            if not spectrum.selected_precursors:
+            precursor = spectrum.selected_precursors[0]
+            if precursor.get("mz") is None:
                 continue
-            precursor_mz = spectrum.selected_precursors[0].get("mz")
-            if precursor_mz is None:
-                continue
-            precursor_charge = spectrum.selected_precursors[0].get("charge")
-            if precursor_charge is None:
-                precursor_charge = spectrum.selected_precursors[0].get("charge state")
-            raw_peaks = [(float(mz), float(intensity)) for mz, intensity in spectrum.peaks("raw")]
-            normalized = [peak for peak in normalize_peaks(raw_peaks) if peak.relative_intensity >= self.min_relative_intensity]
-            if not normalized:
-                continue
-            yield ExperimentalSpectrum(
-                scan_id=f"scan_{index}",
-                precursor_mz=float(precursor_mz),
-                rt_minutes=float(spectrum.scan_time_in_minutes()),
-                polarity="-",
-                peaks=normalized,
-                metadata={"source": str(mzml_path)},
-                precursor_charge=int(float(precursor_charge)) if precursor_charge else None,
+            charge = precursor.get("charge", precursor.get("charge state"))
+            polarity = "+" if spectrum.get("positive scan") else "-" if spectrum.get("negative scan") else ""
+            prepared = prepare_spectrum(
+                scan_id=f"scan_{index}", raw_mz=precursor["mz"],
+                rt_seconds=float(spectrum.scan_time_in_minutes()) * 60,
+                raw_peaks=list(spectrum.peaks("raw")), polarity=polarity,
+                charge=int(float(charge)) if charge else None,
+                parent_native="", refiner=refiner, source=mzml_path,
+                min_relative_intensity=self.min_relative_intensity,
             )
+            if prepared is not None:
+                yield prepared
 
-    def search_mzml(self, mzml_path: str | Path, top_n: int = 5) -> pd.DataFrame:
+    def search_mzml(self, mzml_path: str | Path, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> pd.DataFrame:
         rows: List[Dict[str, object]] = []
         for spectrum in self._iter_mzml_spectra(mzml_path):
             rows.extend(self.score_spectrum(spectrum, top_n=top_n))
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        if not frame.empty:
+            frame["ms1_support_status"] = "MS2-only"
+            frame["ms1_support_reason"] = "feature_table_not_supplied"
+        return frame
 
-    def search_directory(self, directory: str | Path, output_path: str | Path | None = None, top_n: int = 5) -> pd.DataFrame:
+    def search_directory(self, directory: str | Path, output_path: str | Path | None = None, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> pd.DataFrame:
         directory = Path(directory)
         all_rows = []
         mzml_paths = sorted(
@@ -1316,35 +1155,6 @@ class LipidMS2Searcher:
         if output_path and not combined.empty:
             self.last_output_path = self._write_result_workbook(Path(output_path), combined)
         return combined
-
-
-def _contains_one_determined_chain(lipid_name: object) -> bool:
-    text = str(lipid_name or "")
-    chain_tokens = [
-        token
-        for token in re.findall(r"(?:[OP]-)?\d+:\d+(?:\([^)]*O\)|,O\d*|;\d*OH)?", text)
-        if not token.startswith("0:0")
-    ]
-    return len(chain_tokens) == 1
-
-
-def annotation_level_label(
-    resolution_level: object,
-    matched_name: object = "",
-    compound_class: object = "",
-) -> str:
-    normalized = str(resolution_level or "").strip().lower()
-    if normalized in {
-        "double_bond_level",
-        "tentative_double_bond_level",
-        "chain_level",
-        "tentative_chain_level",
-    } or _contains_one_determined_chain(matched_name) or has_complete_multichain_sphingolipid_identity(
-        matched_name,
-        compound_class,
-    ):
-        return "链水平"
-    return "分子种类水平"
 
 
 def deduplicate_fa_results(results: pd.DataFrame) -> pd.DataFrame:
@@ -1409,77 +1219,6 @@ def deduplicate_fa_results(results: pd.DataFrame) -> pd.DataFrame:
     return out.loc[keep_mask].reset_index(drop=True)
 
 
-def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
-    if combined.empty:
-        return pd.DataFrame(columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in combined.columns])
-    export_df = combined.copy()
-    if "total_score" in export_df.columns:
-        export_df["final_score"] = export_df["total_score"]
-    elif "final_score" not in export_df.columns:
-        export_df["final_score"] = 0.0
-    export_df["final_score"] = pd.to_numeric(export_df["final_score"], errors="coerce").clip(lower=0.0, upper=100.0).round(2)
-    if "rt_minutes" in export_df.columns:
-        export_df["rt_minutes"] = pd.to_numeric(export_df["rt_minutes"], errors="coerce").round(3)
-    if "feature_rt" in export_df.columns:
-        export_df["feature_rt"] = pd.to_numeric(export_df["feature_rt"], errors="coerce").round(3)
-    if "precursor_mz" in export_df.columns:
-        export_df["precursor_mz"] = pd.to_numeric(export_df["precursor_mz"], errors="coerce").round(4)
-    if "feature_mz" in export_df.columns:
-        export_df["feature_mz"] = pd.to_numeric(export_df["feature_mz"], errors="coerce").round(4)
-    if "ppm_error" in export_df.columns:
-        export_df["ppm_error"] = pd.to_numeric(export_df["ppm_error"], errors="coerce").round(2)
-    if "total_C" in export_df.columns:
-        export_df["total_C"] = pd.to_numeric(export_df["total_C"], errors="coerce").astype("Int64")
-    if "total_DB" in export_df.columns:
-        export_df["total_DB"] = pd.to_numeric(export_df["total_DB"], errors="coerce").astype("Int64")
-    if "resolution_level" in export_df.columns:
-        matched_names = export_df.get("matched_name", pd.Series("", index=export_df.index))
-        compound_classes = export_df.get("compound_class", pd.Series("", index=export_df.index))
-        export_df["注释水平"] = [
-            annotation_level_label(level, matched_name, compound_class)
-            for level, matched_name, compound_class in zip(
-                export_df["resolution_level"],
-                matched_names,
-                compound_classes,
-            )
-        ]
-    elif "注释水平" not in export_df.columns:
-        export_df["注释水平"] = "分子种类水平"
-    return pd.DataFrame(export_df, columns=[column for column in MS2_RESULT_EXPORT_COLUMNS if column in export_df.columns])
-
-
-def _write_number_formats(worksheet) -> None:
-    header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-    for column_name, number_format in MS2_RESULT_NUMBER_FORMATS:
-        column_index = header_to_index.get(column_name)
-        if column_index is None:
-            continue
-        for row in worksheet.iter_rows(
-            min_row=2,
-            max_row=worksheet.max_row,
-            min_col=column_index,
-            max_col=column_index,
-        ):
-            row[0].number_format = number_format
-
-
 def _write_result_workbook(output_path: Path, combined: pd.DataFrame) -> Path:
-    result_df = prepare_ms2_result_export_df(combined)
-    target_path = output_path
-    try:
-        with pd.ExcelWriter(target_path, engine="openpyxl") as writer:
-            result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
-            _write_number_formats(writer.sheets["Matched_Results"])
-        return target_path
-    except PermissionError:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fallback_path = target_path.with_name(f"{target_path.stem}_{timestamp}{target_path.suffix}")
-        with pd.ExcelWriter(fallback_path, engine="openpyxl") as writer:
-            result_df.to_excel(writer, sheet_name="Matched_Results", index=False)
-            _write_number_formats(writer.sheets["Matched_Results"])
-        return fallback_path
-
-
-LipidMS2Searcher.prepare_result_export_df = staticmethod(prepare_ms2_result_export_df)
-LipidMS2Searcher._prepare_result_export_df = staticmethod(prepare_ms2_result_export_df)
-LipidMS2Searcher._write_result_workbook = staticmethod(_write_result_workbook)
+    return write_workbook(output_path, {"Matched_Results": prepare_ms2_result_export_df(combined)},
+                          permission_fallback=True)

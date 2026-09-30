@@ -5,10 +5,11 @@ import argparse
 from pathlib import Path
 import site
 
-from typing import Any, Optional
+from typing import Optional
 
 from lipidbench.utils.config_io import get_base_dir, _resolve_path
 from lipidbench.utils.data_io import load_pyopenms_results
+from lipidbench.utils.ascii_paths import ascii_mzml_path
 
 
 def _add_windows_dll_dirs() -> None:
@@ -139,14 +140,24 @@ def _consensus_feature_dataframe(feature_maps, consensus_map):
             bounds_by_id[int(consensus_feature.getUniqueId())] = (rt, rt)
 
     table = consensus_map.get_df()
+    table["consensus_uid"] = table.index.map(str)
     table["RTmin"] = [bounds_by_id[int(feature_id)][0] for feature_id in table.index]
     table["RTmax"] = [bounds_by_id[int(feature_id)][1] for feature_id in table.index]
+    table["RT_unit"] = "seconds"
     return table
 
 
 def group_features(feature_maps, output_file):
+    import pandas as pd
+
     oms = _get_oms()
     feature_grouper = oms.FeatureGroupingAlgorithmKD()
+    grouping = feature_grouper.getDefaults()
+    # Pose clustering already transformed the feature maps above. KD's own
+    # LOWESS warp would align a second time and can join separate LC peaks.
+    grouping.setValue(b"warp:enabled", "false")
+    grouping.setValue(b"link:rt_tol", 15.0)
+    feature_grouper.setParameters(grouping)
     consensus_map = oms.ConsensusMap()
     file_descriptions = consensus_map.getColumnHeaders()
     for i, feature_map in enumerate(feature_maps):
@@ -158,58 +169,161 @@ def group_features(feature_maps, output_file):
     consensus_map.setColumnHeaders(file_descriptions)
     consensus_map.setUniqueIds()
     _consensus_feature_dataframe(feature_maps, consensus_map).to_csv(output_file, index=False)
+    members = []
+    for consensus_feature in consensus_map:
+        aligned_uid = str(consensus_feature.getUniqueId())
+        for handle in consensus_feature.getFeatureList():
+            map_index = int(handle.getMapIndex())
+            source = os.path.basename(
+                feature_maps[map_index].getMetaValue("spectra_data")[0].decode()
+            )
+            members.append(
+                dict(source_file=source, native_uid=str(handle.getUniqueId()), consensus_uid=aligned_uid)
+            )
+    membership_path = Path(output_file).with_name(Path(output_file).stem + "_alignment_members.csv")
+    pd.DataFrame(members, columns=["source_file", "native_uid", "consensus_uid"]).to_csv(membership_path, index=False)
 
 
-def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5):
+PYOPENMS_FEATURE_DEFAULTS = {"mz_tol": 5.0, "min_fwhm": 5.0, "max_fwhm": 60.0, "noise": 1000.0, "sn": 5.0, "min_peak_height": 0.0}
+
+
+def filter_feature_map_by_height(feature_map, minimum):
+    """Apply an apex-height cutoff, never confusing integrated area with height."""
+    if minimum <= 0:
+        return feature_map
+    oms = _get_oms()
+    filtered = oms.FeatureMap()
+    for feature in feature_map:
+        if not feature.metaValueExists("max_height"):
+            raise ValueError("pyOpenMS 特征缺少 max_height，无法按最低特征峰高过滤")
+        if float(feature.getMetaValue("max_height")) >= minimum:
+            filtered.push_back(feature)
+    return filtered
+
+
+def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
+                       min_peak_height=0.0):
+    """The shared OpenMS detector; chromatographic decisions belong to OpenMS."""
+    oms = _get_oms()
+    ms1_exp = oms.MSExperiment()
+    ms1_exp.setSpectra([s for s in exp if s.getMSLevel() == 1])
+    ms1_exp.updateRanges()
+    # OpenMS requires at least three MS1 spectra to construct mass traces.
+    if ms1_exp.size() < 3:
+        return oms.FeatureMap()
+    mass_traces = []
+    mtd = oms.MassTraceDetection()
+    mtd_par = mtd.getDefaults()
+    mtd_par.setValue(b"mass_error_ppm", mz_tol)
+    mtd_par.setValue(b"noise_threshold_int", noise)
+    mtd_par.setValue(b"chrom_peak_snr", sn)
+    mtd.setParameters(mtd_par)
+    mtd.run(ms1_exp, mass_traces, 0)
+
+    if not mass_traces:
+        return oms.FeatureMap()
+
+    mass_traces_deconvol = []
+    epd = oms.ElutionPeakDetection()
+    epd_par = epd.getDefaults()
+    epd_par.setValue(b"min_fwhm", min_fwhm)
+    epd_par.setValue(b"max_fwhm", max_fwhm)
+    epd_par.setValue(b"chrom_peak_snr", sn)
+    epd.setParameters(epd_par)
+    epd.detectPeaks(mass_traces, mass_traces_deconvol)
+
+    feature_map = oms.FeatureMap()
+    ffm = oms.FeatureFindingMetabo()
+    ffm_par = ffm.getDefaults()
+    ffm_par.setValue(b"local_rt_range", 8.0)
+    ffm_par.setValue(b"local_mz_range", 3.5)
+    ffm_par.setValue(b"mz_scoring_13C", b"true")
+    ffm_par.setValue(b"report_convex_hulls", b"true")
+    ffm_par.setValue(b"charge_upper_bound", 2)
+    ffm.setParameters(ffm_par)
+    ffm.run(mass_traces_deconvol, feature_map, [])
+
+    feature_map = filter_feature_map_by_height(feature_map, min_peak_height)
+    feature_map.setUniqueIds()
+    return feature_map
+
+
+def single_feature_dataframe(feature_map, source_file=None):
+    """Export detected bounds, explicit RT units, and reproducible display IDs."""
+    import pandas as pd
+
+    rows = []
+    features = sorted(feature_map, key=lambda f: (f.getMZ(), f.getRT()))
+    native_table = feature_map.get_df() if features else None
+    if native_table is not None:
+        native_table.index = native_table.index.map(str)
+    for i, feature in enumerate(features, 1):
+        lower, upper = _feature_rt_bounds(feature)
+        row = {
+            **native_table.loc[str(feature.getUniqueId())].to_dict(),
+            "Feature_ID": f"F{i}", "native_uid": str(feature.getUniqueId()), "mz": feature.getMZ(), "RT": feature.getRT(),
+            "RTmin": lower, "RTmax": upper, "RT_unit": "seconds",
+            "intensity": feature.getIntensity(), "FWHM": feature.getWidth(),
+            "charge": feature.getCharge(), "quality": feature.getOverallQuality(),
+        }
+        if source_file is not None:
+            row["source_file"] = str(source_file)
+        if feature.metaValueExists("max_height"):
+            row["max_height"] = float(feature.getMetaValue("max_height"))
+        rows.append(row)
+    columns = ["Feature_ID", "native_uid", "mz", "RT", "RTmin", "RTmax", "RT_unit", "intensity", "FWHM", "charge", "quality"]
+    if source_file is not None:
+        columns.append("source_file")
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=columns)
+
+
+def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
+                 min_peak_height=0.0, progress=None):
+    import pandas as pd
+
     oms = _get_oms()
     input_dir = Path(input_dir).resolve()
     feature_maps = []
-    file_count = len(list(input_dir.glob("*.mzML")))
+    files = sorted(p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == '.mzml')
+    file_count = len(files)
+    if not files:
+        raise ValueError('No mzML inputs found')
+    native_tables = []
 
-    for file in input_dir.glob("*.mzML"):
+    for file in files:
         filename = str(file)
         exp = oms.MSExperiment()
-        oms.MzMLFile().load(filename, exp)
+        with ascii_mzml_path(file) as readable_path:
+            oms.MzMLFile().load(str(readable_path), exp)
 
-        mass_traces = []
-        mtd = oms.MassTraceDetection()
-        mtd_par = mtd.getDefaults()
-        mtd_par.setValue(b"mass_error_ppm", mz_tol)
-        mtd_par.setValue(b"noise_threshold_int", noise)
-        mtd_par.setValue(b"chrom_peak_snr", sn)
-        mtd.setParameters(mtd_par)
-        mtd.run(exp, mass_traces, 0)
-
-        mass_traces_deconvol = []
-        epd = oms.ElutionPeakDetection()
-        epd_par = epd.getDefaults()
-        epd_par.setValue(b"min_fwhm", min_fwhm)
-        epd_par.setValue(b"max_fwhm", max_fwhm)
-        epd_par.setValue(b"chrom_peak_snr", sn)
-        epd.setParameters(epd_par)
-        epd.detectPeaks(mass_traces, mass_traces_deconvol)
-
-        feature_map = oms.FeatureMap()
-        ffm = oms.FeatureFindingMetabo()
-        ffm_par = ffm.getDefaults()
-        ffm_par.setValue(b"local_rt_range", 8.0)
-        ffm_par.setValue(b"local_mz_range", 3.5)
-        ffm_par.setValue(b"mz_scoring_13C", b"true")
-        ffm_par.setValue(b"report_convex_hulls", b"true")
-        ffm_par.setValue(b"charge_upper_bound", 2)
-        ffm.setParameters(ffm_par)
-        ffm.run(mass_traces_deconvol, feature_map, [])
-
+        feature_map = detect_feature_map(exp, mz_tol=mz_tol, min_fwhm=min_fwhm,
+                                         max_fwhm=max_fwhm, noise=noise, sn=sn,
+                                         min_peak_height=min_peak_height)
         feature_map.setUniqueIds()
         feature_map.setPrimaryMSRunPath([filename.encode()])
         feature_maps.append(feature_map)
+        native = single_feature_dataframe(feature_map, file.name)
+        native['Feature_ID'] = f'S{len(feature_maps)}_' + native['Feature_ID'].astype(str)
+        native_tables.append(native)
+        if progress is not None:
+            progress(f"MS1 已完成 {len(feature_maps)}/{file_count}：{file.name}")
 
+    # Persist the actual per-file RTs before OpenMS transforms either apexes or
+    # hulls. MS2 association must never use the union of aligned sample bounds.
+    native_path = Path(output_file).with_name(Path(output_file).stem + '_native.csv')
+    pd.concat(native_tables, ignore_index=True).to_csv(native_path, index=False)
     if file_count == 1:
-        feature_maps[0].get_df().to_csv(output_file, index=False)
+        single_feature_dataframe(feature_maps[0], file.name).to_csv(output_file, index=False)
         return output_file
-
-    align_features(feature_maps)
-    group_features(feature_maps, output_file)
+    nonempty_maps = [m for m in feature_maps if m.size()]
+    if not nonempty_maps:
+        single_feature_dataframe(oms.FeatureMap()).to_csv(output_file, index=False)
+        return output_file
+    if len(nonempty_maps) > 1:
+        if progress is not None:
+            progress("MS1 正在对齐特征…")
+        align_features(nonempty_maps)
+    group_features(nonempty_maps, output_file)
     return output_file
 
 
@@ -221,6 +335,7 @@ def run_pyopenms_subprocess(
     max_fwhm,
     noise=1000,
     sn=5,
+    min_peak_height=0.0,
     python_executable: Optional[str] = None,
 ):
     py_exec = str(python_executable).strip() if python_executable else sys.executable
@@ -244,6 +359,8 @@ def run_pyopenms_subprocess(
         str(float(noise)),
         "--sn",
         str(float(sn)),
+        "--min-peak-height",
+        str(float(min_peak_height)),
     ]
 
     env = os.environ.copy()
@@ -272,12 +389,14 @@ def extract_pyopenms_params(config):
     max_fwhm = peak_picking.get("max_fwhm", pyopenms_params.get("max_fwhm", 60.0))
     noise = peak_picking.get("noise", pyopenms_params.get("noise", 1000))
     sn = peak_picking.get("sn", pyopenms_params.get("sn", 5))
+    min_peak_height = peak_picking.get("min_peak_height", pyopenms_params.get("min_peak_height", 0.0))
     return {
         "mz_tol": float(mz_tol),
         "min_fwhm": float(min_fwhm),
         "max_fwhm": float(max_fwhm),
         "noise": float(noise),
         "sn": float(sn),
+        "min_peak_height": float(min_peak_height),
     }
 
 
@@ -307,6 +426,7 @@ def _parse_cli_args():
     parser.add_argument("--max-fwhm", type=float, required=True)
     parser.add_argument("--noise", type=float, default=1000.0)
     parser.add_argument("--sn", type=float, default=5.0)
+    parser.add_argument("--min-peak-height", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -320,4 +440,5 @@ if __name__ == "__main__":
         max_fwhm=ns.max_fwhm,
         noise=ns.noise,
         sn=ns.sn,
+        min_peak_height=ns.min_peak_height,
     )

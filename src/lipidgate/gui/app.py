@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-import pandas as pd
-
 
 _QT_DLL_HANDLES = []
 
@@ -35,9 +33,13 @@ _add_package_dll_directories("PySide6")
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from lipidgate.paths import default_negative_msp, default_peak_truth_model_dir, default_positive_msp
+from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
+from lipidgate.paths import default_negative_msp, default_positive_msp
 
-from .components import LogPanel, TablePanel, Worker, open_in_file_manager, path_row, read_table
+from .components import LogPanel, Worker
+from .parameter_pages import FeaturePage, MS2Page
+from .result_browser import ResultsPage
+from .run_progress import RunProgressPanel
 
 
 def resource_path(relative_path: str | Path) -> Path:
@@ -69,25 +71,37 @@ def _app_icon() -> QtGui.QIcon:
     return QtGui.QIcon(str(path)) if path else QtGui.QIcon()
 
 
+def _install_fonts(app: QtWidgets.QApplication) -> None:
+    fonts = [resource_path(f"assets/fonts/Inter-{weight}.ttf") for weight in ("Regular", "Medium", "SemiBold")]
+    for path in fonts:
+        if path.is_file():
+            QtGui.QFontDatabase.addApplicationFont(str(path))
+    font = QtGui.QFont("Inter", 11)
+    font.setFamilies(["Inter", "Microsoft YaHei UI", "Segoe UI"])
+    font.setStyleStrategy(QtGui.QFont.StyleStrategy.PreferAntialias)
+    app.setFont(font)
+    try:
+        from matplotlib import font_manager, rcParams
+
+        for path in fonts:
+            if path.is_file():
+                font_manager.fontManager.addfont(str(path))
+        rcParams["font.family"] = "Inter"
+    except ImportError:
+        pass
+
+
 def _set_windows_app_user_model_id() -> None:
     if os.name != "nt":
         return
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LipidGate.LipidGate")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "LipidGate.LipidGate"
+        )
     except Exception:
         pass
-
-
-def _looks_like_lfs_pointer(path: Path) -> bool:
-    try:
-        if not path.exists() or path.stat().st_size > 1024:
-            return False
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        return "version https://git-lfs.github.com/spec/v1" in text
-    except OSError:
-        return False
 
 
 class WorkflowPage(QtWidgets.QWidget):
@@ -98,39 +112,6 @@ class WorkflowPage(QtWidgets.QWidget):
         self._worker: Worker | None = None
         self._busy_controls: list[QtWidgets.QWidget] = []
         self.log = LogPanel()
-
-    def _settings_value(self, key: str, default: str = "") -> str:
-        value = self.window.settings.value(key, default)
-        return str(value) if value is not None else default
-
-    def _remember(self, key: str, value: str | Path) -> None:
-        if str(value):
-            self.window.settings.setValue(key, str(value))
-
-    def _browse_file(self, edit: QtWidgets.QLineEdit, title: str, file_filter: str, settings_key: str) -> None:
-        start = self._settings_value(settings_key, str(Path.cwd()))
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, title, start, file_filter)
-        if path:
-            edit.setText(path)
-            self._remember(settings_key, Path(path).parent)
-
-    def _browse_dir(self, edit: QtWidgets.QLineEdit, title: str, settings_key: str) -> None:
-        start = edit.text().strip() or self._settings_value(settings_key, str(Path.cwd()))
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, title, start)
-        if folder:
-            edit.setText(folder)
-            self._remember(settings_key, folder)
-
-    def _require_path(self, edit: QtWidgets.QLineEdit, label: str, must_exist: bool = True) -> Path | None:
-        text = edit.text().strip()
-        if not text:
-            QtWidgets.QMessageBox.warning(self, "缺少输入", f"请填写 {label}")
-            return None
-        path = Path(text)
-        if must_exist and not path.exists():
-            QtWidgets.QMessageBox.warning(self, "路径不存在", f"{label} 不存在:\n{path}")
-            return None
-        return path
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         for control in self._busy_controls:
@@ -159,7 +140,10 @@ class WorkflowPage(QtWidgets.QWidget):
         self._worker = Worker(task)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.finished.connect(lambda result: self._on_worker_done(result, on_done))
+        self._on_done_callback = on_done
+        self._worker.finished.connect(
+            self._on_worker_done, QtCore.Qt.ConnectionType.QueuedConnection
+        )
         self._worker.failed.connect(self._on_worker_failed)
         self._worker.finished.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
@@ -168,927 +152,201 @@ class WorkflowPage(QtWidgets.QWidget):
         self._thread.finished.connect(self._clear_worker)
         self._thread.start()
 
-    def _on_worker_done(self, result: object, on_done: Callable[[object], None]) -> None:
-        self._set_busy(False)
-        on_done(result)
+    @QtCore.Slot(object)
+    def _on_worker_done(self, result: object) -> None:
+        try:
+            self._on_done_callback(result)
+        except Exception as exc:
+            self._on_worker_failed(str(exc))
 
     def _on_worker_failed(self, message: str) -> None:
-        self._set_busy(False)
         self.log.append(f"失败: {message}")
         QtWidgets.QMessageBox.critical(self, "运行失败", message)
         self.window.status.showMessage(message, 10000)
 
     def _clear_worker(self) -> None:
+        self._set_busy(False)
         self._thread = None
         self._worker = None
         self._busy_controls = []
 
 
-class FeaturePage(WorkflowPage):
-    completed = QtCore.Signal(str, str)
+class FilterPage(WorkflowPage):
+    progress_message = QtCore.Signal(str)
 
-    def __init__(self, window: "MainWindow"):
+    def __init__(self, window):
         super().__init__(window)
-        self.algo = QtWidgets.QComboBox()
-        self.algo.addItems(["pyopenms", "asari", "xcms", "msdial"])
-        self.input_path = QtWidgets.QLineEdit()
-        self.output_dir = QtWidgets.QLineEdit(self._settings_value("feature/output_dir", str(Path.cwd() / "results" / "ms1")))
-        self.msdial_table = QtWidgets.QLineEdit()
-        self.ms1_noise = QtWidgets.QDoubleSpinBox()
-        self.ms1_noise.setRange(0.0, 1_000_000_000.0)
-        self.ms1_noise.setDecimals(1)
-        self.ms1_noise.setValue(1000.0)
-        self.ms1_sn = QtWidgets.QDoubleSpinBox()
-        self.ms1_sn.setRange(0.0, 1000.0)
-        self.ms1_sn.setDecimals(1)
-        self.ms1_sn.setValue(5.0)
-        self.ms1_min_fwhm = QtWidgets.QDoubleSpinBox()
-        self.ms1_min_fwhm.setRange(0.0, 1000.0)
-        self.ms1_min_fwhm.setDecimals(1)
-        self.ms1_min_fwhm.setValue(5.0)
-        self.ms1_max_fwhm = QtWidgets.QDoubleSpinBox()
-        self.ms1_max_fwhm.setRange(0.0, 1000.0)
-        self.ms1_max_fwhm.setDecimals(1)
-        self.ms1_max_fwhm.setValue(60.0)
-        self.ms1_min_fraction = QtWidgets.QDoubleSpinBox()
-        self.ms1_min_fraction.setRange(0.0, 1.0)
-        self.ms1_min_fraction.setDecimals(2)
-        self.ms1_min_fraction.setSingleStep(0.05)
-        self.ms1_min_fraction.setValue(0.20)
-        self.run_btn = QtWidgets.QPushButton("运行特征提取")
-        self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
-        self.table = TablePanel("MS1 Feature Table")
-
-        self.msdial_row = path_row(
-            self.msdial_table,
-            [("选择", self._browse_msdial, "选择 MS-DIAL xlsx/xls 表")],
-        )
-        self.input_row = path_row(
-            self.input_path,
-            [
-                ("文件", self._browse_input_file, "选择 mzML 文件"),
-                ("目录", self._browse_input_dir, "选择 mzML 目录"),
-            ],
-        )
-
-        form = QtWidgets.QFormLayout()
-        form.addRow("算法", self.algo)
-        form.addRow("输入", self.input_row)
-        form.addRow(
-            "输出目录",
-            path_row(self.output_dir, [("选择", self._browse_output, "选择输出目录")]),
-        )
-        form.addRow("MS-DIAL 表", self.msdial_row)
-
-        form.addRow("MS1 noise", self.ms1_noise)
-        form.addRow("MS1 S/N", self.ms1_sn)
-        form.addRow("min peak width (s)", self.ms1_min_fwhm)
-        form.addRow("max peak width (s)", self.ms1_max_fwhm)
-        form.addRow("minimum fraction", self.ms1_min_fraction)
-
-        action_row = QtWidgets.QHBoxLayout()
-        action_row.addWidget(self.run_btn)
-        action_row.addWidget(self.open_output_btn)
-        action_row.addStretch(1)
-        form.addRow("", action_row)
-
-        body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        body.addWidget(self.table)
-        body.addWidget(self.log)
-        body.setStretchFactor(0, 4)
-        body.setStretchFactor(1, 1)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(body, 1)
-
-        self.algo.currentTextChanged.connect(self._on_algo_changed)
-        self.run_btn.clicked.connect(self.run)
-        self.open_output_btn.clicked.connect(lambda: open_in_file_manager(self.output_dir.text()))
-        self._on_algo_changed(self.algo.currentText())
-
-    def _browse_input_file(self) -> None:
-        self._browse_file(self.input_path, "选择 mzML 文件", "mzML (*.mzML);;All (*.*)", "feature/input")
-
-    def _browse_input_dir(self) -> None:
-        self._browse_dir(self.input_path, "选择 mzML 目录", "feature/input")
-
-    def _browse_output(self) -> None:
-        self._browse_dir(self.output_dir, "选择输出目录", "feature/output_dir")
-
-    def _browse_msdial(self) -> None:
-        self._browse_file(self.msdial_table, "选择 MS-DIAL 表", "Excel (*.xlsx *.xls)", "feature/msdial")
-
-    def _on_algo_changed(self, algo: str) -> None:
-        is_msdial = algo.strip().lower() == "msdial"
-        self.msdial_row.setEnabled(is_msdial)
-        self.input_row.setEnabled(not is_msdial)
-        self.ms1_min_fraction.setEnabled(algo.strip().lower() == "xcms")
-
-    def _feature_params(self, algo: str) -> dict:
-        algo_norm = algo.strip().lower()
-        if algo_norm == "pyopenms":
-            return {
-                "noise": float(self.ms1_noise.value()),
-                "sn": float(self.ms1_sn.value()),
-                "min_fwhm": float(self.ms1_min_fwhm.value()),
-                "max_fwhm": float(self.ms1_max_fwhm.value()),
-            }
-        if algo_norm == "xcms":
-            return {
-                "noise": float(self.ms1_noise.value()),
-                "snthresh": float(self.ms1_sn.value()),
-                "peakwidth": [float(self.ms1_min_fwhm.value()), float(self.ms1_max_fwhm.value())],
-                "minFraction": float(self.ms1_min_fraction.value()),
-            }
-        return {}
-
-    def run(self) -> None:
-        algo = self.algo.currentText()
-        output_dir = self._require_path(self.output_dir, "输出目录", must_exist=False)
-        if output_dir is None:
-            return
-        if algo == "msdial":
-            input_path = Path(".")
-            msdial_table = self._require_path(self.msdial_table, "MS-DIAL 表")
-            if msdial_table is None:
-                return
-        else:
-            input_path = self._require_path(self.input_path, "mzML 文件/目录")
-            if input_path is None:
-                return
-            msdial_table = None
-
-        def task() -> tuple[FeatureDetectionResult, pd.DataFrame]:
-            from lipidbench.utils.feature_table_io import load_feature_table
-            from lipidgate.ms1 import run_feature_detection_result
-
-            result = run_feature_detection_result(
-                algo=algo,
-                input_path=input_path,
-                output_dir=output_dir,
-                msdial_table=msdial_table,
-                params=self._feature_params(algo),
-            )
-            return result, load_feature_table(result.table_path, result.algo)
-
-        self._start_worker(task, "特征提取运行中...", self._on_done, [self.run_btn, self.open_output_btn])
-
-    def _on_done(self, payload: object) -> None:
-        result, df = payload
-        self.table.set_dataframe(df)
-        self._remember("feature/output_dir", result.output_dir)
-        self.log.append(result.message)
-        self.window.status.showMessage(result.message, 8000)
-        self.completed.emit(str(result.table_path), result.algo)
-
-
-class PeakTruthPage(WorkflowPage):
-    completed = QtCore.Signal(str, str)
-
-    def __init__(self, window: "MainWindow"):
-        super().__init__(window)
-        self.feature_table = QtWidgets.QLineEdit()
-        self.algo = QtWidgets.QComboBox()
-        self.algo.addItems(["pyopenms", "asari", "xcms", "msdial"])
-        self.mzml = QtWidgets.QLineEdit()
-        self.output_dir = QtWidgets.QLineEdit(self._settings_value("peak_truth/output_dir", str(Path.cwd() / "results" / "peak_truth")))
-        self.model_dir = QtWidgets.QLineEdit(str(default_peak_truth_model_dir()))
-        self.max_features = QtWidgets.QSpinBox()
-        self.max_features.setRange(0, 1_000_000)
-        self.max_features.setSpecialValueText("全部")
-        self.max_features.setValue(0)
-        self.run_btn = QtWidgets.QPushButton("计算峰属性并识别真假峰")
-        self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
-
-        self.tabs = QtWidgets.QTabWidget()
-        self.attr_table = TablePanel("Peak Attributes")
-        self.pred_table = TablePanel("Peak Truth Predictions")
-        self.eic_preview = QtWidgets.QLabel("EIC 预览将在运行后显示")
-        self.eic_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.eic_preview.setMinimumHeight(180)
-        self.eic_preview.setObjectName("eicPreview")
-        self.tabs.addTab(self.attr_table, "峰属性")
-        self.tabs.addTab(self.pred_table, "真假峰预测")
-        self.tabs.addTab(self.eic_preview, "EIC 预览")
-
-        form = QtWidgets.QFormLayout()
-        form.addRow("特征表", path_row(self.feature_table, [("选择", self._browse_feature, "选择 feature table")]))
-        form.addRow("算法", self.algo)
-        form.addRow("mzML", path_row(self.mzml, [("选择", self._browse_mzml, "选择 mzML 文件")]))
-        form.addRow("输出目录", path_row(self.output_dir, [("选择", self._browse_output, "选择输出目录")]))
-        form.addRow("模型目录", path_row(self.model_dir, [("选择", self._browse_model, "选择模型目录")]))
-        form.addRow("最大特征数", self.max_features)
-
-        action_row = QtWidgets.QHBoxLayout()
-        action_row.addWidget(self.run_btn)
-        action_row.addWidget(self.open_output_btn)
-        action_row.addStretch(1)
-        form.addRow("", action_row)
-
-        body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        body.addWidget(self.tabs)
-        body.addWidget(self.log)
-        body.setStretchFactor(0, 4)
-        body.setStretchFactor(1, 1)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(body, 1)
-
-        self.run_btn.clicked.connect(self.run)
-        self.open_output_btn.clicked.connect(lambda: open_in_file_manager(self.output_dir.text()))
-
-    def set_feature_table(self, path: str, algo: str) -> None:
-        self.feature_table.setText(path)
-        self.algo.setCurrentText("msdial" if algo == "ms-dial" else algo)
-
-    def _browse_feature(self) -> None:
-        self._browse_file(self.feature_table, "选择特征表", "Table (*.csv *.xlsx *.xls)", "peak_truth/feature")
-
-    def _browse_mzml(self) -> None:
-        self._browse_file(self.mzml, "选择 mzML", "mzML (*.mzML);;All (*.*)", "peak_truth/mzml")
-
-    def _browse_output(self) -> None:
-        self._browse_dir(self.output_dir, "选择输出目录", "peak_truth/output_dir")
-
-    def _browse_model(self) -> None:
-        self._browse_dir(self.model_dir, "选择模型目录", "peak_truth/model")
-
-    def run(self) -> None:
-        feature_table = self._require_path(self.feature_table, "特征表")
-        mzml = self._require_path(self.mzml, "mzML")
-        output_dir = self._require_path(self.output_dir, "输出目录", must_exist=False)
-        model_dir = self._require_path(self.model_dir, "模型目录")
-        if None in {feature_table, mzml, output_dir, model_dir}:
-            return
-        algo = self.algo.currentText()
-        max_features = int(self.max_features.value()) or None
-
-        def task() -> tuple[PeakTruthResult, pd.DataFrame, pd.DataFrame]:
-            from lipidgate.peak_truth import run_peak_truth_result
-
-            result = run_peak_truth_result(
-                feature_table=feature_table,
-                mzml_path=mzml,
-                output_dir=output_dir,
-                algo=algo,
-                model_dir=model_dir,
-                max_features=max_features,
-            )
-            return result, pd.read_csv(result.attributes_path), pd.read_csv(result.predictions_path)
-
-        self._start_worker(task, "真假峰识别运行中...", self._on_done, [self.run_btn, self.open_output_btn])
-
-    def _on_done(self, payload: object) -> None:
-        result, attr_df, pred_df = payload
-        self.attr_table.set_dataframe(attr_df)
-        self.pred_table.set_dataframe(pred_df)
-        self._set_eic_preview(result.eic_image_dir)
-        self._remember("peak_truth/output_dir", result.output_dir)
-        self.log.append(result.message)
-        self.window.status.showMessage(result.message, 8000)
-        self.completed.emit(str(result.attributes_path), str(result.predictions_path))
-
-    def _set_eic_preview(self, image_root: Path) -> None:
-        first = next(iter(sorted(image_root.rglob("*.png"))), None) if image_root.exists() else None
-        if first is None:
-            self.eic_preview.setText("没有找到 EIC 图片")
-            self.eic_preview.setPixmap(QtGui.QPixmap())
-            return
-        pixmap = QtGui.QPixmap(str(first))
-        self.eic_preview.setPixmap(
-            pixmap.scaled(760, 420, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
-        )
-        self.eic_preview.setToolTip(str(first))
-
-
-class MS2Page(WorkflowPage):
-    completed = QtCore.Signal(str)
-    CONTROL_HEIGHT = 34
-    PARAM_SPIN_WIDTH = 150
-    PATH_LABEL_WIDTH = 92
-    BROWSE_BUTTON_WIDTH = 84
-    MZML_BUTTON_WIDTH = 68
-
-    def _style_parameter_spinbox(self, spinbox: QtWidgets.QAbstractSpinBox, width: int | None = None) -> None:
-        spinbox.setFixedWidth(width or self.PARAM_SPIN_WIDTH)
-        spinbox.setMinimumHeight(self.CONTROL_HEIGHT)
-        spinbox.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
-        spinbox.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        spinbox.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-
-    def _make_field_label(self, text: str) -> QtWidgets.QLabel:
-        label = QtWidgets.QLabel(text)
-        label.setObjectName("fieldLabel")
-        label.setMinimumHeight(self.CONTROL_HEIGHT)
-        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft)
-        label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
-        return label
-
-    def _make_browse_button(self, slot: Callable[[], None], tooltip: str) -> QtWidgets.QPushButton:
-        button = QtWidgets.QPushButton("选择")
-        button.setMinimumHeight(self.CONTROL_HEIGHT)
-        button.setFixedWidth(self.BROWSE_BUTTON_WIDTH)
-        button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        button.setToolTip(tooltip)
-        button.clicked.connect(slot)
-        return button
-
-    def _attach_inline_browse_button(
-        self,
-        edit: QtWidgets.QLineEdit,
-        slot: Callable[[], None],
-        tooltip: str,
-    ) -> None:
-        button = QtWidgets.QToolButton(edit)
-        button.setObjectName("inlineBrowseButton")
-        button.setText("...")
-        button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        button.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        button.setToolTip(tooltip)
-        button.setFixedSize(28, 24)
-        button.clicked.connect(slot)
-        edit.setTextMargins(0, 0, 34, 0)
-        edit.installEventFilter(self)
-        self._inline_browse_buttons[edit] = button
-        self._position_inline_browse_button(edit)
-
-    def _position_inline_browse_button(self, edit: QtWidgets.QLineEdit) -> None:
-        button = self._inline_browse_buttons.get(edit)
-        if button is None:
-            return
-        x = edit.rect().right() - button.width() - 5
-        y = (edit.height() - button.height()) // 2
-        button.move(max(0, x), max(0, y))
-
-    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        if watched in getattr(self, "_inline_browse_buttons", {}) and event.type() in {
-            QtCore.QEvent.Type.Resize,
-            QtCore.QEvent.Type.Show,
-        }:
-            self._position_inline_browse_button(watched)  # type: ignore[arg-type]
-        return super().eventFilter(watched, event)
-
-    def _add_path_grid_row(
-        self,
-        grid: QtWidgets.QGridLayout,
-        row: int,
-        label: str,
-        edit: QtWidgets.QLineEdit,
-        browse_slot: Callable[[], None],
-        tooltip: str,
-    ) -> None:
-        edit.setMinimumHeight(self.CONTROL_HEIGHT)
-        edit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-        label_widget = self._make_field_label(label)
-        label_widget.setFixedWidth(self.PATH_LABEL_WIDTH)
-        grid.addWidget(label_widget, row, 0)
-        grid.addWidget(edit, row, 1)
-        self._attach_inline_browse_button(edit, browse_slot, tooltip)
-
-    def _add_mzml_grid_row(self, grid: QtWidgets.QGridLayout, row: int) -> None:
-        self.mzml.setMinimumHeight(self.CONTROL_HEIGHT)
-        self.mzml.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-        label_widget = self._make_field_label("mzML")
-        label_widget.setFixedWidth(self.PATH_LABEL_WIDTH)
-        grid.addWidget(label_widget, row, 0)
-        grid.addWidget(self.mzml, row, 1)
-        self._attach_inline_browse_button(
-            self.mzml,
-            self._browse_mzml_multi,
-            "Select one or more mzML files",
-        )
-
-    def _add_parameter_pair(
-        self,
-        grid: QtWidgets.QGridLayout,
-        row: int,
-        column: int,
-        label: str,
-        widget: QtWidgets.QWidget,
-    ) -> None:
-        widget.setMinimumHeight(self.CONTROL_HEIGHT)
-        grid.addWidget(self._make_field_label(label), row, column)
-        grid.addWidget(widget, row, column + 1)
-
-    def __init__(self, window: "MainWindow"):
-        super().__init__(window)
-        self.last_ms2_csv: Path | None = None
-        self.last_ecn_image: Path | None = None
-        self._ecn_preview_pixmap: QtGui.QPixmap | None = None
-        self.selected_mzml_paths: list[Path] = []
-        self._inline_browse_buttons: dict[QtWidgets.QLineEdit, QtWidgets.QToolButton] = {}
-        self.mzml = QtWidgets.QLineEdit()
-        self.feature_table = QtWidgets.QLineEdit()
-        self.output_dir = QtWidgets.QLineEdit(self._settings_value("ms2/output_dir", str(Path.cwd() / "results" / "ms2")))
-        self.mode = QtWidgets.QComboBox()
-        self.mode.setFixedWidth(self.PARAM_SPIN_WIDTH)
-        self.mode.setMinimumHeight(self.CONTROL_HEIGHT)
-        self.mode.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.mode.addItem("负模式", "negative")
-        self.mode.addItem("正模式", "positive")
-        self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
-        self.adduct_filter = QtWidgets.QLineEdit()
-        self.adduct_filter.setPlaceholderText("留空=全部；多项用逗号分隔")
-        self.adduct_filter.setToolTip("只检索指定加合物，例如 [M-H]-, [M+CH3COO]-；留空表示全部")
-        self.class_filter = QtWidgets.QLineEdit()
-        self.class_filter.setPlaceholderText("留空=全部；多项用逗号分隔")
-        self.class_filter.setToolTip("只检索指定脂质类别，例如 PHEG, SM, LPC；留空表示全部")
-        self.output_topn = QtWidgets.QCheckBox("输出 Top N")
-        self.output_topn.setChecked(False)
-        self.map_to_features = QtWidgets.QCheckBox("Map MS2 to MS1 feature")
-        self.map_to_features.setChecked(True)
-        self.top_n = QtWidgets.QSpinBox()
-        self.top_n.setRange(1, 50)
-        self.top_n.setValue(5)
-        self.top_n.setEnabled(False)
-        self.tolerance_unit = QtWidgets.QComboBox()
-        self.tolerance_unit.addItem("ppm", "ppm")
-        self.tolerance_unit.addItem("Da", "da")
-        self.tolerance_unit.setFixedWidth(self.PARAM_SPIN_WIDTH)
-        self.tolerance_unit.setMinimumHeight(self.CONTROL_HEIGHT)
-        self.tolerance_unit.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.tolerance_unit.setToolTip("MS1 和 MS/MS tolerance 共用这个单位")
-        self.ms1_tolerance = QtWidgets.QDoubleSpinBox()
-        self.ms1_tolerance.setRange(0.1, 1000.0)
-        self.ms1_tolerance.setDecimals(2)
-        self.ms1_tolerance.setValue(10.0)
-        self.msms_tolerance = QtWidgets.QDoubleSpinBox()
-        self.msms_tolerance.setRange(0.1, 1000.0)
-        self.msms_tolerance.setDecimals(2)
-        self.msms_tolerance.setValue(10.0)
-        self.ms2_peak_filter_percent = QtWidgets.QDoubleSpinBox()
-        self.ms2_peak_filter_percent.setRange(0.0, 100.0)
-        self.ms2_peak_filter_percent.setDecimals(3)
-        self.ms2_peak_filter_percent.setSingleStep(0.05)
-        self.ms2_peak_filter_percent.setValue(0.50)
-        self.ms2_peak_filter_percent.setToolTip("过滤低于 base peak 指定百分比的 MS/MS 峰；0.50 表示 0.50%")
-        self.min_total_score = QtWidgets.QDoubleSpinBox()
-        self.min_total_score.setRange(0.0, 100.0)
-        self.min_total_score.setDecimals(1)
-        self.min_total_score.setSingleStep(1.0)
-        self.min_total_score.setValue(50.0)
-        self.min_total_score.setToolTip("按原始 MS2 总分过滤；0 表示关闭过滤")
-        self._style_parameter_spinbox(self.top_n, width=80)
-        self._style_parameter_spinbox(self.ms1_tolerance)
-        self._style_parameter_spinbox(self.msms_tolerance)
-        self._style_parameter_spinbox(self.ms2_peak_filter_percent)
-        self._style_parameter_spinbox(self.min_total_score)
-        self.mode_hint = QtWidgets.QLabel("")
-        self.mode_hint.setObjectName("mutedLabel")
-        self.run_btn = QtWidgets.QPushButton("运行二级质谱鉴定")
+        self.progress_message.connect(self._on_progress)
+        self.use_score = QtWidgets.QCheckBox("使用分数过滤")
+        self.use_score.setChecked(True)
+        self.score = QtWidgets.QDoubleSpinBox()
+        self.score.setRange(0, 100)
+        self.score.setValue(DEFAULT_SEARCH_CONFIG.min_total_score)
+        self.use_ecn = QtWidgets.QCheckBox("使用 ECN 保留时间过滤")
+        self.use_ecn.setChecked(False)
+        self.rt = QtWidgets.QDoubleSpinBox()
+        self.rt.setRange(0.01, 10)
+        self.rt.setDecimals(2)
+        self.rt.setValue(0.5)
+        self.rt.setPrefix("± ")
+        self.rt.setSuffix(" min")
+        self.retain_unmodeled = QtWidgets.QCheckBox("保留拟合点数不足的脂质亚类（ECN 标记为无法判断）")
+        self.retain_unmodeled.setChecked(True)
+        self.run_btn = QtWidgets.QPushButton("保存参数并开始分析")
         self.run_btn.setObjectName("primaryButton")
-        self.run_ecn_btn = QtWidgets.QPushButton("生成 ECN 预览")
-        self.run_ecn_btn.setObjectName("secondaryButton")
-        self.run_ecn_btn.setEnabled(False)
-        self.ecn_rank_rescue = QtWidgets.QCheckBox("ECN Top2/Top3 rescue")
-        self.ecn_rank_rescue.setChecked(True)
-        self.ecn_species_rescue = QtWidgets.QCheckBox("ECN molecular-species rescue")
-        self.ecn_species_rescue.setChecked(False)
-        self.open_output_btn = QtWidgets.QPushButton("打开输出目录")
-        self.open_output_btn.setObjectName("secondaryButton")
-        self.table = TablePanel("MS2 Results")
-        self.ecn_table = TablePanel("ECN Passed Results")
-        self.ecn_preview = QtWidgets.QLabel("MS2 鉴定完成后可生成 ECN 等效碳数预览图")
-        self.ecn_preview.setObjectName("ecnPreview")
-        self.ecn_preview.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.ecn_preview.setMinimumHeight(220)
-        self.ecn_preview.setScaledContents(False)
-        self.tabs = QtWidgets.QTabWidget()
-        self.tabs.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-        self.tabs.setMinimumHeight(220)
-        self.tabs.addTab(self.table, "MS2 结果")
-        self.tabs.addTab(self.ecn_table, "ECN 通过结果")
-        self.tabs.addTab(self.ecn_preview, "ECN 预览图")
-        self.log.setMinimumHeight(60)
-        self.log.setMaximumHeight(120)
-        for widget in (
-            self.mzml,
-            self.feature_table,
-            self.output_dir,
-            self.library,
-            self.adduct_filter,
-            self.class_filter,
-        ):
-            widget.setMinimumHeight(self.CONTROL_HEIGHT)
-            widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-        for widget in (self.mode, self.tolerance_unit):
-            widget.setMinimumHeight(self.CONTROL_HEIGHT)
-            widget.setFixedWidth(self.PARAM_SPIN_WIDTH)
-            widget.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        for button in (self.run_btn, self.run_ecn_btn, self.open_output_btn):
-            button.setMinimumHeight(self.CONTROL_HEIGHT)
-            button.setMinimumWidth(148)
-            button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.run_btn.setMinimumWidth(172)
-
-        parameter_card = QtWidgets.QWidget()
-        parameter_card.setObjectName("ms2ParameterCard")
-        parameter_card.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
-
-        card_layout = QtWidgets.QVBoxLayout(parameter_card)
-        card_layout.setContentsMargins(12, 12, 12, 12)
-        card_layout.setSpacing(7)
-
-        title = QtWidgets.QLabel("参数设置")
-        title.setObjectName("cardTitle")
-        card_layout.addWidget(title)
-
-        file_section = QtWidgets.QWidget()
-        file_layout = QtWidgets.QVBoxLayout(file_section)
-        file_layout.setContentsMargins(0, 0, 0, 0)
-        file_layout.setSpacing(6)
-
-        file_title = QtWidgets.QLabel("输入文件")
-        file_title.setObjectName("sectionTitle")
-        file_layout.addWidget(file_title)
-
-        file_grid = QtWidgets.QGridLayout()
-        file_grid.setContentsMargins(0, 0, 0, 0)
-        file_grid.setHorizontalSpacing(10)
-        file_grid.setVerticalSpacing(5)
-        file_grid.setColumnMinimumWidth(0, self.PATH_LABEL_WIDTH)
-        file_grid.setColumnStretch(1, 1)
-        self._add_mzml_grid_row(file_grid, 0)
-        self._add_path_grid_row(file_grid, 1, "Feature", self.feature_table, self._browse_feature_table, "Select feature table CSV/XLSX")
-        self._add_path_grid_row(file_grid, 2, "输出目录", self.output_dir, self._browse_output, "选择输出目录")
-        self._add_path_grid_row(file_grid, 3, "MSP 库", self.library, self._browse_library, "选择 MSP 库")
-        file_layout.addLayout(file_grid)
-        card_layout.addWidget(file_section)
-
-        search_section = QtWidgets.QWidget()
-        search_layout = QtWidgets.QVBoxLayout(search_section)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(6)
-
-        search_title = QtWidgets.QLabel("搜索参数")
-        search_title.setObjectName("sectionTitle")
-        search_layout.addWidget(search_title)
-
-        parameter_grid = QtWidgets.QGridLayout()
-        parameter_grid.setContentsMargins(0, 0, 0, 0)
-        parameter_grid.setHorizontalSpacing(10)
-        parameter_grid.setVerticalSpacing(5)
-        parameter_grid.setColumnMinimumWidth(0, 150)
-        parameter_grid.setColumnMinimumWidth(1, self.PARAM_SPIN_WIDTH)
-        parameter_grid.setColumnMinimumWidth(2, 150)
-        parameter_grid.setColumnMinimumWidth(3, self.PARAM_SPIN_WIDTH)
-        parameter_grid.setColumnStretch(1, 1)
-        parameter_grid.setColumnStretch(3, 1)
-        self._add_parameter_pair(parameter_grid, 0, 0, "模式", self.mode)
-        self._add_parameter_pair(parameter_grid, 0, 2, "质量误差单位", self.tolerance_unit)
-        self._add_parameter_pair(parameter_grid, 1, 0, "MS1 tolerance", self.ms1_tolerance)
-        self._add_parameter_pair(parameter_grid, 1, 2, "MS/MS tolerance", self.msms_tolerance)
-        self._add_parameter_pair(parameter_grid, 2, 0, "MS/MS peak filter (%)", self.ms2_peak_filter_percent)
-        self._add_parameter_pair(parameter_grid, 2, 2, "最低总分", self.min_total_score)
-        self._add_parameter_pair(parameter_grid, 3, 0, "加合物筛选", self.adduct_filter)
-        self._add_parameter_pair(parameter_grid, 3, 2, "类别筛选", self.class_filter)
-        topn_row = QtWidgets.QHBoxLayout()
-        topn_row.setContentsMargins(0, 0, 0, 0)
-        topn_row.setSpacing(8)
-        topn_row.addWidget(self.output_topn)
-        topn_row.addWidget(self.top_n)
-        topn_row.addWidget(self.map_to_features)
-        topn_row.addStretch(1)
-        topn_widget = QtWidgets.QWidget()
-        topn_widget.setMinimumHeight(self.CONTROL_HEIGHT)
-        topn_widget.setLayout(topn_row)
-        self._add_parameter_pair(parameter_grid, 4, 0, "Top N", topn_widget)
-        parameter_grid.addWidget(self.mode_hint, 4, 2, 1, 2)
-        ecn_rescue_row = QtWidgets.QHBoxLayout()
-        ecn_rescue_row.setContentsMargins(0, 0, 0, 0)
-        ecn_rescue_row.setSpacing(8)
-        ecn_rescue_row.addWidget(self.ecn_rank_rescue)
-        ecn_rescue_row.addWidget(self.ecn_species_rescue)
-        ecn_rescue_row.addStretch(1)
-        ecn_rescue_widget = QtWidgets.QWidget()
-        ecn_rescue_widget.setMinimumHeight(self.CONTROL_HEIGHT)
-        ecn_rescue_widget.setLayout(ecn_rescue_row)
-        self._add_parameter_pair(parameter_grid, 5, 0, "ECN rescue", ecn_rescue_widget)
-        search_layout.addLayout(parameter_grid)
-
-        card_layout.addWidget(search_section)
-
-        action_row = QtWidgets.QHBoxLayout()
-        action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(10)
-        action_row.addWidget(self.run_btn)
-        action_row.addWidget(self.run_ecn_btn)
-        action_row.addWidget(self.open_output_btn)
-        action_row.addStretch(1)
-        card_layout.addLayout(action_row)
-
-        parameter_panel = QtWidgets.QWidget()
-        parameter_panel.setObjectName("ms2ParameterPanel")
-        parameter_panel_layout = QtWidgets.QVBoxLayout(parameter_panel)
-        parameter_panel_layout.setContentsMargins(0, 0, 0, 0)
-        parameter_panel_layout.setSpacing(0)
-        parameter_panel_layout.addWidget(parameter_card)
-        parameter_panel_layout.activate()
-        parameter_panel.setMinimumHeight(parameter_panel.sizeHint().height())
-        parameter_panel.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-
-        body = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        body.addWidget(self.tabs)
-        body.addWidget(self.log)
-        body.setStretchFactor(0, 5)
-        body.setStretchFactor(1, 1)
-        body.setCollapsible(0, False)
-        body.setCollapsible(1, False)
-        body.setSizes([520, 110])
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
-        layout.addWidget(parameter_panel, 0)
-        layout.addWidget(body, 1)
-        layout.setStretchFactor(parameter_panel, 0)
-        layout.setStretchFactor(body, 1)
-
-        self.mode.currentIndexChanged.connect(self._on_mode_changed)
-        self.tolerance_unit.currentIndexChanged.connect(self._on_tolerance_unit_changed)
-        self.output_topn.toggled.connect(self.top_n.setEnabled)
         self.run_btn.clicked.connect(self.run)
-        self.run_ecn_btn.clicked.connect(self.run_ecn_preview)
-        self.open_output_btn.clicked.connect(lambda: open_in_file_manager(self.output_dir.text()))
-        self._on_mode_changed()
-        self._on_tolerance_unit_changed()
+        self.run_btn.setFixedSize(220, 40)
+        from .result_browser import card, label
 
-    def _mode_value(self) -> str:
-        return str(self.mode.currentData() or "negative")
-
-    def _on_mode_changed(self, _index: int | None = None) -> None:
-        mode = self._mode_value()
-        self.library.setText(str(default_positive_msp() if mode == "positive" else default_negative_msp()))
-        self._update_mode_hint()
-
-    def _on_tolerance_unit_changed(self, _index: int | None = None) -> None:
-        unit = str(self.tolerance_unit.currentData() or "ppm")
-        if unit == "da":
-            self.ms1_tolerance.setRange(0.0001, 10.0)
-            self.ms1_tolerance.setDecimals(4)
-            if self.ms1_tolerance.value() >= 1.0:
-                self.ms1_tolerance.setValue(0.01)
-            self.msms_tolerance.setRange(0.0001, 10.0)
-            self.msms_tolerance.setDecimals(4)
-            if self.msms_tolerance.value() >= 1.0:
-                self.msms_tolerance.setValue(0.02)
-        else:
-            self.ms1_tolerance.setRange(0.1, 1000.0)
-            self.ms1_tolerance.setDecimals(2)
-            if self.ms1_tolerance.value() < 0.1:
-                self.ms1_tolerance.setValue(10.0)
-            self.msms_tolerance.setRange(0.1, 1000.0)
-            self.msms_tolerance.setDecimals(2)
-            if self.msms_tolerance.value() < 0.1:
-                self.msms_tolerance.setValue(10.0)
-        self._update_mode_hint()
-
-    def _update_mode_hint(self) -> None:
-        unit = str(self.tolerance_unit.currentData() or "ppm")
-        self.mode_hint.setText(f"MS1 和 MS/MS tolerance 均使用 {unit}。")
-
-    @staticmethod
-    def _filter_values(widget: QtWidgets.QLineEdit) -> list[str] | None:
-        values = [value.strip() for value in widget.text().replace("；", ",").split(",") if value.strip()]
-        return values or None
-
-    def _browse_mzml(self) -> None:
-        start = self._settings_value("ms2/mzml", str(Path.cwd()))
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择 mzML", start, "mzML (*.mzML *.mzml);;All (*.*)")
-        if path:
-            mzml_path = Path(path)
-            self.selected_mzml_paths = [mzml_path]
-            self.mzml.setText(str(mzml_path))
-            self._remember("ms2/mzml", mzml_path.parent)
-
-    def _browse_mzml_dir(self) -> None:
-        start = self.mzml.text().strip() or self._settings_value("ms2/mzml", str(Path.cwd()))
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "选择 mzML 目录", start)
-        if folder:
-            from lipidgate.ms2.feature_linking import collect_mzml_paths
-
-            try:
-                self.selected_mzml_paths = collect_mzml_paths(folder)
-            except Exception as exc:
-                QtWidgets.QMessageBox.warning(self, "mzML 目录无效", str(exc))
-                return
-            self.mzml.setText(folder)
-            self._remember("ms2/mzml", folder)
-
-    def _browse_mzml_multi(self) -> None:
-        start = self._settings_value("ms2/mzml", str(Path.cwd()))
-        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "选择多个 mzML", start, "mzML (*.mzML *.mzml);;All (*.*)")
-        if paths:
-            self.selected_mzml_paths = [Path(path) for path in paths]
-            self.mzml.setText(f"Selected {len(paths)} mzML files")
-            self._remember("ms2/mzml", Path(paths[0]).parent)
-
-    def _browse_feature_table(self) -> None:
-        self._browse_file(self.feature_table, "选择 feature table", "Table (*.csv *.xlsx *.xls);;All (*.*)", "ms2/feature_table")
-
-    def set_feature_table(self, path: str, _algo: str = "") -> None:
-        self.feature_table.setText(path)
-
-    def _mzml_input_for_run(self):
-        text = self.mzml.text().strip()
-        if self.selected_mzml_paths and text.startswith("Selected "):
-            return list(self.selected_mzml_paths)
-        if text:
-            return Path(text)
-        if self.selected_mzml_paths:
-            return list(self.selected_mzml_paths)
-        return None
-
-    def _browse_output(self) -> None:
-        self._browse_dir(self.output_dir, "选择输出目录", "ms2/output_dir")
-
-    def _browse_library(self) -> None:
-        self._browse_file(
-            self.library,
-            "选择 MSP 库",
-            "MSP (*.msp *.msp.gz);;All (*.*)",
-            "ms2/library",
+        content = QtWidgets.QWidget()
+        content.setMaximumWidth(1160)
+        body = QtWidgets.QVBoxLayout(content)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(16)
+        title = label("结果过滤")
+        title.setStyleSheet("font-size:22px;font-weight:600;color:#172438")
+        body.addWidget(title)
+        body.addWidget(
+            label("设置分析前参数。运行完成后，在结果查看页面浏览、筛选及查看谱图。")
         )
+        scoring, scoring_layout = card("候选与分数")
+        form = QtWidgets.QFormLayout()
+        form.addRow(window.ms2_page.output_topn, window.ms2_page.top_n)
+        form.addRow(self.use_score, self.score)
+        scoring_layout.addLayout(form)
+        confidence = label(
+            "高 / 低置信度沿用 MS1 支持与碎片证据规则；最低 Score 仅用于结果过滤。",
+            "resultMuted",
+        )
+        confidence.setWordWrap(True)
+        scoring_layout.addWidget(confidence)
+        body.addWidget(scoring)
+        ecn, ecn_layout = card("ECN 保留时间过滤")
+        form = QtWidgets.QFormLayout()
+        form.addRow(self.use_ecn, self.rt)
+        form.addRow(self.retain_unmodeled)
+        ecn_layout.addLayout(form)
+        info = label(
+            "仅用高置信度证据建模；通过阈值为 ±RT 设置值。拟合点数不足时保留与否由上方选项控制。",
+            "resultMuted",
+        )
+        info.setWordWrap(True)
+        ecn_layout.addWidget(info)
+        body.addWidget(ecn)
+        for widget in (self.score, self.rt, window.ms2_page.top_n):
+            widget.setFixedSize(200, 40)
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(self.run_btn)
+        body.addLayout(actions)
+        self.run_progress = RunProgressPanel()
+        self.run_progress.hide()
+        body.addWidget(self.run_progress)
+        self.log.setMaximumHeight(140)
+        body.addWidget(self.log)
+        body.addStretch()
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.addStretch(1)
+        layout.addWidget(content, 100)
+        layout.addStretch(1)
+        self.setStyleSheet(
+            "QFrame#resultCard {background:white;border:1px solid #dce3ec;border-radius:8px;} QLabel#resultSection {font-weight:600;color:#27374b;} QLabel#resultMuted {color:#778499;font-size:12px;}"
+        )
+        self.use_score.toggled.connect(self.score.setEnabled)
+        self.use_ecn.toggled.connect(self._ecn_enabled)
+        self._ecn_enabled(False)
 
-    def run(self) -> None:
-        mzml_input = self._mzml_input_for_run()
-        if mzml_input is None:
-            QtWidgets.QMessageBox.warning(self, "缺少输入", "请选择 mzML 文件或目录")
+    def _ecn_enabled(self, on):
+        for widget in (self.rt, self.retain_unmodeled):
+            widget.setEnabled(on)
+
+    def run(self):
+        try:
+            if self.window.project is None:
+                raise ValueError("请先选择项目并导入文件")
+            files = self.window.project.mzml_files()
+            settings = self.window.analysis_settings()
+            if settings["ms1"]["params"].get("min_fwhm", 0) > settings["ms1"][
+                "params"
+            ].get("max_fwhm", float("inf")):
+                raise ValueError("最小峰宽不能大于最大峰宽")
+            project_path = str(self.window.project.root)
+            self.window.project.settings = settings
+            self.window.project.save()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "参数不完整", str(exc))
             return
-        if isinstance(mzml_input, Path) and not mzml_input.exists():
-            QtWidgets.QMessageBox.warning(self, "路径不存在", f"mzML 输入不存在:\n{mzml_input}")
-            return
-        output_dir = self._require_path(self.output_dir, "输出目录", must_exist=False)
-        library = self._require_path(self.library, "MSP 库")
-        if None in {output_dir, library}:
-            return
-        feature_table = None
-        if self.feature_table.text().strip():
-            feature_table = self._require_path(self.feature_table, "feature table")
-            if feature_table is None:
-                return
-        if _looks_like_lfs_pointer(library):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "MSP 库尚未下载",
-                "当前 MSP 文件看起来只是 Git LFS 指针，不是完整数据库。\n\n"
-                "请在 LipidGate 项目目录运行:\n"
-                "git lfs pull",
+
+        def task():
+            from .project_worker import run_isolated
+
+            return run_isolated(
+                project_path, settings, progress=self.progress_message.emit
             )
-            return
-        unit = str(self.tolerance_unit.currentData() or "ppm")
-        precursor_ppm = float(self.ms1_tolerance.value()) if unit == "ppm" else 10.0
-        precursor_da = float(self.ms1_tolerance.value()) if unit == "da" else None
-        fragment_ppm = float(self.msms_tolerance.value()) if unit == "ppm" else None
-        fragment_da = float(self.msms_tolerance.value()) if unit == "da" else None
-        min_relative_intensity = float(self.ms2_peak_filter_percent.value()) / 100.0
-        min_total_score = float(self.min_total_score.value())
-        allowed_adducts = self._filter_values(self.adduct_filter)
-        allowed_classes = self._filter_values(self.class_filter)
-        output_top_n = int(self.top_n.value()) if self.output_topn.isChecked() else 1
-        if self.ecn_rank_rescue.isChecked():
-            output_top_n = max(output_top_n, 3)
-        self.run_ecn_btn.setEnabled(False)
-        self.last_ms2_csv = None
-        self.ecn_table.clear()
-        self._ecn_preview_pixmap = None
-        self.ecn_preview.setText("等待 MS2 鉴定结果")
-        self.ecn_preview.setPixmap(QtGui.QPixmap())
 
-        def task() -> object:
-            from lipidgate.ms2 import run_ms2_feature_annotation_result
+        self.run_progress.start(len(files), settings["ms1"].get("enabled", True))
+        QtCore.QTimer.singleShot(
+            0, lambda: self.window.stack.widget(4).ensureWidgetVisible(self.run_progress)
+        )
+        self._start_worker(
+            task, "项目分析运行中…", self._done, [self.run_btn, self.window.nav]
+        )
+        for p in (
+            self.window.project_page,
+            self.window.import_page,
+            self.window.feature_page,
+            self.window.ms2_page,
+        ):
+            p.setEnabled(False)
 
-            return run_ms2_feature_annotation_result(
-                mzml_input=mzml_input,
-                feature_table=feature_table,
-                output_dir=output_dir,
-                mode=self._mode_value(),
-                library_path=library,
-                top_n=output_top_n,
-                precursor_tolerance_ppm=precursor_ppm,
-                precursor_tolerance_da=precursor_da,
-                fragment_tolerance_da=fragment_da,
-                fragment_tolerance_ppm=fragment_ppm,
-                min_relative_intensity=min_relative_intensity,
-                min_total_score=min_total_score,
-                allowed_adducts=allowed_adducts,
-                allowed_classes=allowed_classes,
-                map_to_features=bool(feature_table and self.map_to_features.isChecked()),
+    @QtCore.Slot(str)
+    def _on_progress(self, message):
+        self.run_progress.update_message(message)
+        self.log.append(message)
+        self.window.status.showMessage(message)
+
+    def _on_worker_failed(self, message):
+        self.run_progress.fail()
+        super()._on_worker_failed(message)
+
+    def _set_busy(self, busy, message=""):
+        super()._set_busy(busy, message)
+        for widget in (
+            self.use_score,
+            self.use_ecn,
+            self.score,
+            self.rt,
+            self.retain_unmodeled,
+            self.window.ms2_page.output_topn,
+            self.window.ms2_page.top_n,
+            self.window.ms2_page.workers,
+        ):
+            widget.setEnabled(not busy)
+        if not busy:
+            self.window.ms2_page.top_n.setEnabled(
+                self.window.ms2_page.output_topn.isChecked()
             )
+            self.score.setEnabled(self.use_score.isChecked())
+            self._ecn_enabled(self.use_ecn.isChecked())
+            for p in (
+                self.window.project_page,
+                self.window.import_page,
+                self.window.feature_page,
+                self.window.ms2_page,
+            ):
+                p.setEnabled(True)
 
-        self._start_worker(task, "二级质谱鉴定运行中...", self._on_done, [self.run_btn, self.open_output_btn])
-
-    def _on_done(self, payload: object) -> None:
+    def _done(self, payload):
         result = payload
-        self.table.set_dataframe(result.data)
-        self._remember("ms2/output_dir", result.output_dir)
-        self.last_ms2_csv = result.csv_path or result.xlsx_path
-        self.run_ecn_btn.setEnabled(self.last_ms2_csv is not None and self.last_ms2_csv.exists())
-        self.log.append(result.message)
-        self.log.append("MS2 鉴定完成。可点击“生成 ECN 预览”查看 ECN 图。")
-        self.window.status.showMessage(result.message, 8000)
-        display_path = result.xlsx_path or result.annotations_csv_path or result.csv_path
-        self.completed.emit(str(display_path))
-
-    def run_ecn_preview(self) -> None:
-        if self.last_ms2_csv is None or not self.last_ms2_csv.exists():
-            QtWidgets.QMessageBox.warning(self, "缺少 MS2 结果", "请先完成一次二级质谱鉴定。")
-            return
-        output_dir = Path(self.output_dir.text().strip() or self.last_ms2_csv.parent)
-        ecn_dir = output_dir / "ecn_filter"
-
-        def task() -> tuple[object, Path]:
-            from lipidgate.ecn_filter import ECNFilterConfig, plot_ecn_preview, run_ecn_filter_result
-
-            result = run_ecn_filter_result(
-                input_table=self.last_ms2_csv,
-                output_dir=ecn_dir,
-                export_xlsx=True,
-                config=ECNFilterConfig(
-                    enable_rank_rescue=self.ecn_rank_rescue.isChecked(),
-                    enable_species_rescue=self.ecn_species_rescue.isChecked(),
-                ),
-            )
-            image_path = plot_ecn_preview(result.data, result.output_dir, result.model_summary)
-            return result, image_path
-
-        self._start_worker(task, "ECN 预览生成中...", self._on_ecn_done, [self.run_btn, self.run_ecn_btn, self.open_output_btn])
-
-    def _on_ecn_done(self, payload: object) -> None:
-        result, image_path = payload
-        self.ecn_table.set_dataframe(result.passed_data)
-        self.last_ecn_image = image_path
-        pixmap = QtGui.QPixmap(str(image_path))
-        if pixmap.isNull():
-            self._ecn_preview_pixmap = None
-            self.ecn_preview.setText(f"ECN 预览图生成失败:\n{image_path}")
-        else:
-            self._ecn_preview_pixmap = pixmap
-            self._update_ecn_preview_pixmap()
-            self.ecn_preview.setToolTip(str(image_path))
-        self.tabs.setCurrentWidget(self.ecn_preview)
-        self.log.append(result.message)
-        self.log.append(f"ECN preview plot: {image_path}")
-        self.window.status.showMessage(f"ECN 预览已生成: {image_path}", 8000)
-
-    def _update_ecn_preview_pixmap(self) -> None:
-        if self._ecn_preview_pixmap is None or self._ecn_preview_pixmap.isNull():
-            return
-        target = self.ecn_preview.size() - QtCore.QSize(16, 16)
-        if target.width() <= 0 or target.height() <= 0:
-            return
-        self.ecn_preview.setPixmap(
-            self._ecn_preview_pixmap.scaled(
-                target,
-                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                QtCore.Qt.TransformationMode.SmoothTransformation,
-            )
+        self.window.results_page.set_path(str(result.xlsx_path or result.csv_path))
+        self.run_progress.finish()
+        self.log.append(
+            f"完成：{result.row_count} 个最终名称\n{result.xlsx_path or result.csv_path}"
         )
-
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self._update_ecn_preview_pixmap()
-
-
-class ResultsPage(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.path = QtWidgets.QLineEdit()
-        self.open_btn = QtWidgets.QPushButton("打开结果表")
-        self.open_dir_btn = QtWidgets.QPushButton("打开所在目录")
-        self.table = TablePanel("Result Table")
-
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(self.path, 1)
-        row.addWidget(self.open_btn)
-        row.addWidget(self.open_dir_btn)
-
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(row)
-        layout.addWidget(self.table, 1)
-
-        self.open_btn.clicked.connect(self.open_table)
-        self.open_dir_btn.clicked.connect(lambda: open_in_file_manager(self.path.text()))
-
-    def set_path(self, path: str) -> None:
-        self.path.setText(path)
-        self.open_table()
-
-    def open_table(self) -> None:
-        path_text = self.path.text().strip()
-        if not path_text:
-            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择结果表", str(Path.cwd()), "Table (*.csv *.xlsx *.xls)")
-            if not path:
-                return
-            self.path.setText(path)
-            path_text = path
-        path = Path(path_text)
-        if not path.exists():
-            QtWidgets.QMessageBox.warning(self, "路径不存在", f"结果表不存在:\n{path}")
-            return
-        self.table.set_dataframe(read_table(path))
+        self.window.status.showMessage("分析完成")
+        self.window.nav.setCurrentRow(5)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -1100,16 +358,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setWindowIcon(icon)
         self.settings = QtCore.QSettings("LipidGate", "LipidGate")
         screen = QtGui.QGuiApplication.primaryScreen()
-        available = screen.availableGeometry() if screen else QtCore.QRect(0, 0, 1280, 800)
-        default_width = max(1360, min(1440, int(available.width() * 0.92)))
-        default_height = max(860, min(900, int(available.height() * 0.90)))
+        available = (
+            screen.availableGeometry() if screen else QtCore.QRect(0, 0, 1280, 800)
+        )
+        default_width = max(1000, min(1360, int(available.width() * 0.92)))
+        default_height = max(700, min(860, int(available.height() * 0.90)))
         self.resize(default_width, default_height)
-        self.setMinimumSize(1280, 820)
+        self.setMinimumSize(1000, 700)
         geometry = self.settings.value("main/geometry")
         if geometry:
             self.restoreGeometry(geometry)
-            if self.width() < 1360 or self.height() < 850:
-                self.resize(default_width, default_height)
         self.status = self.statusBar()
         self.progress = QtWidgets.QProgressBar()
         self.progress.setFixedWidth(180)
@@ -1149,16 +407,29 @@ class MainWindow(QtWidgets.QMainWindow):
         sidebar_layout.addSpacing(16)
 
         self.nav = QtWidgets.QListWidget()
-        self.nav.addItems(["特征提取", "真假峰识别", "二级质谱鉴定", "结果查看"])
+        self.nav.addItems(
+            [
+                "1  项目",
+                "2  导入文件",
+                "3  MS1 参数",
+                "4  MS2 参数",
+                "5  过滤与导出",
+                "结果查看",
+            ]
+        )
         self.nav.setObjectName("sideNav")
         self.nav.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.nav.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.nav.setSpacing(6)
         self.nav.setUniformItemSizes(True)
-        self.nav.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.nav.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.nav.setMinimumHeight(230)
-        self.nav.setMaximumHeight(230)
+        self.nav.setVerticalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.nav.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.nav.setMinimumHeight(350)
+        self.nav.setMaximumHeight(350)
         for index in range(self.nav.count()):
             self.nav.item(index).setSizeHint(QtCore.QSize(0, 44))
         sidebar_layout.addWidget(self.nav)
@@ -1166,14 +437,35 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.stack = QtWidgets.QStackedWidget()
         self.feature_page = FeaturePage(self)
-        self.peak_page = PeakTruthPage(self)
         self.ms2_page = MS2Page(self)
-        self.results_page = ResultsPage()
-        self.stack.addWidget(self.feature_page)
-        self.stack.addWidget(self.peak_page)
-        self.stack.addWidget(self.ms2_page)
-        self.stack.addWidget(self.results_page)
-        self.stack.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.results_page = ResultsPage(self)
+        from .project_pages import ProjectPage, ImportPage
+
+        self.project = None
+        self.project_page = ProjectPage(self)
+        self.import_page = ImportPage(self)
+        self.filter_page = FilterPage(self)
+        for page in (
+            self.project_page,
+            self.import_page,
+            self.feature_page,
+            self.ms2_page,
+            self.filter_page,
+            self.results_page,
+        ):
+            if page is self.results_page:
+                # The workbench has its own splitters and scrolling panes;
+                # wrapping it in a scroll area prevents it shrinking vertically.
+                self.stack.addWidget(page)
+                continue
+            scroll = QtWidgets.QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(page)
+            self.stack.addWidget(scroll)
+        self.stack.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
 
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
@@ -1189,22 +481,132 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
-        self.feature_page.completed.connect(self.peak_page.set_feature_table)
-        self.feature_page.completed.connect(self.ms2_page.set_feature_table)
-        self.peak_page.completed.connect(lambda _attrs, pred: self.results_page.set_path(pred))
-        self.ms2_page.completed.connect(self.results_page.set_path)
         self._apply_style()
 
+    def analysis_settings(self):
+        f, m, r = self.feature_page, self.ms2_page, self.filter_page
+        unit = m.tolerance_unit.currentData()
+        default_library = (
+            default_positive_msp() if m._mode_value() == "positive" else default_negative_msp()
+        )
+        library_path = m.library.text().strip()
+        if library_path == str(default_library):
+            library_path = ""
+        return {
+            "ms1": {
+                "enabled": f.enabled.isChecked(),
+                "algo": f.algo.currentText(),
+                "params": f._feature_params(f.algo.currentText()),
+                "msdial_table": f.msdial_table.text() or None,
+            },
+            "ms2": {
+                "mode": m._mode_value(),
+                "library_path": library_path,
+                "top_n": m.top_n.value() if m.output_topn.isChecked() else 1,
+                "precursor_tolerance_ppm": m.ms1_tolerance.value()
+                if unit == "ppm"
+                else DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm,
+                "precursor_tolerance_da": m.ms1_tolerance.value()
+                if unit == "da"
+                else None,
+                "fragment_tolerance_ppm": m.msms_tolerance.value()
+                if unit == "ppm"
+                else None,
+                "fragment_tolerance_da": m.msms_tolerance.value()
+                if unit == "da"
+                else None,
+                "min_relative_intensity": m.ms2_peak_filter_percent.value() / 100,
+                "allowed_adducts": m._filter_values(m.adduct_filter),
+                "allowed_classes": m._filter_values(m.class_filter),
+                "workers": m.workers.value(),
+            },
+            "filter": {
+                "use_score": r.use_score.isChecked(),
+                "min_score": r.score.value(),
+                "use_ecn": r.use_ecn.isChecked(),
+                "rt_tolerance": r.rt.value(),
+                "retain_unmodeled": r.retain_unmodeled.isChecked(),
+            },
+        }
+
+    def load_project_settings(self, settings):
+        # Reset first, so an empty/new project cannot inherit the previous one.
+        f, m, r = self.feature_page, self.ms2_page, self.filter_page
+        self.results_page.clear()
+        a = settings.get("ms1", {})
+        b = settings.get("ms2", {})
+        c = settings.get("filter", {})
+        f.enabled.setChecked(a.get("enabled", True))
+        f.algo.setCurrentText(a.get("algo", "pyopenms"))
+        p = a.get("params", {})
+        f.ms1_noise.setValue(p.get("noise", p.get("min_intensity_threshold", 1000)))
+        f.ms1_min_peak_height.setValue(p.get("min_peak_height", p.get("min_maxo", 0)) or 0)
+        f.ms1_sn.setValue(p.get("sn", p.get("snthresh", 5)))
+        f.ms1_ppm.setValue(p.get("mz_tol", p.get("ppm", 5)))
+        f.ms1_min_fwhm.setValue(p.get("min_fwhm", p.get("peakwidth", [5, 60])[0]))
+        f.ms1_max_fwhm.setValue(p.get("max_fwhm", p.get("peakwidth", [5, 60])[1]))
+        f.ms1_min_fraction.setValue(p.get("minFraction", 0.2))
+        f.ms1_min_samples.setValue(p.get("minSamples", p.get("min_samples", 1)) or 1)
+        f.msdial_table.setText(a.get("msdial_table") or "")
+        m.mode.setCurrentIndex(m.mode.findData(b.get("mode", "negative")))
+        m._on_mode_changed()
+        saved_library = b.get("library_path")
+        default_name = (
+            default_positive_msp() if m._mode_value() == "positive" else default_negative_msp()
+        ).name
+        if saved_library and (Path(saved_library).exists() or Path(saved_library).name != default_name):
+            m.library.setText(saved_library)
+        unit = "da" if b.get("precursor_tolerance_da") is not None else "ppm"
+        m.tolerance_unit.setCurrentIndex(m.tolerance_unit.findData(unit))
+        m.ms1_tolerance.setValue(
+            b.get("precursor_tolerance_da", 0.01)
+            if unit == "da"
+            else b.get(
+                "precursor_tolerance_ppm", DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm
+            )
+        )
+        m.msms_tolerance.setValue(
+            b.get("fragment_tolerance_da", 0.02)
+            if unit == "da"
+            else b.get(
+                "fragment_tolerance_ppm", DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm
+            )
+        )
+        m.top_n.setValue(b.get("top_n", 3))
+        m.workers.setValue(b.get("workers", 1))
+        m.output_topn.setChecked(True)
+        m.ms2_peak_filter_percent.setValue(b.get("min_relative_intensity", 0.002) * 100)
+        m.adduct_filter.setText(", ".join(b.get("allowed_adducts") or []))
+        m.class_filter.setText(", ".join(b.get("allowed_classes") or []))
+        r.use_score.setChecked(c.get("use_score", True))
+        r.score.setValue(c.get("min_score", 50))
+        r.use_ecn.setChecked(c.get("use_ecn", False))
+        r.rt.setValue(c.get("rt_tolerance", 0.5))
+        r.retain_unmodeled.setChecked(c.get("retain_unmodeled", True))
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self.filter_page._thread is not None or self.results_page._jobs:
+            event.ignore()
+            self.status.showMessage("分析仍在运行，请等待完成后关闭")
+            return
+        if self.project:
+            try:
+                self.project.settings = self.analysis_settings()
+                self.project.save()
+            except OSError as exc:
+                event.ignore()
+                QtWidgets.QMessageBox.warning(self, "项目保存失败", str(exc))
+                return
         self.settings.setValue("main/geometry", self.saveGeometry())
         super().closeEvent(event)
 
     def _apply_style(self) -> None:
         combo_arrow = resource_path("assets/icons/combo_down.svg").as_posix()
+        combo_arrow_hover = resource_path("assets/icons/combo_down_hover.svg").as_posix()
         self.setStyleSheet(
             """
             QMainWindow, QWidget {
-                font-size: 13px;
+                font-size: 15px;
                 color: #111827;
             }
             QMainWindow {
@@ -1317,7 +719,7 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QComboBox {
                 min-height: 32px;
-                padding: 0 38px 0 10px;
+                padding: 0 34px 0 10px;
                 selection-background-color: #2563eb;
                 selection-color: #ffffff;
             }
@@ -1327,20 +729,22 @@ class MainWindow(QtWidgets.QMainWindow):
             QComboBox::drop-down {
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 34px;
-                border-left: 1px solid #e2e8f0;
+                width: 30px;
+                border: none;
                 border-top-right-radius: 7px;
                 border-bottom-right-radius: 7px;
-                background: #f8fafc;
+                background: transparent;
             }
             QComboBox::drop-down:hover {
-                background: #eff6ff;
-                border-left-color: #bfdbfe;
+                background: #f3f6fa;
             }
             QComboBox::down-arrow {
                 image: url("__COMBO_ARROW__");
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
+            }
+            QComboBox::down-arrow:hover {
+                image: url("__COMBO_ARROW_HOVER__");
             }
             QComboBox QAbstractItemView {
                 background: #ffffff;
@@ -1454,6 +858,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #1d4ed8;
             }
             """.replace("__COMBO_ARROW__", combo_arrow)
+               .replace("__COMBO_ARROW_HOVER__", combo_arrow_hover)
         )
 
 
@@ -1464,6 +869,7 @@ def main() -> int:
             QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    _install_fonts(app)
     icon = _app_icon()
     if not icon.isNull():
         app.setWindowIcon(icon)

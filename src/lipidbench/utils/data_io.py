@@ -161,24 +161,34 @@ def load_pyopenms_results(
     max_fwhm=60.0,
     noise=1000.0,
     sn=5.0,
+    min_peak_height=0.0,
     force_recompute_bounds=False,
 ):
     df = pd.read_csv(file_path)
 
-    rt_in_seconds = None
-    if "RT" in df.columns:
-        rt_numeric = pd.to_numeric(df["RT"], errors="coerce")
-        rt_max = rt_numeric.max(skipna=True)
-        rt_in_seconds = bool(rt_max and rt_max > 200)
-    rt_to_seconds_factor = 1.0 if rt_in_seconds else 60.0
-    rt_to_minutes_factor = 1.0 / 60.0 if rt_in_seconds else 1.0
+    # Native exports carry units explicitly, including acquisitions <200 s.
+    # Normalize once to seconds internally, then export all RT fields in minutes.
+    if "RT_unit" in df and not df.empty:
+        units = df["RT_unit"].astype(str).str.strip().str.lower()
+        if units.isin(["seconds", "second", "s"]).all():
+            input_seconds = True
+        elif units.isin(["minutes", "minute", "min"]).all():
+            input_seconds = False
+        else:
+            raise ValueError("pyOpenMS feature table must use one explicit RT unit")
+    else:
+        rt_numeric = pd.to_numeric(df.get("RT", pd.Series(dtype=float)), errors="coerce")
+        input_seconds = bool(rt_numeric.max(skipna=True) > 200)
+    input_factor = 1.0 if input_seconds else 60.0
+    for col in ["RT", "RTmin", "RTmax", "RTstart", "RTend"]:
+        if col in df:
+            df[col] = pd.to_numeric(df[col], errors="coerce") * input_factor
+    rt_to_minutes_factor = 1.0 / 60.0
 
     for col in ["RTstart", "RTend"]:
         if col in df.columns:
             s = pd.to_numeric(df[col], errors="coerce")
             s = s.mask(s.abs() > 1e300)
-            if rt_in_seconds is False:
-                s = s * rt_to_seconds_factor
             df[col] = s
 
     for col in ["MZstart", "MZend"]:
@@ -195,8 +205,6 @@ def load_pyopenms_results(
 
     if needs_rt_bounds and not has_rt_bounds and "RT" in df.columns:
         rt_numeric = pd.to_numeric(df["RT"], errors="coerce")
-        if rt_in_seconds is False:
-            rt_numeric = rt_numeric * rt_to_seconds_factor
         half_width_sec = max(float(min_fwhm or 0.0), 0.0) / 2.0
         df["RTstart"] = rt_numeric - half_width_sec
         df["RTend"] = rt_numeric + half_width_sec
@@ -230,8 +238,6 @@ def load_pyopenms_results(
 
     if "RT" in df.columns:
         rt_numeric = pd.to_numeric(df["RT"], errors="coerce")
-        if rt_in_seconds is False:
-            rt_numeric = rt_numeric * rt_to_seconds_factor
         df["RT"] = rt_numeric
 
     if "RT" not in df.columns and "RTstart" in df.columns and "RTend" in df.columns:
@@ -251,6 +257,8 @@ def load_pyopenms_results(
     for col in ["RT", "RTmin", "RTmax"]:
         if col in df.columns:
             df[col] = (pd.to_numeric(df[col], errors="coerce") * rt_to_minutes_factor).round(3)
+
+    df["RT_unit"] = "minutes"
 
     base_cols = [c for c in ["Feature_ID", "mz", "mzmin", "mzmax", "RT", "RTmin", "RTmax"] if c in df.columns]
     other_cols = [c for c in df.columns if c not in base_cols]

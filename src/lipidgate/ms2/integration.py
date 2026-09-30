@@ -31,10 +31,10 @@ def attach_ms2_to_ms1_features(
         raise ValueError("MS2 table is missing mz or RT columns, cannot attach to MS1 results")
     result = ms1_df.copy()
     valid_ms2 = ms2_df.copy()
+    if "ms1_support_status" in valid_ms2.columns:
+        valid_ms2 = valid_ms2.loc[~valid_ms2["ms1_support_status"].eq("MS2-only").fillna(False)].copy()
     if "passed_required_gates" in valid_ms2.columns:
-        passed = valid_ms2[valid_ms2["passed_required_gates"] == True].copy()
-        if not passed.empty:
-            valid_ms2 = passed
+        valid_ms2 = valid_ms2.loc[valid_ms2["passed_required_gates"].eq(True)].copy()
     for column, default in [
         ("MS2_Matched_Name", ""),
         ("MS2_Class", ""),

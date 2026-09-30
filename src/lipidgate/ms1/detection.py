@@ -12,6 +12,7 @@ from typing import Iterator
 import pandas as pd
 
 from lipidbench.utils.feature_table_io import load_feature_table
+from lipidbench.utils.ascii_paths import staging_parent
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class FeatureDetectionResult:
     row_count: int | None
     parameters: dict = field(default_factory=dict)
     message: str = ""
+    native_table_path: Path | None = None
 
 
 def default_config() -> dict:
@@ -31,8 +33,9 @@ def default_config() -> dict:
         "parameters": {
             "pyopenms": {
                 "peak_picking": {
-                    "mz_tol": 10.0,
+                    "mz_tol": 5.0,
                     "noise": 1000.0,
+                    "min_peak_height": 0.0,
                     "sn": 5.0,
                     "min_fwhm": 5.0,
                     "max_fwhm": 60.0,
@@ -55,6 +58,8 @@ def default_config() -> dict:
                     "prefilter_val": 3,
                     "mzdiff": 0.001,
                     "minFraction": 0.2,
+                    "minSamples": 1,
+                    "min_peak_height": 0.0,
                 },
             },
         },
@@ -63,13 +68,39 @@ def default_config() -> dict:
 
 @contextmanager
 def _mzml_input_dir(input_path: str | Path) -> Iterator[Path]:
+    if isinstance(input_path, (list, tuple)):
+        paths = [Path(p).resolve() for p in input_path]
+        if not paths or any(not p.is_file() or p.suffix.lower() != '.mzml' for p in paths):
+            raise ValueError('请选择有效的 mzML 文件')
+        if len({p.name.casefold() for p in paths}) != len(paths):
+            raise ValueError('输入文件名重复，无法区分样本')
+        # Prefer the source volume so large mzML files can be hard-linked
+        # instead of copied across drives into the system temp directory.
+        try:
+            temporary = tempfile.TemporaryDirectory(prefix='lipidgate_inputs_', dir=staging_parent(paths[0]))
+        except OSError:
+            temporary = tempfile.TemporaryDirectory(prefix='lipidgate_inputs_')
+        with temporary as tmp:
+            for p in paths:
+                target = Path(tmp)/p.name
+                try:
+                    os.link(p, target)
+                except OSError:
+                    shutil.copy2(p,target)
+            yield Path(tmp)
+        return
     path = Path(input_path).resolve()
     if path.is_dir():
-        yield path
+        if os.name == "nt" and not str(path).isascii():
+            paths = sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() == ".mzml")
+            with _mzml_input_dir(paths) as staged:
+                yield staged
+        else:
+            yield path
         return
     if not path.exists():
         raise FileNotFoundError(path)
-    temp_parent = path.parent if path.parent.exists() else None
+    temp_parent = staging_parent(path)
     try:
         temp_dir = tempfile.TemporaryDirectory(prefix="lipidgate_mzml_", dir=temp_parent)
     except OSError:
@@ -113,6 +144,7 @@ def _run_feature_detection_path(
     msdial_table: str | Path | None = None,
     config: dict | None = None,
     asari_table: str = "preferred",
+    progress=None,
 ) -> Path:
     """Run one MS1 feature detection/import workflow and return the feature table path."""
 
@@ -145,8 +177,12 @@ def _run_feature_detection_path(
             out_file = out_root / "pyopenms" / "pyopenms_features.csv"
             out_file.parent.mkdir(parents=True, exist_ok=True)
             run_params = extract_pyopenms_params(cfg)
-            run_pyopenms(input_dir=mzml_dir, output_file=out_file, **run_params)
+            run_pyopenms(input_dir=mzml_dir, output_file=out_file, progress=progress, **run_params)
             load_pyopenms_results(out_file, input_dir=mzml_dir, **run_params)
+            native_path = out_file.with_name(out_file.stem + '_native.csv')
+            if native_path.exists():
+                load_pyopenms_results(native_path, **run_params)
+                _attach_aligned_feature_ids(out_file, native_path)
             return out_file
 
         if algo_norm == "asari":
@@ -180,6 +216,33 @@ def _run_feature_detection_path(
     raise ValueError(f"Unsupported MS1 algorithm: {algo}")
 
 
+def _attach_aligned_feature_ids(aligned_path: Path, native_path: Path) -> None:
+    """Transfer OpenMS consensus membership to untransformed per-file peaks."""
+    import pandas as pd
+
+    aligned = pd.read_csv(aligned_path, dtype={"native_uid": str, "consensus_uid": str})
+    native = pd.read_csv(native_path, dtype={"native_uid": str})
+    if "native_uid" not in native:
+        return
+    membership_path = aligned_path.with_name(aligned_path.stem + "_alignment_members.csv")
+    if membership_path.is_file() and "consensus_uid" in aligned:
+        members = pd.read_csv(membership_path, dtype={"native_uid": str, "consensus_uid": str})
+        members = members.merge(
+            aligned[["consensus_uid", "Feature_ID"]].rename(columns={"Feature_ID": "Aligned_Feature_ID"}),
+            on="consensus_uid", how="left", validate="many_to_one",
+        )
+        mapping = members[["source_file", "native_uid", "Aligned_Feature_ID"]]
+        native = native.merge(mapping, on=["source_file", "native_uid"], how="left", validate="one_to_one")
+    elif "native_uid" in aligned and len(aligned) == len(native):
+        native = native.merge(
+            aligned[["native_uid", "Feature_ID"]].rename(columns={"Feature_ID": "Aligned_Feature_ID"}),
+            on="native_uid", how="left", validate="one_to_one",
+        )
+    else:
+        return
+    native.to_csv(native_path, index=False)
+
+
 def run_feature_detection_result(
     *,
     algo: str,
@@ -189,6 +252,7 @@ def run_feature_detection_result(
     msdial_table: str | Path | None = None,
     config: dict | None = None,
     asari_table: str = "preferred",
+    progress=None,
 ) -> FeatureDetectionResult:
     table_path = _run_feature_detection_path(
         algo=algo,
@@ -198,6 +262,7 @@ def run_feature_detection_result(
         msdial_table=msdial_table,
         config=config,
         asari_table=asari_table,
+        progress=progress,
     )
     algo_norm = algo.strip().lower().replace("_", "-")
     if algo_norm == "msdial":
@@ -217,6 +282,9 @@ def run_feature_detection_result(
         row_count=row_count,
         parameters=dict(params or {}),
         message=message,
+        native_table_path=(table_path.with_name(table_path.stem + '_native.csv')
+                           if algo_norm == 'pyopenms' and table_path.with_name(table_path.stem + '_native.csv').exists()
+                           else None),
     )
 
 

@@ -6,6 +6,7 @@ from statistics import median
 from typing import Iterable, Sequence
 
 import pandas as pd
+from lipidbench.utils.ascii_paths import ascii_mzml_path
 
 try:
     import pyopenms
@@ -18,8 +19,20 @@ except ImportError:  # pragma: no cover
     pymzml = None
 
 
+SUPPORT_COLUMNS = (
+    "ms1_support_status", "ms1_support_reason", "ms1_feature_rt_raw_min",
+    "ms1_feature_apex_intensity", "ms1_peak_left_raw_min", "ms1_peak_right_raw_min",
+    "ms1_peak_fwhm_sec",
+)
+
+
 ANNOTATION_COLUMNS = [
+    "total_C", "total_DB",
+    "置信度",
+    "ms1_support_status",
+    "ms1_support_reason",
     "Feature_ID",
+    "Aligned_Feature_ID",
     "feature_mz",
     "feature_rt",
     "feature_rtmin",
@@ -36,6 +49,11 @@ ANNOTATION_COLUMNS = [
     "注释水平",
     "matched_fragment_count",
     "matched_fragments",
+]
+DETAIL_ANNOTATION_COLUMNS = ANNOTATION_COLUMNS + [
+    "n_ms2_spectra",
+    "all_scan_ids",
+    "supporting_files",
 ]
 
 def collect_mzml_paths(input_path_or_paths) -> list[Path]:
@@ -92,14 +110,6 @@ def _to_numeric(series: pd.Series | None, index: pd.Index) -> pd.Series:
     return pd.to_numeric(series, errors="coerce")
 
 
-def _normalize_rt_minutes(series: pd.Series) -> pd.Series:
-    values = pd.to_numeric(series, errors="coerce")
-    max_value = values.max(skipna=True)
-    if pd.notna(max_value) and float(max_value) > 200.0:
-        values = values / 60.0
-    return values
-
-
 def _ppm_error(observed_mz: float, reference_mz: float) -> float:
     if not math.isfinite(observed_mz) or not math.isfinite(reference_mz) or reference_mz == 0:
         return math.nan
@@ -111,6 +121,7 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "_feature_id",
+                "_aligned_feature_id",
                 "_feature_mz",
                 "_feature_rt",
                 "_feature_rtmin",
@@ -120,9 +131,32 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
 
     feature_id_col = _guess_column(feature_df.columns, ["Feature_ID", "feature_id", "id"])
     mz_col = _guess_column(feature_df.columns, ["mz", "m/z", "mzmed", "mz_mean", "Precursor m/z"])
-    rt_col = _guess_column(feature_df.columns, ["RT", "rt", "rt_minutes", "rtmed", "rtime", "RT (min)"])
+    rt_col = _guess_column(feature_df.columns, ["RT", "rt", "rt_minutes", "rtmed", "rtime", "RT (min)", "rt_seconds", "RT (s)"])
     rtmin_col = _guess_column(feature_df.columns, ["RTmin", "rtmin", "rt_min", "RT left(min)", "rt_start"])
     rtmax_col = _guess_column(feature_df.columns, ["RTmax", "rtmax", "rt_max", "RT right (min)", "rt_end"])
+    unit_col = _guess_column(feature_df.columns, ["RT_unit", "rt_units"])
+
+    # One chromatographic feature has one time scale. Infer it once, not
+    # independently for apex/left/right columns straddling the 200 s heuristic.
+    rt_columns = [col for col in (rt_col, rtmin_col, rtmax_col) if col is not None]
+    divisor = 1.0
+    if unit_col is None:
+        apex_label = str(rt_col or "").replace(" ", "").lower()
+        if apex_label in {"rt_seconds", "rt(s)"}:
+            divisor = 60.0
+        elif apex_label not in {"rt_minutes", "rt(min)"} and rt_columns:
+            maximum = feature_df[rt_columns].apply(pd.to_numeric, errors="coerce").max().max()
+            if pd.notna(maximum) and float(maximum) > 200.0:
+                divisor = 60.0
+
+    def rt_minutes(column):
+        if unit_col is None:
+            return pd.to_numeric(feature_df[column], errors="coerce") / divisor
+        units = feature_df[unit_col].astype(str).str.strip().str.lower()
+        if not units.isin(["seconds", "second", "s", "minutes", "minute", "min"]).all():
+            raise ValueError("Feature RT_unit must be seconds or minutes")
+        values = pd.to_numeric(feature_df[column], errors="coerce")
+        return values.where(~units.isin(["seconds", "second", "s"]), values / 60)
 
     if mz_col is None:
         raise ValueError("Feature table is missing an mz column")
@@ -132,19 +166,21 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
         out["_feature_id"] = [f"F{i}" for i in range(1, len(feature_df) + 1)]
     else:
         out["_feature_id"] = feature_df[feature_id_col].astype(str)
+    if "Aligned_Feature_ID" in feature_df:
+        out["_aligned_feature_id"] = feature_df["Aligned_Feature_ID"]
     out["_feature_mz"] = _to_numeric(feature_df[mz_col], feature_df.index)
     out["_feature_rt"] = (
-        _normalize_rt_minutes(feature_df[rt_col])
+        rt_minutes(rt_col)
         if rt_col is not None
         else pd.Series([pd.NA] * len(feature_df), index=feature_df.index, dtype="Float64")
     )
     out["_feature_rtmin"] = (
-        _normalize_rt_minutes(feature_df[rtmin_col])
+        rt_minutes(rtmin_col)
         if rtmin_col is not None
         else pd.Series([pd.NA] * len(feature_df), index=feature_df.index, dtype="Float64")
     )
     out["_feature_rtmax"] = (
-        _normalize_rt_minutes(feature_df[rtmax_col])
+        rt_minutes(rtmax_col)
         if rtmax_col is not None
         else pd.Series([pd.NA] * len(feature_df), index=feature_df.index, dtype="Float64")
     )
@@ -154,6 +190,9 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
         pd.to_numeric(out.loc[missing_rt, "_feature_rtmin"], errors="coerce")
         + pd.to_numeric(out.loc[missing_rt, "_feature_rtmax"], errors="coerce")
     ) / 2.0
+    for source, target in [("source_file", "_source_file"), ("FWHM", "_fwhm"), ("max_height", "_apex_intensity")]:
+        if source in feature_df:
+            out[target] = feature_df[source]
     return out.dropna(subset=["_feature_mz"]).reset_index(drop=True)
 
 
@@ -187,8 +226,15 @@ def link_ms2_to_features(
     feature time stays empty while their original MS2 acquisition time is kept.
     """
     out = ms2_df.copy().reset_index(drop=True)
+    # A supplied feature table is authoritative. Do not carry a previous EIC
+    # heuristic's veto into feature association.
+    out["ms1_support_status"] = "MS2-only"
+    out["ms1_support_reason"] = "no_matching_ms1_feature"
+    for column in SUPPORT_COLUMNS[2:]:
+        out[column] = pd.NA
     for column in [
         "Feature_ID",
+        "Aligned_Feature_ID",
         "feature_mz",
         "feature_rt",
         "feature_rtmin",
@@ -210,20 +256,29 @@ def link_ms2_to_features(
     feature_rt = pd.to_numeric(features["_feature_rt"], errors="coerce")
     feature_rtmin = pd.to_numeric(features["_feature_rtmin"], errors="coerce")
     feature_rtmax = pd.to_numeric(features["_feature_rtmax"], errors="coerce")
+    has_bounds = feature_rtmin.notna() & feature_rtmax.notna()
+    ms2_masses = pd.to_numeric(out[ms2_mz_col], errors="coerce")
+    ms2_times = pd.to_numeric(out[ms2_rt_col], errors="coerce")
+    feature_sources = (
+        features["_source_file"].map(lambda value: Path(str(value)).name.casefold())
+        if "_source_file" in features else None
+    )
     window_min = float(rt_window_sec) / 60.0
     mz_tol_ppm = float(mz_tol_ppm)
     rt_window_sec = max(float(rt_window_sec), 1e-9)
 
     for row_index, row in out.iterrows():
-        ms2_mz = pd.to_numeric(pd.Series([row.get(ms2_mz_col)]), errors="coerce").iloc[0]
-        ms2_rt = pd.to_numeric(pd.Series([row.get(ms2_rt_col)]), errors="coerce").iloc[0]
+        ms2_mz = ms2_masses.loc[row_index]
+        ms2_rt = ms2_times.loc[row_index]
         if pd.isna(ms2_mz) or pd.isna(ms2_rt):
             continue
 
         ppm_errors = ((float(ms2_mz) - feature_mz) / feature_mz) * 1e6
         mz_ok = ppm_errors.abs() <= mz_tol_ppm
+        if feature_sources is not None:
+            source_name = Path(str(row.get("source_file", ""))).name.casefold()
+            mz_ok &= feature_sources.eq(source_name)
 
-        has_bounds = feature_rtmin.notna() & feature_rtmax.notna()
         rt_ok_with_bounds = has_bounds & (float(ms2_rt) >= feature_rtmin) & (float(ms2_rt) <= feature_rtmax)
         rt_ok_without_bounds = (~has_bounds) & feature_rt.notna() & ((feature_rt - float(ms2_rt)).abs() <= window_min)
         rt_ok = rt_ok_with_bounds | rt_ok_without_bounds
@@ -243,12 +298,21 @@ def link_ms2_to_features(
         best_error = float(candidate_ppm_errors.loc[best.name])
 
         out.at[row_index, "Feature_ID"] = best["_feature_id"]
+        if "_aligned_feature_id" in best:
+            out.at[row_index, "Aligned_Feature_ID"] = best["_aligned_feature_id"]
         out.at[row_index, "feature_mz"] = best["_feature_mz"]
         out.at[row_index, "feature_rt"] = best["_feature_rt"]
         out.at[row_index, "feature_rtmin"] = best["_feature_rtmin"]
         out.at[row_index, "feature_rtmax"] = best["_feature_rtmax"]
         out.at[row_index, "mz_error_to_feature_ppm"] = best_error
         out.at[row_index, "rt_delta_sec"] = float(best["_rt_delta_sec"])
+        out.at[row_index, "ms1_support_status"] = "MS1-supported"
+        out.at[row_index, "ms1_support_reason"] = "feature_bounds_match" if has_bounds.loc[best.name] else "feature_rt_window_match"
+        out.at[row_index, "ms1_feature_rt_raw_min"] = best["_feature_rt"]
+        out.at[row_index, "ms1_peak_left_raw_min"] = best["_feature_rtmin"]
+        out.at[row_index, "ms1_peak_right_raw_min"] = best["_feature_rtmax"]
+        out.at[row_index, "ms1_feature_apex_intensity"] = best.get("_apex_intensity", pd.NA)
+        out.at[row_index, "ms1_peak_fwhm_sec"] = best.get("_fwhm", pd.NA)
 
     return out
 
@@ -289,10 +353,14 @@ def _text_key(value: object) -> str:
 
 def _best_ms2_row(df: pd.DataFrame, prefer_rt_delta: bool = True) -> pd.Series:
     work = df.copy()
-    score_values = work["final_score"] if "final_score" in work.columns else work.get("total_score", 0.0)
-    work["_final_score_sort"] = pd.to_numeric(score_values, errors="coerce").fillna(0.0)
-    work["_fragment_count_sort"] = pd.to_numeric(work.get("matched_fragment_count", 0), errors="coerce").fillna(0)
-    work["_ppm_error_abs_sort"] = pd.to_numeric(work.get("ppm_error", 0.0), errors="coerce").abs().fillna(float("inf"))
+    def numeric_column(name: str, default: float) -> pd.Series:
+        values = work[name] if name in work else pd.Series(default, index=work.index)
+        return pd.to_numeric(values, errors="coerce").fillna(default)
+
+    score_column = "final_score" if "final_score" in work else "total_score"
+    work["_final_score_sort"] = numeric_column(score_column, 0.0)
+    work["_fragment_count_sort"] = numeric_column("matched_fragment_count", 0)
+    work["_ppm_error_abs_sort"] = numeric_column("ppm_error", float("inf")).abs()
     if prefer_rt_delta and "rt_delta_sec" in work.columns:
         work["_rt_delta_sort"] = pd.to_numeric(work["rt_delta_sec"], errors="coerce").fillna(float("inf"))
     else:
@@ -306,8 +374,19 @@ def _best_ms2_row(df: pd.DataFrame, prefer_rt_delta: bool = True) -> pd.Series:
 
 
 def _annotation_row(group: pd.DataFrame, best: pd.Series) -> dict[str, object]:
+    from .search import identification_confidence
+
+    level = str(best.get("注释水平", "类别水平"))
+    if str(best.get("resolution_level", "")).startswith("tentative_") and not level.startswith("暂定"):
+        level = "暂定" + level
     return {
+        "total_C": best.get("total_C", pd.NA),
+        "total_DB": best.get("total_DB", pd.NA),
+        "置信度": identification_confidence(best),
+        "ms1_support_status": best.get("ms1_support_status", "not_assessed"),
+        "ms1_support_reason": best.get("ms1_support_reason", ""),
         "Feature_ID": best.get("Feature_ID", pd.NA),
+        "Aligned_Feature_ID": best.get("Aligned_Feature_ID", pd.NA),
         "feature_mz": best.get("feature_mz", pd.NA),
         "feature_rt": best.get("feature_rt", pd.NA),
         "feature_rtmin": best.get("feature_rtmin", pd.NA),
@@ -321,7 +400,7 @@ def _annotation_row(group: pd.DataFrame, best: pd.Series) -> dict[str, object]:
         "precursor_mz": best.get("precursor_mz", pd.NA),
         "ppm_error": best.get("ppm_error", pd.NA),
         "final_score": best.get("final_score", best.get("total_score", pd.NA)),
-        "注释水平": best.get("注释水平", "类别水平"),
+        "注释水平": level,
         "matched_fragment_count": best.get("matched_fragment_count", pd.NA),
         "matched_fragments": best.get("matched_fragments", ""),
         "n_ms2_spectra": int(len(group)),
@@ -370,6 +449,8 @@ def rescue_orphan_annotations_to_features(
     rescue_window_min = max(rescue_window_sec, float(rt_window_sec)) / 60.0
 
     for row_index, row in out[unmatched_mask].iterrows():
+        if str(row.get("ms1_support_status", "")) == "MS2-only":
+            continue
         precursor_mz = pd.to_numeric(pd.Series([row.get("precursor_mz")]), errors="coerce").iloc[0]
         ms2_rt = pd.to_numeric(pd.Series([row.get("rt_minutes")]), errors="coerce").iloc[0]
         if pd.isna(precursor_mz) or pd.isna(ms2_rt):
@@ -471,21 +552,27 @@ def remove_feature_supported_fa_orphans(linked_df: pd.DataFrame) -> pd.DataFrame
     return out.drop(index=drop_indexes).reset_index(drop=True)
 
 
-def summarize_feature_annotations(linked_df: pd.DataFrame) -> pd.DataFrame:
+def summarize_feature_annotations(linked_df: pd.DataFrame, include_details: bool = False) -> pd.DataFrame:
+    columns = DETAIL_ANNOTATION_COLUMNS if include_details else ANNOTATION_COLUMNS
     if linked_df.empty or "Feature_ID" not in linked_df.columns:
-        return pd.DataFrame(columns=ANNOTATION_COLUMNS)
+        return pd.DataFrame(columns=columns)
 
     matched = linked_df[linked_df["Feature_ID"].notna()].copy()
     if matched.empty:
-        return pd.DataFrame(columns=ANNOTATION_COLUMNS)
+        return pd.DataFrame(columns=columns)
 
     rows: list[dict[str, object]] = []
-    group_cols = ["Feature_ID", "matched_name", "adduct"]
+    aligned = matched.get("Aligned_Feature_ID", pd.Series(pd.NA, index=matched.index))
+    matched["_feature_group"] = aligned.where(
+        aligned.notna(),
+        matched["Feature_ID"].astype(str),
+    )
+    group_cols = ["_feature_group", "matched_name", "adduct"]
     for _, group in matched.groupby(group_cols, dropna=False, sort=False):
         best = _best_ms2_row(group, prefer_rt_delta=True)
         rows.append(_annotation_row(group, best))
 
-    return pd.DataFrame(rows, columns=ANNOTATION_COLUMNS)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _orphan_key(row: pd.Series) -> tuple[str, str, str]:
@@ -543,10 +630,12 @@ def summarize_orphan_annotations(
     mzml_paths: Sequence[str | Path] | None = None,
     mz_tol_ppm: float = 10.0,
     rt_window_sec: float = 30.0,
+    include_details: bool = False,
 ) -> pd.DataFrame:
+    columns = DETAIL_ANNOTATION_COLUMNS if include_details else ANNOTATION_COLUMNS
     groups = _cluster_orphan_rows(orphan_df, mz_tol_ppm=mz_tol_ppm, rt_window_sec=rt_window_sec)
     if not groups:
-        return pd.DataFrame(columns=ANNOTATION_COLUMNS)
+        return pd.DataFrame(columns=columns)
 
     rows: list[dict[str, object]] = []
     for idx, group in enumerate(groups, start=1):
@@ -561,7 +650,7 @@ def summarize_orphan_annotations(
         best["feature_rtmax"] = pd.NA
         rows.append(_annotation_row(group, best))
 
-    return pd.DataFrame(rows, columns=ANNOTATION_COLUMNS)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def extract_eic_apex_rt(
@@ -583,7 +672,8 @@ def extract_eic_apex_rt(
 
     if pyopenms is not None:
         experiment = pyopenms.MSExperiment()
-        pyopenms.MzMLFile().load(str(mzml_path), experiment)
+        with ascii_mzml_path(mzml_path) as readable_path:
+            pyopenms.MzMLFile().load(str(readable_path), experiment)
         for spectrum in experiment:
             if spectrum.getMSLevel() != 1:
                 continue

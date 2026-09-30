@@ -11,7 +11,6 @@ from unittest.mock import patch
 import pandas as pd
 
 from lipidgate.ms2.library import (
-    canonicalize_adduct,
     canonicalize_n_acyl_glycerophospholipid_name,
     convert_excel_directory_to_msp,
     load_library,
@@ -32,18 +31,8 @@ def workspace_temp_dir():
 class LibraryConversionTests(unittest.TestCase):
     def test_multichain_sphingolipid_names_use_attachment_site_notation(self) -> None:
         examples = [
-            (
-                "Cer-EOS(d14:1/12:1-O-18:1)",
-                "Cer-EOS",
-                "Cer-EOS d14:1/12:1(O-18:1)",
-                True,
-            ),
-            (
-                "Cer-EODS(d14:0/12:0-O-18:1)",
-                "Cer-EODS",
-                "Cer-EODS d14:0/12:0(O-18:1)",
-                True,
-            ),
+            ("Cerd14:1/12:1(O-18:1)", "Cer", "Cerd14:1/12:1(O-18:1)", True),
+            ("Cerd14:0/12:0(O-18:1)", "Cer", "Cerd14:0/12:0(O-18:1)", True),
             (
                 "AHexCer(16:0/18:1;2O/22:0;O)",
                 "AHexCer",
@@ -59,14 +48,74 @@ class LibraryConversionTests(unittest.TestCase):
             (
                 "ASM(d18:1/16:0-O-18:1)",
                 "ASM",
-                "ASM d18:1/16:0(O-18:1)",
-                True,
+                "ASM d34:1(O-18:1)",
+                False,
             ),
             (
                 "ASM 34:1;2O(FA 18:1)",
                 "ASM",
-                "ASM 34:1;2O(O-18:1)",
+                "ASM d34:1(O-18:1)",
                 False,
+            ),
+            (
+                "ASM d34:1/18:0",
+                "ASM",
+                "ASM d34:1(O-18:0)",
+                False,
+            ),
+            (
+                "Cer(d20:1/21:0)(OH)",
+                "Cer",
+                "Cer(d20:1/h21:0)",
+                False,
+            ),
+            (
+                "HexCer(d19:2/25:2)(OH)",
+                "HexCer",
+                "HexCer(d19:2/h25:2)",
+                False,
+            ),
+            (
+                "PE-Cer+O(17:1;2O/22:1;O)",
+                "PE-Cer+O",
+                "PE-Cer+O(m17:1/22:1;2O)",
+                False,
+            ),
+            (
+                "PI-Cer+O(17:1;2O/22:1;O)",
+                "PI-Cer+O",
+                "PI-Cer+O(m17:1/22:1;2O)",
+                False,
+            ),
+            (
+                "SHexCer(24:2/d18:1)",
+                "SHexCer",
+                "SHexCer(d18:1/24:2)",
+                True,
+            ),
+            (
+                "SHexCer+O(19:0)(OH/d18:1)",
+                "SHexCer+O",
+                "SHexCer+O(d18:1/h19:0)",
+                True,
+            ),
+            (
+                "SL(16:0/16:0;O)",
+                "SL",
+                "SL(m16:0/16:0)",
+                True,
+            ),
+            (
+                "SL(16:0/m21:0)",
+                "SL",
+                "SL(m21:0/16:0)",
+                True,
+            ),
+            (
+                "SL+O(14:0;O/18:0;O)",
+                "SL+O",
+                "SL+O(m14:0/h18:0)",
+                True,
             ),
         ]
         for source, compound_class, expected, is_complete in examples:
@@ -77,12 +126,6 @@ class LibraryConversionTests(unittest.TestCase):
                     has_complete_multichain_sphingolipid_identity(canonical, compound_class),
                     is_complete,
                 )
-
-    def test_historical_acetate_adduct_spellings_are_canonicalized(self) -> None:
-        self.assertEqual(canonicalize_adduct("[M+CH3COO]-"), "[M+CH3COO]-")
-        self.assertEqual(canonicalize_adduct("[M+Hac-H]-"), "[M+CH3COO]-")
-        self.assertEqual(canonicalize_adduct(" [M+Hac]- "), "[M+CH3COO]-")
-        self.assertEqual(canonicalize_adduct("[M-H]-"), "[M-H]-")
 
     def test_tg_est_library_gates_on_fa1_fa2_and_fahfa_only(self) -> None:
         with workspace_temp_dir() as tmp_dir:
@@ -729,12 +772,12 @@ Num Peaks: 3
             )
         )
 
-    def test_free_sphingoid_base_identity_is_canonicalized_to_spb(self) -> None:
-        msp_text = """Name: PhytoSph(t18:0)
+    def test_current_spb_identity_is_loaded_without_alias_conversion(self) -> None:
+        msp_text = """Name: SPB(t18:0)
 PrecursorMZ: 318.3003
 PrecursorType: [M+H]+
-CompoundClass: PhytoSph
-Comment: MS1_name=PhytoSph(t18:0);polarity=+
+CompoundClass: SPB
+Comment: MS1_name=SPB(t18:0);polarity=+
 Num Peaks: 3
 81.0699 100.00 "SPB-Diagnostic-1" "LCB碎片"
 300.2897 100.00 "M+H-H2O" "C类碎片"
@@ -841,7 +884,7 @@ Num Peaks: 10
         self.assertEqual(by_name["M+H-C6H10O5-2H2O"].fragment_type, "Common")
         self.assertEqual(
             sum(fragment.fragment_type == "LCB碎片" for fragment in record.fragments),
-            4,
+            3,
         )
         self.assertEqual(
             sum(fragment.fragment_type == "Diagnostic_HG" for fragment in record.fragments),

@@ -3,13 +3,24 @@ from __future__ import annotations
 import re
 
 
+def canonicalize_single_chain_name(value: object, compound_class: object = "") -> str:
+    """Remove the empty glycerol position from LCE-PE display identities."""
+    text = str(value or "").strip()
+    if str(compound_class or "").strip().upper() != "LCE-PE":
+        return text
+    match = re.fullmatch(r"LCE-PE\(([^()/]+)[/_]([^()/]+)\)", text, re.IGNORECASE)
+    if match and (match[1] == "0:0") != (match[2] == "0:0"):
+        return f"LCE-PE({match[2] if match[1] == '0:0' else match[1]})"
+    return text
+
+
 def canonicalize_n_acyl_glycerophospholipid_name(
     value: object,
     compound_class: object = "",
 ) -> str:
     """Keep glycerol chains before the N-acyl chain in NAPE/NAPS names."""
 
-    text = str(value or "").strip()
+    text = canonicalize_single_chain_name(value, compound_class)
     class_name = str(compound_class or "").strip().upper()
     if class_name not in {"NAPE", "NAPS"}:
         return text

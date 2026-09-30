@@ -14,6 +14,7 @@ option_list <- list(
   make_option(c("--sn"), type = "numeric", default = 3),
   make_option(c("--prefilter"), type = "numeric", default = 3),
   make_option(c("--frac"), type = "numeric", default = 0.2),
+  make_option(c("--min_samples"), type = "integer", default = 1),
     make_option(c("--mzdiff"), type = "numeric", default = 0.001),
     make_option(c("--min_maxo"), type = "numeric", default = NA)
 )
@@ -36,7 +37,8 @@ params <- CentWaveParam(
 )
 xdata <- findChromPeaks(raw_data, params, return.type="XCMSnExp")
 
-pdp <- PeakDensityParam(sampleGroups = rep(1, length(files)), minFraction = opt$frac, bw = 10,binSize = 0.005)
+pdp <- PeakDensityParam(sampleGroups = rep(1, length(files)), minFraction = opt$frac,
+                        minSamples = opt$min_samples, bw = 10, binSize = 0.005)
 xdata <- groupChromPeaks(xdata, param = pdp)
 
 if (length(files) > 1) {

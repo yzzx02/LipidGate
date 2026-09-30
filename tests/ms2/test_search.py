@@ -224,9 +224,10 @@ class SearchSelectionTests(unittest.TestCase):
             score: float,
             peak: ExperimentalPeak,
         ) -> CandidateScore:
+            token = re.findall(r"\d+:\d+", name)[0]
             fragment = FragmentRecord(
                 peak.mz,
-                f"[RCOO]-({re.findall(r'\d+:\d+', name)[0]})",
+                f"[RCOO]-({token})",
                 "Diagnostic_FA",
             )
             return build_candidate(
@@ -1090,6 +1091,7 @@ class SearchSelectionTests(unittest.TestCase):
             peaks=normalize_peaks([
                 (184.0733, 1000.0),
                 (577.5194, 120.0),
+                (603.5351, 110.0),
             ]),
         )
         searcher = self._build_memory_searcher([chain_record, hg_only_record], use_fragment_index=False)
@@ -1266,7 +1268,7 @@ class SearchSelectionTests(unittest.TestCase):
         }]))
 
         self.assertEqual(export.loc[0, "final_score"], 62.35)
-        self.assertEqual(export.loc[0, "注释水平"], "链水平")
+        self.assertEqual(export.loc[0, "注释水平"], "暂定链水平")
         self.assertNotIn("total_score", export.columns)
         self.assertNotIn("resolution_level", export.columns)
         self.assertNotIn("evidence_status", export.columns)
@@ -1288,22 +1290,22 @@ class SearchSelectionTests(unittest.TestCase):
 
         self.assertEqual(
             export["注释水平"].tolist(),
-            ["分子种类水平", "分子种类水平", "分子种类水平", "链水平", "链水平", "链水平", "链水平"],
+            ["分子种类水平", "分子种类水平", "暂定分子种类水平", "链水平", "暂定链水平", "链水平", "暂定链水平"],
         )
 
-    def test_export_marks_single_chain_lipid_as_chain_level(self) -> None:
+    def test_export_does_not_promote_single_chain_name(self) -> None:
         export = prepare_ms2_result_export_df(pd.DataFrame([{
             "matched_name": "OxFA(18:2;O2)",
             "resolution_level": "species_level",
         }]))
 
-        self.assertEqual(export.loc[0, "注释水平"], "链水平")
+        self.assertEqual(export.loc[0, "注释水平"], "分子种类水平")
 
-    def test_export_marks_complete_three_chain_sphingolipids_as_chain_level(self) -> None:
+    def test_export_does_not_promote_complete_name_without_scoring_evidence(self) -> None:
         export = prepare_ms2_result_export_df(pd.DataFrame([
             {
-                "compound_class": "Cer-EOS",
-                "matched_name": "Cer-EOS(d14:1/12:1-O-18:1)",
+                "compound_class": "Cer",
+                "matched_name": "Cerd14:1/12:1(O-18:1)",
                 "resolution_level": "species_level",
             },
             {
@@ -1311,19 +1313,14 @@ class SearchSelectionTests(unittest.TestCase):
                 "matched_name": "AHexCer d18:1(O-16:0)/22:0(OH)",
                 "resolution_level": "species_level",
             },
-            {
-                "compound_class": "ASM",
-                "matched_name": "ASM d18:1/16:0(O-18:1)",
-                "resolution_level": "species_level",
-            },
         ]))
 
-        self.assertEqual(export["注释水平"].tolist(), ["链水平", "链水平", "链水平"])
+        self.assertEqual(export["注释水平"].tolist(), ["分子种类水平", "分子种类水平"])
 
     def test_export_keeps_partial_asm_identity_at_species_level(self) -> None:
         export = prepare_ms2_result_export_df(pd.DataFrame([{
             "compound_class": "ASM",
-            "matched_name": "ASM 34:1;2O(O-18:1)",
+            "matched_name": "ASM d34:1(O-18:1)",
             "resolution_level": "species_level",
         }]))
 

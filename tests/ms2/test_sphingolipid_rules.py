@@ -25,7 +25,7 @@ def _score(record: LibraryRecord, peaks: list[tuple[float, float]]):
 
 
 class SphingolipidRuleTests(unittest.TestCase):
-    def test_cer_can_pass_with_lcb_and_precursor_without_dehydration_peak(self) -> None:
+    def test_cer_requires_two_lcb_fragments_even_when_precursor_matches(self) -> None:
         record = LibraryRecord(
             record_id=1,
             compound_class="Cer",
@@ -37,14 +37,21 @@ class SphingolipidRuleTests(unittest.TestCase):
                 FragmentRecord(484.4724, "[M+H]+", "Precursor Ion"),
                 FragmentRecord(466.4619, "M+H-H2O", "C类碎片"),
                 FragmentRecord(228.2322, "LCB-H2O", "LCB碎片"),
+                FragmentRecord(210.2216, "LCB-2H2O", "LCB碎片"),
+                FragmentRecord(198.2216, "LCB-CH2O-H2O", "LCB碎片"),
             ],
         )
 
-        result = _score(record, [(484.4724, 900.0), (228.2322, 1000.0)])
+        one_lcb = _score(record, [(484.4724, 900.0), (228.2322, 1000.0)])
+        two_lcb = _score(
+            record,
+            [(484.4724, 900.0), (228.2322, 1000.0), (210.2216, 800.0)],
+        )
 
-        self.assertTrue(result.passed_required_gates)
-        self.assertEqual(result.resolution_level, "chain_level")
-        self.assertLessEqual(result.total_score, 100.0)
+        self.assertFalse(one_lcb.passed_required_gates)
+        self.assertTrue(two_lcb.passed_required_gates)
+        self.assertEqual(two_lcb.resolution_level, "chain_level")
+        self.assertLessEqual(two_lcb.total_score, 100.0)
 
     def test_cer_key_fragments_score_as_chain_evidence_after_gate_passes(self) -> None:
         record = LibraryRecord(
@@ -83,10 +90,15 @@ class SphingolipidRuleTests(unittest.TestCase):
                 FragmentRecord(484.4724, "[M+H]+", "Precursor Ion"),
                 FragmentRecord(466.4619, "M+H-H2O", "C类碎片"),
                 FragmentRecord(250.2529, "Ceramide fragment U", "LCB碎片"),
+                FragmentRecord(228.2322, "LCB-H2O", "LCB碎片"),
+                FragmentRecord(210.2216, "LCB-2H2O", "LCB碎片"),
             ],
         )
 
-        result = _score(record, [(466.4619, 1000.0), (250.2529, 700.0)])
+        result = _score(
+            record,
+            [(466.4619, 1000.0), (250.2529, 700.0), (228.2322, 650.0)],
+        )
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "chain_level")
@@ -168,7 +180,7 @@ class SphingolipidRuleTests(unittest.TestCase):
             adduct="[M+H]+",
             fragments=[
                 FragmentRecord(184.0733, "[C5H15NO4P]+", "Diagnostic_HG"),
-                FragmentRecord(447.3474, "M+H-ROOH(head-acyl)", "Diagnostic_FA_Loss"),
+                FragmentRecord(447.3474, "M+H-RCOOH(head-acyl)", "Diagnostic_FA_Loss"),
                 FragmentRecord(264.2686, "LCB-2H2O", "LCB碎片"),
                 FragmentRecord(282.2791, "LCB-H2O", "LCB碎片"),
             ],
@@ -217,6 +229,32 @@ class SphingolipidRuleTests(unittest.TestCase):
         result = _score(record, [(184.0733, 1000.0), (210.2216, 800.0)])
 
         self.assertTrue(result.passed_required_gates)
+
+    def test_sm_sodium_requires_two_of_three_hg_losses_and_uses_75_25_weights(self) -> None:
+        record = LibraryRecord(
+            record_id=31,
+            compound_class="SM",
+            lipid_name="SM(d34:1)",
+            lipid_chain_name="SM(d18:1/16:0)",
+            precursor_mz=725.5568,
+            adduct="[M+Na]+",
+            fragments=[
+                FragmentRecord(666.4833, "M+Na-C3H9N", "Diagnostic_HG"),
+                FragmentRecord(542.4908, "M+Na-C5H14NO4P", "Diagnostic_HG"),
+                FragmentRecord(502.4982, "M+Na-C5H16NO5PNa", "Diagnostic_HG"),
+                FragmentRecord(725.5568, "[M+Na]+", "Precursor Ion"),
+            ],
+        )
+
+        one_hg = _score(record, [(666.4833, 1000.0), (725.5568, 800.0)])
+        two_hg = _score(record, [(666.4833, 1000.0), (542.4908, 700.0)])
+
+        self.assertFalse(one_hg.passed_required_gates)
+        self.assertTrue(two_hg.passed_required_gates)
+        self.assertEqual(
+            _pool_weights_for_record(record, DEFAULT_RULES.get("SM")),
+            {"fah": 0.0, "hg": 75.0, "other": 25.0},
+        )
 
     def test_hexcer_can_pass_with_sugar_loss_and_lcb_evidence(self) -> None:
         record = LibraryRecord(
@@ -560,10 +598,10 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         self.assertTrue(result.passed_required_gates)
         self.assertEqual(result.resolution_level, "species_level")
-        self.assertEqual(result.downgrade_reason, "sum_composition_only")
+        self.assertEqual(result.downgrade_reason, "missing_lcb_chain_evidence")
         self.assertAlmostEqual(result.total_score, 66.6667, places=4)
 
-    def test_negative_hexcer_requires_headgroup_and_acyl_evidence(self) -> None:
+    def test_negative_hexcer_rejects_legacy_headgroup_acyl_without_lcb(self) -> None:
         record = LibraryRecord(
             record_id=9,
             compound_class="HexCer",
@@ -581,7 +619,7 @@ class SphingolipidRuleTests(unittest.TestCase):
 
         result = _score(record, [(688.5005, 1000.0), (179.0561, 800.0), (300.2901, 700.0)])
 
-        self.assertTrue(result.passed_required_gates)
+        self.assertFalse(result.passed_required_gates)
 
     def test_negative_sm_uses_half_hg_gate_and_fah_chain_promotion_without_ordinary_gate(self) -> None:
         record = LibraryRecord(
@@ -682,6 +720,27 @@ class SphingolipidRuleTests(unittest.TestCase):
         self.assertTrue(result.passed_required_gates)
         self.assertFalse(missing_chain.passed_required_gates)
 
+    def test_negative_sl_plus_o_uses_ketene_loss_as_chain_gate(self) -> None:
+        record = LibraryRecord(
+            record_id=131,
+            compound_class="SL+O",
+            lipid_name="SL+O(m32:0;O)",
+            lipid_chain_name="SL+O(m14:0/h18:0)",
+            precursor_mz=590.4460,
+            adduct="[M-H]-",
+            fragments=[
+                FragmentRecord(79.9574, "[SO3]-", "Diagnostic_HG"),
+                FragmentRecord(308.1901, "M-H-(R=O)(18:0;O)", "Diagnostic_FA_Loss"),
+                FragmentRecord(590.4460, "[M-H]-", "Precursor Ion"),
+            ],
+        )
+
+        passing = _score(record, [(79.9574, 1000.0), (308.1901, 850.0)])
+        missing_loss = _score(record, [(79.9574, 1000.0)])
+
+        self.assertTrue(passing.passed_required_gates)
+        self.assertFalse(missing_loss.passed_required_gates)
+
     def test_negative_sl_structural_score_excludes_precursor_cluster(self) -> None:
         record = LibraryRecord(
             record_id=1301,
@@ -711,26 +770,40 @@ class SphingolipidRuleTests(unittest.TestCase):
         self.assertGreater(result.total_score, 90.0)
         self.assertGreater(result.pool_scores["fah"].pool_score, 55.0)
 
-    def test_negative_ahexcer_requires_fa_and_structural_evidence(self) -> None:
+    def test_negative_ahexcer_requires_half_of_fah_hg_and_lcb_pools(self) -> None:
         record = LibraryRecord(
             record_id=14,
             compound_class="AHexCer",
-            lipid_name="AHexCer(16:0/30:1;O)",
-            lipid_chain_name="AHexCer(16:0/14:0;2O/16:1;O)",
-            precursor_mz=955.7572,
+            lipid_name="AHexCer d18:1(O-16:0)/22:0(OH)",
+            lipid_chain_name="AHexCer d18:1(O-16:0)/22:0(OH)",
+            precursor_mz=1096.8972,
             adduct="[M+CH3COO]-",
             fragments=[
-                FragmentRecord(955.7572, "[M+CH3COO]-", "Precursor Ion"),
-                FragmentRecord(255.2324, "[RCOO]-(16:0)", "Diagnostic_FA"),
-                FragmentRecord(496.4371, "AHexCer structural fragment", "Diagnostic_FA_Loss"),
+                FragmentRecord(255.2330, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(636.5936, "[M-H-(C6H5O6-RC=O)]-(O-16:0)", "Diagnostic_HG"),
+                FragmentRecord(780.6359, "[M-H-RCOOH]-(O-16:0); M-H-(LCB-C2H7NO)-H2O", "Diagnostic_FA_Loss"),
+                FragmentRecord(798.6465, "[M-H-(RCOOH-H2O)]-(O-16:0); M-H-(LCB-C2H7NO)", "Diagnostic_FA_Loss"),
+                FragmentRecord(1036.8760, "[M-H]-", "Diagnostic_HG"),
             ],
         )
 
-        result = _score(record, [(255.2324, 1000.0), (496.4371, 850.0)])
+        missing_lcb = _score(record, [(255.2330, 1000.0), (1036.8760, 900.0)])
+        passing = _score(
+            record,
+            [(255.2330, 1000.0), (798.6465, 850.0), (1036.8760, 900.0)],
+        )
 
-        self.assertTrue(result.passed_required_gates)
+        self.assertFalse(missing_lcb.passed_required_gates)
+        self.assertTrue(passing.passed_required_gates)
+        self.assertEqual(passing.pool_scores["fah"].total_count, 3)
+        self.assertEqual(passing.pool_scores["hg"].total_count, 2)
+        self.assertEqual(passing.pool_scores["other"].total_count, 2)
+        self.assertEqual(
+            _pool_weights_for_record(record, DEFAULT_RULES.get("AHexCer")),
+            {"fah": 60.0, "hg": 20.0, "other": 20.0},
+        )
 
-    def test_negative_ahexcer_can_use_deprotonated_ion_as_hg_evidence(self) -> None:
+    def test_negative_ahexcer_precursor_and_hg_cannot_replace_fah_lcb_evidence(self) -> None:
         record = LibraryRecord(
             record_id=15,
             compound_class="AHexCer",
@@ -739,15 +812,17 @@ class SphingolipidRuleTests(unittest.TestCase):
             precursor_mz=1096.8972,
             adduct="[M+CH3COO]-",
             fragments=[
-                FragmentRecord(1096.8972, "[M+CH3COO]-", "Precursor Ion"),
                 FragmentRecord(255.2330, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                FragmentRecord(636.5936, "[M-H-(C6H5O6-RC=O)]-(O-16:0)", "Diagnostic_HG"),
+                FragmentRecord(780.6359, "[M-H-RCOOH]-(O-16:0); M-H-(LCB-C2H7NO)-H2O", "Diagnostic_FA_Loss"),
+                FragmentRecord(798.6465, "[M-H-(RCOOH-H2O)]-(O-16:0); M-H-(LCB-C2H7NO)", "Diagnostic_FA_Loss"),
                 FragmentRecord(1036.8760, "[M-H]-", "Diagnostic_HG"),
             ],
         )
 
-        result = _score(record, [(255.2330, 1000.0), (1036.8760, 999.0)])
+        result = _score(record, [(1096.8972, 1000.0), (1036.8760, 999.0)])
 
-        self.assertTrue(result.passed_required_gates)
+        self.assertFalse(result.passed_required_gates)
 
 
 if __name__ == "__main__":

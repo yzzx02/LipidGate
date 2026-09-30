@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
-BACKGROUND_ION_MZ = 59.0604
-BACKGROUND_ION_PPM_TOLERANCE = 10.0
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FragmentRecord:
     mz: float
     name: str
@@ -17,8 +13,11 @@ class FragmentRecord:
     weight: float = 1.0
     required_group: Optional[str] = None
 
+    def __setstate__(self, state):
+        _restore_slot_state(self, state)
 
-@dataclass
+
+@dataclass(slots=True)
 class LibraryRecord:
     record_id: int
     compound_class: str
@@ -31,6 +30,9 @@ class LibraryRecord:
     fragments: List[FragmentRecord] = field(default_factory=list)
     metadata: Dict[str, str] = field(default_factory=dict)
 
+    def __setstate__(self, state):
+        _restore_slot_state(self, state)
+
     @property
     def key(self) -> Tuple[str, str, str, float, str]:
         return (
@@ -40,6 +42,18 @@ class LibraryRecord:
             round(self.precursor_mz, 4),
             self.adduct,
         )
+
+
+def _restore_slot_state(instance, state):
+    """Read both earlier dict-backed caches and new slotted pickles."""
+    if isinstance(state, dict):
+        values = state.items()
+    elif isinstance(state, tuple) and len(state) == 2 and isinstance(state[1], dict):
+        values = state[1].items()
+    else:
+        values = zip((field.name for field in fields(instance)), state)
+    for name, value in values:
+        object.__setattr__(instance, name, value)
 
 
 @dataclass(frozen=True)
@@ -56,7 +70,7 @@ class ExperimentalSpectrum:
     rt_minutes: float
     polarity: str
     peaks: List[ExperimentalPeak]
-    metadata: Dict[str, str] = field(default_factory=dict)
+    metadata: Dict[str, object] = field(default_factory=dict)
     precursor_charge: Optional[int] = None
 
     @property
@@ -105,31 +119,14 @@ class CandidateScore:
     downgrade_reason: str = ""
 
 
-def _within_ppm(mz: float, reference_mz: float, ppm_tolerance: float) -> bool:
-    return abs(float(mz) - float(reference_mz)) <= abs(float(reference_mz)) * float(ppm_tolerance) * 1e-6
-
-
-def filter_background_ions(
-    peaks: Sequence[Tuple[float, float]],
-    background_mz: float = BACKGROUND_ION_MZ,
-    ppm_tolerance: float = BACKGROUND_ION_PPM_TOLERANCE,
-) -> List[Tuple[float, float]]:
-    return [
-        (float(mz), float(intensity))
-        for mz, intensity in peaks
-        if not _within_ppm(mz, background_mz, ppm_tolerance)
-    ]
-
-
 def normalize_peaks(peaks: Sequence[Tuple[float, float]]) -> List[ExperimentalPeak]:
-    filtered_peaks = filter_background_ions(peaks)
-    if not filtered_peaks:
+    if not peaks:
         return []
-    max_intensity = max(intensity for _, intensity in filtered_peaks)
+    max_intensity = max(intensity for _, intensity in peaks)
     if max_intensity <= 0:
         return []
     normalized = []
-    for mz, intensity in sorted(filtered_peaks, key=lambda item: item[0]):
+    for mz, intensity in sorted(peaks, key=lambda item: item[0]):
         rel = intensity / max_intensity
         normalized.append(ExperimentalPeak(mz=float(mz), intensity=float(intensity), relative_intensity=rel))
     return normalized

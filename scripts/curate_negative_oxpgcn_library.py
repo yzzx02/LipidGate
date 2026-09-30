@@ -5,7 +5,7 @@ import gzip
 from dataclasses import dataclass
 from pathlib import Path
 
-from curate_positive_sphingolipid_library import header_value
+from lipidgate.ms2.msp_tools import header_value
 
 
 CARBON_MASS = 12.0

@@ -10,7 +10,7 @@ WATER_MASS = 18.01056468
 TRIMETHYLAMINE_MASS = 59.07349929
 PHOSPHORIC_ACID_MASS = 97.97689557
 SPB_D_C_NAMES = {"M+H-CH4O2", "M+H-2H2O", "M+H-H2O"}
-PEAK_RE = re.compile(r'^(?P<mz>\S+)\s+(?P<intensity>\S+)\s+"(?P<name>[^"]*)"\s+"(?P<type>[^"]*)"$')
+from lipidgate.ms2.msp_tools import PEAK_RE, header_value, parse_peaks, peak, role
 AHEXCER_MSDIAL_NAME_RE = re.compile(
     r"^AHexCer\s+\((?P<o_acyl>O-\d+:\d+)\)"
     r"(?P<lcb>\d+:\d+);2O/(?P<n_acyl>\d+:\d+);O$",
@@ -26,39 +26,6 @@ def canonical_ahexcer_name(value: str) -> str | None:
         f"AHexCer d{matched.group('lcb')}({matched.group('o_acyl')})/"
         f"{matched.group('n_acyl')}(OH)"
     )
-
-
-def header_value(lines: list[str], key: str) -> str:
-    prefix = f"{key}:"
-    for line in lines:
-        if line.startswith(prefix):
-            return line.split(":", 1)[1].strip()
-    return ""
-
-
-def parse_peaks(lines: list[str]) -> list[dict[str, object]]:
-    peaks = []
-    for line in lines:
-        match = PEAK_RE.match(line)
-        if match is None:
-            continue
-        peaks.append(
-            {
-                "mz": float(match.group("mz")),
-                "intensity": float(match.group("intensity")),
-                "name": match.group("name"),
-                "type": match.group("type"),
-            }
-        )
-    return peaks
-
-
-def peak(mz: float, name: str, fragment_type: str, intensity: float = 100.0) -> dict[str, object]:
-    return {"mz": mz, "intensity": intensity, "name": name, "type": fragment_type}
-
-
-def role(source: dict[str, object], fragment_type: str) -> dict[str, object]:
-    return {**source, "type": fragment_type}
 
 
 def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
@@ -100,7 +67,7 @@ def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
             if lcb_name in by_name:
                 curated.append(role(by_name[lcb_name], "LCB碎片"))
         stats["lsm_records"] += 1
-    elif compound_class in {"Cer1P", "CerP"}:
+    elif compound_class == "Cer1P":
         by_name = {str(item["name"]): item for item in peaks}
         lcb_2h2o = by_name.get("LCB-2H2O")
         if lcb_2h2o is None and "LCB-H2O" in by_name:
@@ -149,6 +116,26 @@ def curate_block(block: list[str], stats: dict[str, int]) -> list[str]:
             "Comment": f"MS1_name={canonical_name};polarity=+",
         }
         stats["ahexcer_records"] += 1
+    elif compound_class == "Cer":
+        series_match = re.search(r"\(([mdt])\d", name, flags=re.IGNORECASE)
+        series = series_match.group(1).lower() if series_match is not None else ""
+        preferred_names = {
+            "m": ("LCB-H2O", "LCB", "Ceramide fragment U"),
+            "d": ("LCB-CH2O-H2O", "LCB-2H2O", "LCB-H2O"),
+            "t": ("LCB-3H2O", "LCB-2H2O", "LCB-H2O"),
+        }.get(series, ())
+        by_name = {str(item["name"]): item for item in peaks}
+        selected_lcb = [by_name[item_name] for item_name in preferred_names if item_name in by_name]
+        if len(selected_lcb) < 3:
+            selected_names = {str(item["name"]) for item in selected_lcb}
+            selected_lcb.extend(
+                item
+                for item in peaks
+                if item["type"] == "LCB碎片" and str(item["name"]) not in selected_names
+            )
+        selected_lcb = selected_lcb[:3]
+        curated = [item for item in peaks if item["type"] != "LCB碎片"] + selected_lcb
+        stats["cer_records"] += 1
     elif compound_class == "HexCer":
         curated = []
         for item in peaks:
@@ -221,7 +208,7 @@ def verify_library(path: Path) -> dict[str, int]:
                 if peak_names != expected:
                     problems.append(f"{name}: unexpected LSM fragments {sorted(peak_names)}")
                 counts["verified_lsm"] += 1
-            elif compound_class in {"Cer1P", "CerP"} and adduct == "[M+H]+":
+            elif compound_class == "Cer1P" and adduct == "[M+H]+":
                 expected = {"M+H-H3PO4", "M+H-H2O", "LCB-2H2O"}
                 if peak_names != expected:
                     problems.append(f"{name}: unexpected Cer1P fragments {sorted(peak_names)}")
@@ -266,6 +253,7 @@ def main() -> None:
         "lsm_records": 0,
         "cer1p_records": 0,
         "ahexcer_records": 0,
+        "cer_records": 0,
         "hexcer_records": 0,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

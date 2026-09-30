@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lipidgate"
 version = "1.0.0"
-description = "Integrated lipid feature detection, peak truth scoring, and MS2 rule-based identification."
+description = "Lipid feature detection, MS2 identification and ordered ECN retention-time filtering."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -18,8 +18,6 @@ dependencies = [
   "PySide6",
   "pymzml",
   "pyopenms",
-  "torch",
-  "torchvision",
   "PyYAML",
   "openpyxl",
 ]

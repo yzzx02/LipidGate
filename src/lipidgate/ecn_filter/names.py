@@ -116,6 +116,15 @@ def _normalize_chains(chain_text: str, tokens: list[_ChainToken]) -> str:
 
 def parse_lipid_name(lipid_name: object, fallback_subclass: object = "") -> LipidNameInfo:
     text = str(lipid_name or "").strip()
+    # TG-EST's inner (FA ...) is a fourth chain, not the outer lipid-name
+    # parentheses. Keep its structural grouping and count all four chains.
+    tg_est = re.fullmatch(
+        r"TG-EST(?:\s+|\()(\d+:\d+)_(\d+:\d+)_(\d+:\d+);O\(FA\s+(\d+:\d+)\)\)?",
+        text, flags=re.IGNORECASE,
+    )
+    if tg_est is not None:
+        composition = [tuple(map(int, token.split(":"))) for token in tg_est.groups()]
+        return LipidNameInfo(text, sum(c for c, _ in composition), sum(db for _, db in composition), "TG-EST")
     subclass, chain_text, tail, style = _split_name(text)
     if not subclass:
         subclass = _clean_subclass(fallback_subclass)
@@ -137,8 +146,12 @@ def parse_lipid_name(lipid_name: object, fallback_subclass: object = "") -> Lipi
         ]
     else:
         tokens = _parse_chain_tokens(chain_text)
-    total_c = sum(token.carbon for token in tokens) if tokens else None
-    total_db = sum(token.double_bond for token in tokens) if tokens else None
+    # A suffix can contain an additional acyl chain, e.g. ASM d34:2(O-18:0)
+    # or Cer d18:1/24:0(O-18:2). CHAIN_RE retains that suffix for naming, but
+    # consumes its inner chain; composition must count every explicit core.
+    composition = list(CHAIN_CORE_RE.finditer(chain_text))
+    total_c = sum(int(match.group("carbon")) for match in composition) if composition else None
+    total_db = sum(int(match.group("double_bond")) for match in composition) if composition else None
     normalized_chains = _normalize_chains(chain_text, tokens)
     if is_ahexcer_three_chain:
         normalized_name = text

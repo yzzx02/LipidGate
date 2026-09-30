@@ -86,6 +86,8 @@ def _with_plot_identity(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _retained_mask(df: pd.DataFrame) -> pd.Series:
+    if 'ECN_training_anchor' in df and 'RT_consistency_pass' in df:
+        return df['RT_consistency_pass'].fillna(False).astype(bool)
     if "RT_filter_action" in df.columns:
         return df["RT_filter_action"].isin(
             {"pass", "retain_unmodeled", "species_rescued"}
@@ -188,7 +190,7 @@ def _dynamic_tick_step(span: float, *, carbon: bool) -> float:
     return 1.0
 
 
-def _empty_plot(path: Path, message: str) -> Path:
+def _empty_plot(path: Path, message: str, dpi: int = 600) -> Path:
     import matplotlib
 
     matplotlib.use("Agg", force=True)
@@ -197,7 +199,7 @@ def _empty_plot(path: Path, message: str) -> Path:
     fig, ax = plt.subplots(figsize=(4.0, 3.45), dpi=150)
     ax.axis("off")
     ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=11)
-    fig.savefig(path, bbox_inches="tight", dpi=600, facecolor="white")
+    fig.savefig(path, bbox_inches="tight", dpi=dpi, facecolor="white")
     plt.close(fig)
     return path
 
@@ -210,6 +212,7 @@ def plot_ecn_class(
     *,
     hide_outliers: bool = True,
     dpi: int = 600,
+    band_minutes: float | None = None,
 ) -> Path:
     """Write the fixed LipidGate ECN figure for one lipid class.
 
@@ -223,22 +226,22 @@ def plot_ecn_class(
     output_root.mkdir(parents=True, exist_ok=True)
     safe_class = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(lipid_class)).strip("_") or "Lipid"
     output_path = output_root / f"{safe_class}_ECN.png"
-    rt_column = _rt_column(result_df)
+    rt_column = 'rt_for_filter_min' if 'rt_for_filter_min' in result_df else _rt_column(result_df)
     if result_df.empty or rt_column is None or "total_C" not in result_df.columns:
-        return _empty_plot(output_path, "No ECN annotations available")
+        return _empty_plot(output_path, "No ECN annotations available", dpi)
 
     identified = _with_plot_identity(result_df)
     class_rows = identified.loc[
         identified["subclass"].fillna("").astype(str).str.casefold().eq(str(lipid_class).casefold())
     ].copy()
     if class_rows.empty:
-        return _empty_plot(output_path, f"No {lipid_class} annotations available")
+        return _empty_plot(output_path, f"No {lipid_class} annotations available", dpi)
     retained = _retained_mask(class_rows)
     hidden = class_rows.loc[~retained].copy()
     plotted_source = class_rows.loc[retained].copy() if hide_outliers else class_rows.copy()
     points = _one_point_per_carbon(plotted_source, rt_column)
     if points.empty:
-        return _empty_plot(output_path, f"No retained {lipid_class} ECN points")
+        return _empty_plot(output_path, f"No retained {lipid_class} ECN points", dpi)
     points.to_csv(
         output_root / f"{safe_class}_ECN_scatter_data.csv",
         index=False,
@@ -284,6 +287,7 @@ def plot_ecn_class(
             edgecolors="#263238",
             linewidths=0.55,
             zorder=3,
+            label=f'DB {db_value}',
         )
         curve = _curve_from_summary(
             model_summary,
@@ -292,15 +296,18 @@ def plot_ecn_class(
             float(group["_carbon"].min()),
             float(group["_carbon"].max()),
         )
-        if curve is None:
+        if curve is None and 'ECN_training_anchor' not in result_df:
             curve = _curve_from_sparse_points(group)
         if curve is not None:
             carbon_grid, predicted_rt = curve
             ax.plot(carbon_grid, predicted_rt, color=color, linewidth=1.2, zorder=2)
+            if band_minutes is not None and float(group['_carbon'].max()) > float(group['_carbon'].min()):
+                ax.fill_between(carbon_grid,predicted_rt-band_minutes,predicted_rt+band_minutes,color=color,alpha=.09,linewidth=0)
 
     ax.set_title(str(lipid_class), fontsize=16, fontweight="bold", pad=8)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1), frameon=False, fontsize=8)
     ax.set_xlabel("Total carbon", fontsize=10.5)
-    ax.set_ylabel("Normalized RT (min)", fontsize=10.5)
+    ax.set_ylabel("RT (min)" if 'rt_for_filter_min' in result_df else "Normalized RT (min)", fontsize=10.5)
     for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_linewidth(0.9)
@@ -343,7 +350,7 @@ def plot_ecn_preview(
     if not lipid_class:
         output_path = Path(output_dir).resolve() / "ecn_rt_consistency_preview.png"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        return _empty_plot(output_path, "No ECN annotations available")
+        return _empty_plot(output_path, "No ECN annotations available", dpi)
     return plot_ecn_class(
         identified,
         output_dir,

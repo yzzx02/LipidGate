@@ -125,10 +125,10 @@ class CuratedSphingolipidFragmentTests(unittest.TestCase):
         self.assertEqual(_pool_for_fragment(record, by_name["LCB-2H2O"]), "fah")
         self.assertEqual(_pool_for_fragment(record, by_name["M+H-H2O"]), "other")
 
-    def test_negative_cerp_is_canonicalized_to_six_peak_cer1p_model(self) -> None:
+    def test_negative_cer1p_uses_six_peak_model(self) -> None:
         block = _block(
-            "CerP(d17:1/8:0)",
-            "CerP",
+            "Cer1P(d17:1/8:0)",
+            "Cer1P",
             490.3320,
             [
                 '64.9798 100.00 "H2O2P-" "Diagnostic_HG"',
@@ -202,8 +202,8 @@ class CuratedSphingolipidFragmentTests(unittest.TestCase):
 
     def test_negative_cer1p_hg_gate_and_fah_chain_promotion_ignore_ordinary(self) -> None:
         block = _block(
-            "CerP(d17:1/8:0)",
-            "CerP",
+            "Cer1P(d17:1/8:0)",
+            "Cer1P",
             490.3320,
             [
                 '364.3620 100.00 "M-H-(R=O)(8:0)" "Diagnostic_FA_Loss"',
@@ -284,10 +284,7 @@ class CuratedSphingolipidFragmentTests(unittest.TestCase):
         self.assertTrue(validate_rule(cer1p_rule, {"M+H-H3PO4", "LCB-2H2O"}, "d"))
         self.assertFalse(validate_rule(cer1p_rule, {"M+H-H3PO4", "M+H-H2O"}, "d"))
 
-        self.assertIs(
-            SPHINGOLIPID_RULEBOOK["CerP_[M-H]-"],
-            SPHINGOLIPID_RULEBOOK["Cer1P_[M-H]-"],
-        )
+        self.assertIn("Cer1P_[M-H]-", SPHINGOLIPID_RULEBOOK)
 
 
 if __name__ == "__main__":

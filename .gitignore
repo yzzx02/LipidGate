@@ -7,6 +7,8 @@ __pycache__/
 venv/
 env/
 *.egg-info/
+build/
+dist/
 
 # Runtime outputs
 results/
@@ -35,4 +37,7 @@ libraries/ms2/.library_cache/
 # Local editor state
 .vscode/
 .idea/
+.cache/
+.codex_worktrees/
+tmp/
 libraries/ms2/*.msp

@@ -48,17 +48,7 @@ class RuleSet:
     default_rule: ClassRule
 
     def get(self, lipid_class: str) -> ClassRule:
-        aliases = {
-            "Ether-LPI": "LPI-O",
-            "BA_Conjugated": "BA",
-            "BA_CONJUGATED": "BA",
-            "BASulfate-ST": "BASulfate",
-            "SSulfate-ST": "SSulfate",
-            "NATau": "NAT",
-            "CM-PE": "PHEG",
-        }
-        normalized_class = aliases.get(lipid_class, lipid_class)
-        return self.by_class.get(normalized_class, self.default_rule)
+        return self.by_class.get(lipid_class, self.default_rule)
 
 
 def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
@@ -66,7 +56,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         "PC", "PC-P", "PE", "PG", "PI", "PS",
         "LPC", "LPE", "LPG", "LPI", "LPS",
         "PC-O", "PE-O", "PI-O", "PS-O",
-        "LPC-O", "LPE-O", "LPG-O", "LPI-O", "Ether-LPG", "Ether-PG",
+        "LPC-O", "LPE-O", "LPE-P", "LPG-O", "LPI-O",
         "PA", "PIP", "PIP2", "PIP3", "CL", "DLCL", "MLCL",
     ])
     default_profile = ScoreProfile()
@@ -86,6 +76,22 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=lps_profile if lipid_class == "LPS" else default_profile,
         )
+    by_class["LNAPE"] = ClassRule(
+        lipid_class="LNAPE",
+        negative_hg_min_matches=1,
+        negative_require_all_fah=True,
+        score_profile=ScoreProfile(pool_weights={"fah": 20.0, "hg": 60.0, "other": 20.0}),
+    )
+    by_class["LPE-P"] = ClassRule(
+        lipid_class="LPE-P",
+        chain_level_min_fah=1,
+        allow_hg_only_if_no_fah=True,
+        positive_hg_min_matches_if_no_fah=2,
+        positive_hg_min_matches=2,
+        positive_hg_min_fraction=1.0,
+        positive_hg_complete_can_resolve_chain=True,
+        score_profile=default_profile,
+    )
     # BMP positive-mode MAG fragments encode both chains, so both MAG peaks
     # are required before we promote the match to chain level.
     by_class["BMP"] = ClassRule(
@@ -277,6 +283,22 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         required_groups={},
         chain_level_min_fah=2,
         negative_hg_min_matches=2,
+        negative_require_all_fah=True,
+        score_profile=default_profile,
+    )
+    by_class["ADGGA"] = ClassRule(
+        lipid_class="ADGGA",
+        required_groups={},
+        chain_level_min_fah=2,
+        allow_hg_only_if_no_fah=False,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_min_fraction=0.5,
+        positive_hg_min_matches=1,
+        positive_loss_min_fraction=1.0,
+        positive_loss_min_matches=1,
+        positive_hg_complete_can_resolve_chain=False,
+        allow_loss_only_if_no_fah=False,
+        require_loss_with_fah_only=False,
         negative_require_all_fah=True,
         score_profile=default_profile,
     )

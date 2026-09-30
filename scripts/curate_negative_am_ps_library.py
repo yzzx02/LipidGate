@@ -5,7 +5,7 @@ import gzip
 import re
 from pathlib import Path
 
-from curate_positive_sphingolipid_library import PEAK_RE, header_value, parse_peaks
+from lipidgate.ms2.msp_tools import PEAK_RE, header_value, parse_peaks
 
 
 CARBON_MONOISOTOPIC_MASS = 12.0

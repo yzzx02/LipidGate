@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from .config import DEFAULT_SEARCH_CONFIG
+from .workbook_export import write_workbook
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
@@ -47,12 +50,12 @@ def run_ms2_search_result(
     output_dir: str | Path,
     mode: str = "negative",
     library_path: str | Path | None = None,
-    top_n: int = 1,
-    precursor_tolerance_ppm: float = 10.0,
+    top_n: int = DEFAULT_SEARCH_CONFIG.top_n,
+    precursor_tolerance_ppm: float = DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm,
     precursor_tolerance_da: float | None = None,
-    fragment_tolerance_da: float | None = 0.01,
-    fragment_tolerance_ppm: float | None = None,
-    min_relative_intensity: float = 0.005,
+    fragment_tolerance_da: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_da,
+    fragment_tolerance_ppm: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm,
+    min_relative_intensity: float = DEFAULT_SEARCH_CONFIG.min_relative_intensity,
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
@@ -90,32 +93,18 @@ def run_ms2_search_result(
     df = searcher.search_mzml(mzml_path, top_n=int(top_n))
     df = deduplicate_fa_results(df)
     df = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
+    if "source_file" not in df:
+        df["source_file"] = mzml_path.name
+    audit_dir = out_dir / "audit"
+    audit_dir.mkdir(exist_ok=True)
+    df.to_csv(audit_dir / "ms2_candidates.csv", index=False)
     df = prepare_ms2_result_export_df(df)
     csv_path = out_dir / "ms2_results.csv"
     df.to_csv(csv_path, index=False)
     xlsx_path = None
     if export_xlsx:
         xlsx_path = out_dir / "ms2_results.xlsx"
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="MS2_Results", index=False)
-            worksheet = writer.sheets["MS2_Results"]
-            header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-            for column_name, number_format in [
-                ("rt_minutes", "0.000"),
-                ("precursor_mz", "0.0000"),
-                ("ppm_error", "0.00"),
-                ("final_score", "0.00"),
-            ]:
-                column_index = header_to_index.get(column_name)
-                if column_index is None:
-                    continue
-                for row in worksheet.iter_rows(
-                    min_row=2,
-                    max_row=worksheet.max_row,
-                    min_col=column_index,
-                    max_col=column_index,
-                ):
-                    row[0].number_format = number_format
+        write_workbook(xlsx_path, {"MS2_Results": df})
     return MS2SearchResult(
         data=df,
         csv_path=csv_path,
@@ -125,6 +114,7 @@ def run_ms2_search_result(
         output_dir=out_dir,
         row_count=int(len(df)),
         parameters={
+            "ms1_support_method": "feature_table_association",
             "top_n": top_n,
             "precursor_tolerance_ppm": precursor_tolerance_ppm,
             "precursor_tolerance_da": precursor_tolerance_da,
@@ -146,12 +136,12 @@ def run_ms2_search(
     output_dir: str | Path,
     mode: str = "negative",
     library_path: str | Path | None = None,
-    top_n: int = 1,
-    precursor_tolerance_ppm: float = 10.0,
+    top_n: int = DEFAULT_SEARCH_CONFIG.top_n,
+    precursor_tolerance_ppm: float = DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm,
     precursor_tolerance_da: float | None = None,
-    fragment_tolerance_da: float | None = 0.01,
-    fragment_tolerance_ppm: float | None = None,
-    min_relative_intensity: float = 0.005,
+    fragment_tolerance_da: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_da,
+    fragment_tolerance_ppm: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm,
+    min_relative_intensity: float = DEFAULT_SEARCH_CONFIG.min_relative_intensity,
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
@@ -196,50 +186,17 @@ def _write_feature_annotation_workbook(
     xlsx_path: Path,
     ms2_df: pd.DataFrame,
     feature_annotations: pd.DataFrame,
-    feature_df: pd.DataFrame,
 ) -> Path:
-    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-        ms2_df.to_excel(writer, sheet_name="MS2_Spectrum_Results", index=False)
-        feature_annotations.to_excel(writer, sheet_name="Feature_MS2_Annotations", index=False)
-        feature_df.to_excel(writer, sheet_name="MS1_Feature_Table", index=False)
-        for sheet in writer.sheets.values():
-            _format_workbook_sheet(sheet)
-    return xlsx_path
+    from .search import prepare_ms2_result_export_df
+
+    return write_workbook(xlsx_path, {
+        "MS2_Spectrum_Results": ms2_df,
+        "Feature_MS2_Annotations": prepare_ms2_result_export_df(feature_annotations),
+    })
 
 
 def _write_ms2_only_workbook(xlsx_path: Path, ms2_df: pd.DataFrame) -> Path:
-    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-        ms2_df.to_excel(writer, sheet_name="MS2_Spectrum_Results", index=False)
-        _format_workbook_sheet(writer.sheets["MS2_Spectrum_Results"])
-    return xlsx_path
-
-
-def _format_workbook_sheet(worksheet) -> None:
-    header_to_index = {cell.value: index for index, cell in enumerate(worksheet[1], start=1)}
-    for column_name, number_format in [
-        ("rt_minutes", "0.000"),
-        ("selected_ms2_rt", "0.000"),
-        ("feature_rt", "0.000"),
-        ("feature_rtmin", "0.000"),
-        ("feature_rtmax", "0.000"),
-        ("precursor_mz", "0.0000"),
-        ("feature_mz", "0.0000"),
-        ("mz", "0.0000"),
-        ("ppm_error", "0.00"),
-        ("mz_error_to_feature_ppm", "0.00"),
-        ("rt_delta_sec", "0.0"),
-        ("final_score", "0.00"),
-    ]:
-        column_index = header_to_index.get(column_name)
-        if column_index is None:
-            continue
-        for row in worksheet.iter_rows(
-            min_row=2,
-            max_row=worksheet.max_row,
-            min_col=column_index,
-            max_col=column_index,
-        ):
-            row[0].number_format = number_format
+    return write_workbook(xlsx_path, {"MS2_Spectrum_Results": ms2_df})
 
 
 def run_ms2_feature_annotation_result(
@@ -248,12 +205,12 @@ def run_ms2_feature_annotation_result(
     output_dir,
     mode: str = "negative",
     library_path: str | Path | None = None,
-    top_n: int = 1,
-    precursor_tolerance_ppm: float = 10.0,
+    top_n: int = DEFAULT_SEARCH_CONFIG.top_n,
+    precursor_tolerance_ppm: float = DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm,
     precursor_tolerance_da: float | None = None,
-    fragment_tolerance_da: float | None = 0.01,
-    fragment_tolerance_ppm: float | None = None,
-    min_relative_intensity: float = 0.005,
+    fragment_tolerance_da: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_da,
+    fragment_tolerance_ppm: float | None = DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm,
+    min_relative_intensity: float = DEFAULT_SEARCH_CONFIG.min_relative_intensity,
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
@@ -261,16 +218,20 @@ def run_ms2_feature_annotation_result(
     export_xlsx: bool = True,
     export_csv: bool = False,
     map_to_features: bool = True,
+    workers: int = 1,
+    progress=None,
 ) -> MS2FeatureAnnotationResult:
     from lipidgate.ms2.feature_linking import (
         ANNOTATION_COLUMNS,
+        DETAIL_ANNOTATION_COLUMNS,
         collect_mzml_paths,
         link_ms2_to_features,
         remove_feature_supported_fa_orphans,
         summarize_feature_annotations,
         summarize_orphan_annotations,
     )
-    from lipidgate.ms2.search import LipidMS2Searcher, deduplicate_fa_results, prepare_ms2_result_export_df
+    from lipidgate.ms2.search import deduplicate_fa_results, prepare_ms2_result_export_df
+    from lipidgate.ms2.file_search import search_files
 
     mode_norm = mode.strip().lower().replace("_", "-")
     out_dir = Path(output_dir).resolve()
@@ -287,7 +248,7 @@ def run_ms2_feature_annotation_result(
         raise FileNotFoundError(library)
 
     mzml_paths = collect_mzml_paths(mzml_input)
-    searcher = LipidMS2Searcher(
+    search_options = dict(
         library_path=library,
         precursor_tolerance_da=precursor_tolerance_da,
         precursor_tolerance_ppm=float(precursor_tolerance_ppm),
@@ -300,8 +261,22 @@ def run_ms2_feature_annotation_result(
     )
 
     ms2_frames: list[pd.DataFrame] = []
-    for mzml_path in mzml_paths:
-        result_df = searcher.search_mzml(mzml_path, top_n=int(top_n))
+    if progress is not None:
+        progress("MS2 正在准备谱库缓存；首次使用可能需要一些时间…")
+    for mzml_path, result_df in zip(
+        mzml_paths,
+        search_files(
+            mzml_paths, search_options=search_options, top_n=int(top_n), workers=workers,
+            on_file_done=(
+                lambda path, done, total: progress(f"MS2 已完成 {done}/{total}：{path.name}")
+                if progress is not None else None
+            ),
+            on_library_ready=(
+                lambda: progress("MS2 谱库已就绪，正在处理文件…")
+                if progress is not None else None
+            ),
+        ),
+    ):
         if result_df.empty:
             continue
         result_df = result_df.copy()
@@ -310,6 +285,9 @@ def run_ms2_feature_annotation_result(
         else:
             result_df["source_file"] = result_df["source_file"].fillna(mzml_path.name)
         ms2_frames.append(result_df)
+
+    if progress is not None:
+        progress("MS2 正在整理匹配结果…")
 
     combined = pd.concat(ms2_frames, ignore_index=True) if ms2_frames else pd.DataFrame()
     combined = add_lipid_name_features(combined, lipid_column="matched_name", subclass_column="compound_class")
@@ -332,31 +310,34 @@ def run_ms2_feature_annotation_result(
         linked_df = deduplicate_fa_results(linked_df)
         linked_df = remove_feature_supported_fa_orphans(linked_df)
         ms2_df = prepare_ms2_result_export_df(linked_df)
-        matched = summarize_feature_annotations(linked_df)
+        matched = summarize_feature_annotations(linked_df, include_details=True)
         orphan_df = linked_df[linked_df["Feature_ID"].isna()].copy()
         orphan = summarize_orphan_annotations(
             orphan_df=orphan_df,
             mzml_paths=mzml_paths,
             mz_tol_ppm=float(precursor_tolerance_ppm),
             rt_window_sec=float(rt_window_sec),
+            include_details=True,
         )
         records: list[dict] = []
         for table in (matched, orphan):
             if not table.empty:
                 records.extend(table.to_dict("records"))
-        feature_annotations = (
-            pd.DataFrame.from_records(records, columns=ANNOTATION_COLUMNS)
-            if records
-            else pd.DataFrame(columns=ANNOTATION_COLUMNS)
-        )
+        detailed_annotations = pd.DataFrame.from_records(records, columns=DETAIL_ANNOTATION_COLUMNS)
+        feature_annotations = detailed_annotations.reindex(columns=ANNOTATION_COLUMNS)
         if export_csv:
             annotations_csv_path = out_dir / "feature_ms2_annotations.csv"
-            feature_annotations.to_csv(annotations_csv_path, index=False)
+            prepare_ms2_result_export_df(feature_annotations).to_csv(annotations_csv_path, index=False)
+            detailed_annotations.to_csv(out_dir / "aligned_feature_annotations.csv", index=False)
     else:
         combined = deduplicate_fa_results(combined)
         ms2_df = prepare_ms2_result_export_df(combined)
 
     if export_csv:
+        audit_dir = out_dir / "audit"
+        audit_dir.mkdir(exist_ok=True)
+        audit_table = linked_df if wrote_feature_annotation_table else combined
+        audit_table.to_csv(audit_dir / "ms2_candidates.csv", index=False)
         ms2_csv_path = out_dir / "ms2_spectrum_results.csv"
         ms2_df.to_csv(ms2_csv_path, index=False)
 
@@ -367,12 +348,11 @@ def run_ms2_feature_annotation_result(
                 out_dir / "ms2_feature_annotation_results.xlsx",
                 ms2_df=ms2_df,
                 feature_annotations=feature_annotations,
-                feature_df=feature_df,
             )
         else:
             xlsx_path = _write_ms2_only_workbook(out_dir / "ms2_spectrum_results.xlsx", ms2_df=ms2_df)
 
-    display_df = feature_annotations if wrote_feature_annotation_table else ms2_df
+    display_df = prepare_ms2_result_export_df(feature_annotations) if wrote_feature_annotation_table else ms2_df
     primary_output = xlsx_path or annotations_csv_path or ms2_csv_path or out_dir
     message = f"MS2 feature annotation finished: {primary_output} ({len(display_df)} rows)"
     return MS2FeatureAnnotationResult(
@@ -390,6 +370,7 @@ def run_ms2_feature_annotation_result(
         ms2_row_count=int(len(ms2_df)),
         parameters={
             "mzml_files": [str(path) for path in mzml_paths],
+            "ms1_support_method": "feature_table_association",
             "feature_table": str(feature_table) if feature_table else None,
             "top_n": top_n,
             "precursor_tolerance_ppm": precursor_tolerance_ppm,
@@ -404,6 +385,8 @@ def run_ms2_feature_annotation_result(
             "export_xlsx": export_xlsx,
             "export_csv": export_csv,
             "map_to_features": map_to_features,
+            "workers": workers,
+            "effective_workers": min(workers, len(mzml_paths)),
         },
         message=message,
     )

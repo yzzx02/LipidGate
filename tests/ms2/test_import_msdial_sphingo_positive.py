@@ -23,7 +23,7 @@ class ImportMsdialSphingoPositiveTests(unittest.TestCase):
     def test_asm_extra_fatty_acid_uses_explicit_o_acyl_notation(self) -> None:
         self.assertEqual(
             transform_source_name("ASM", "SM 30:1;2O(FA 14:0)"),
-            ("ASM 30:1;2O(O-14:0)", "ASM 30:1;2O"),
+            ("ASM d30:1(O-14:0)", "ASM d30:1(O-14:0)"),
         )
 
     def test_ahexcer_names_fallback_to_source_name_when_not_sure(self) -> None:

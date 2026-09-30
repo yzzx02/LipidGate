@@ -3,15 +3,23 @@ from __future__ import annotations
 import ast
 import gzip
 import hashlib
+import json
 import os
+import sys
 import pickle
+import logging
+import shutil
+import tempfile
 import re
-from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Tuple
+from typing import Dict, Iterable, Iterator, List
 
 import pandas as pd
+
+from .esterified_ceramide import is_esterified_ceramide
+from .negative_hexcer import is_negative_hexcer, normalize_negative_hexcer_fragments
+from .negative_cer_hsu2016 import normalize_negative_cer_hsu2016_fragments
 
 from .import_msdial_sphingo_positive import annotate_positive_sl_fragments
 from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name
@@ -25,25 +33,20 @@ from .library_fragment_policy import (
     normalize_special_aminophospholipid_fragments as _normalize_special_aminophospholipid_fragments,
     normalize_tg_est_fragments as _normalize_tg_est_fragments,
     normalize_tg_o_fragments as _normalize_tg_o_fragments,
+    curate_positive_lyso_pe_fragments as _curate_positive_lyso_pe_fragments,
+    without_pi_ammonium_acyl_losses as _without_pi_ammonium_acyl_losses,
     synthetic_fragment as _synthetic_fragment,
 )
 from .models import FragmentRecord, LibraryRecord
+from .chain_labels import annotate_record_chain_labels
+from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
     canonicalize_multichain_sphingolipid_name,
     has_complete_multichain_sphingolipid_identity,
 )
 
 
-LIBRARY_CACHE_VERSION = 30
-
-CANONICAL_ACETATE_ADDUCT = "[M+CH3COO]-"
-ACETATE_ADDUCT_ALIASES = frozenset(
-    {
-        CANONICAL_ACETATE_ADDUCT,
-        "[M+Hac-H]-",
-        "[M+Hac]-",
-    }
-)
+LIBRARY_CACHE_VERSION = 36
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -64,26 +67,12 @@ POSITIVE_CHOLINE_CLASS_KEYS = {
     "LPCO",
     "SM",
 }
-FREE_SPHINGOID_BASE_CLASSES = {"SPB", "Sph", "DHSph", "PhytoSph"}
+FREE_SPHINGOID_BASE_CLASSES = {"SPB"}
 SPB_D_SERIES_C_FRAGMENT_NAMES = {
     "M+H-CH4O2",
     "M+H-2H2O",
     "M+H-H2O",
 }
-
-def canonicalize_adduct(value: object) -> str:
-    """Map historical acetate-adduct spellings to one stable name."""
-
-    text = str(value or "").strip()
-    compact = re.sub(r"\s+", "", text).casefold()
-    aliases = {
-        re.sub(r"\s+", "", alias).casefold()
-        for alias in ACETATE_ADDUCT_ALIASES
-    }
-    if compact in aliases:
-        return CANONICAL_ACETATE_ADDUCT
-    return text
-
 
 def _canonicalize_ahexcer_name(value: object) -> str | None:
     text = str(value or "").strip()
@@ -104,14 +93,12 @@ def _canonicalize_sphingoid_base_identity(
     cls = str(compound_class or "").strip()
     name = canonicalize_multichain_sphingolipid_name(lipid_name, cls)
     chain_name = canonicalize_multichain_sphingolipid_name(lipid_chain_name, cls)
+    if is_esterified_ceramide(cls, chain_name):
+        return "Cer", chain_name, chain_name
     if cls == "AHexCer":
         canonical_ahexcer = _canonicalize_ahexcer_name(chain_name)
         if canonical_ahexcer is not None:
             return cls, canonical_ahexcer, canonical_ahexcer
-    if cls == "CerP":
-        canonical_name = re.sub(r"^CerP", "Cer1P", name, flags=re.IGNORECASE)
-        canonical_chain_name = re.sub(r"^CerP", "Cer1P", chain_name, flags=re.IGNORECASE)
-        return "Cer1P", canonical_name, canonical_chain_name
     if cls not in FREE_SPHINGOID_BASE_CLASSES:
         return cls, name, chain_name
 
@@ -175,6 +162,15 @@ def _normalize_targeted_positive_sphingolipid_fragments(
     adduct_text = str(adduct or "").strip()
     cls = str(compound_class or "").strip()
     chain_name = str(lipid_chain_name or "").strip()
+    if is_esterified_ceramide(cls, chain_name):
+        return result
+    if is_negative_hexcer(cls, adduct_text):
+        return normalize_negative_hexcer_fragments(chain_name, precursor_mz, adduct_text, result)
+    corrected_negative_cer = normalize_negative_cer_hsu2016_fragments(
+        chain_name, precursor_mz, adduct_text, result,
+    )
+    if corrected_negative_cer != result:
+        return corrected_negative_cer
     by_name = {str(fragment.name).strip(): fragment for fragment in result}
 
     if adduct_text in {"[M+CH3COO]-", "[M+HCOO]-"} and cls == "SM":
@@ -222,7 +218,7 @@ def _normalize_targeted_positive_sphingolipid_fragments(
             curated.append(_fragment_with_role(rcoo, "Diagnostic_FA"))
         return curated
 
-    if adduct_text == "[M-H]-" and cls in {"Cer1P", "CerP"}:
+    if adduct_text == "[M-H]-" and cls == "Cer1P":
         phosphate = by_name.get("PO3-") or _synthetic_fragment(
             78.9591,
             "PO3-",
@@ -324,6 +320,35 @@ def _normalize_targeted_positive_sphingolipid_fragments(
                 for fragment, (name, fragment_type) in zip(ordered, names_and_types)
             ]
 
+    if cls == "Cer":
+        series_match = re.search(r"\(([mdt])\d", chain_name, flags=re.IGNORECASE)
+        series = series_match.group(1).lower() if series_match is not None else ""
+        preferred_names = {
+            "m": ("LCB-H2O", "LCB", "Ceramide fragment U"),
+            "d": ("LCB-CH2O-H2O", "LCB-2H2O", "LCB-H2O"),
+            "t": ("LCB-3H2O", "LCB-2H2O", "LCB-H2O"),
+        }.get(series, ())
+        lcb_by_name = {
+            str(fragment.name or ""): fragment
+            for fragment in result
+            if fragment.fragment_type == LCB_FRAGMENT_TYPE
+        }
+        selected_lcb = [lcb_by_name[name] for name in preferred_names if name in lcb_by_name]
+        if len(selected_lcb) < 3:
+            selected_ids = {id(fragment) for fragment in selected_lcb}
+            selected_lcb.extend(
+                fragment
+                for fragment in result
+                if fragment.fragment_type == LCB_FRAGMENT_TYPE
+                and id(fragment) not in selected_ids
+            )
+        selected_lcb = selected_lcb[:3]
+        return [
+            fragment
+            for fragment in result
+            if fragment.fragment_type != LCB_FRAGMENT_TYPE
+        ] + selected_lcb
+
     if cls == "HexCer":
         curated = []
         for fragment in result:
@@ -336,6 +361,16 @@ def _normalize_targeted_positive_sphingolipid_fragments(
                 else fragment.fragment_type
             )
             curated.append(_fragment_with_role(fragment, fragment_type))
+        lcb_fragments = [
+            fragment for fragment in curated if fragment.fragment_type == LCB_FRAGMENT_TYPE
+        ]
+        if len(lcb_fragments) > 3:
+            keep_ids = {id(fragment) for fragment in lcb_fragments[-3:]}
+            curated = [
+                fragment
+                for fragment in curated
+                if fragment.fragment_type != LCB_FRAGMENT_TYPE or id(fragment) in keep_ids
+            ]
         return curated
 
     if cls == "SPB" and re.match(r"^SPB\(d", chain_name, flags=re.IGNORECASE):
@@ -375,7 +410,7 @@ def _normalize_targeted_positive_sphingolipid_fragments(
             curated.append(_fragment_with_role(lcb_2h2o, LCB_FRAGMENT_TYPE))
         return curated
 
-    if cls in {"Cer1P", "CerP"}:
+    if cls == "Cer1P":
         phosphate_loss = by_name.get("M+H-H3PO4") or _synthetic_fragment(
             float(precursor_mz) - PHOSPHORIC_ACID_MONOISOTOPIC_MASS,
             "M+H-H3PO4",
@@ -496,14 +531,32 @@ def _library_cache_metadata(path: Path) -> Dict[str, object]:
     stat = path.stat()
     return {
         "version": LIBRARY_CACHE_VERSION,
-        "path": str(path.resolve()),
+        "path": _library_cache_identity(path),
         "size": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
+        "mtime_ns": 0 if _is_bundled_library(path) else stat.st_mtime_ns,
+        "sha256": sha256(path),
+        "rules_sha256": code_fingerprint(Path(__file__).parent),
     }
 
 
+def _is_bundled_library(path: Path) -> bool:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    return bool(
+        getattr(sys, "frozen", False)
+        and bundle_root
+        and path.name in {"current_positive.msp.gz", "current_negative.msp.gz"}
+        and path.resolve().is_relative_to(Path(bundle_root).resolve())
+    )
+
+
+def _library_cache_identity(path: Path) -> str:
+    if _is_bundled_library(path):
+        return f"bundled:{path.name}:{sha256(path)}"
+    return str(path.resolve())
+
+
 def _library_cache_path(path: Path) -> Path:
-    digest = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha1(_library_cache_identity(path).encode("utf-8")).hexdigest()[:16]
     cache_root_override = os.environ.get("LIPIDGATE_CACHE_DIR")
     if cache_root_override:
         cache_root = Path(cache_root_override)
@@ -514,37 +567,120 @@ def _library_cache_path(path: Path) -> Path:
     return cache_root / "ms2_libraries" / f"library_{digest}.pkl"
 
 
+def _library_cache_valid(path: Path) -> bool:
+    cache_path = _library_cache_path(path)
+    meta_path = cache_path.with_suffix(".json")
+    if not cache_path.is_file() or not meta_path.is_file():
+        return False
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8")) == _library_cache_metadata(path)
+    except (OSError, ValueError):
+        return False
+
+
 def _load_cached_standard_msp(path: Path) -> List[LibraryRecord] | None:
     cache_path = _library_cache_path(path)
-    if not cache_path.exists():
+    if not _library_cache_valid(path):
         return None
     try:
         with cache_path.open("rb") as handle:
-            payload = pickle.load(handle)
-    except Exception:
+            records = pickle.load(handle)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Cannot read library cache %s: %s", cache_path, exc)
         return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("metadata") != _library_cache_metadata(path):
-        return None
-    records = payload.get("records")
     return records if isinstance(records, list) else None
 
 
 def _write_cached_standard_msp(path: Path, records: List[LibraryRecord]) -> None:
     cache_path = _library_cache_path(path)
+    meta_path = cache_path.with_suffix(".json")
+    temp_path = None
+    temp_meta = None
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = cache_path.with_suffix(".tmp")
-        with temp_path.open("wb") as handle:
-            pickle.dump(
-                {"metadata": _library_cache_metadata(path), "records": records},
-                handle,
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
+        with tempfile.NamedTemporaryFile(mode="wb", dir=cache_path.parent, prefix=cache_path.stem, suffix=".tmp", delete=False) as handle:
+            temp_path = Path(handle.name)
+            pickle.dump(records, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_path.parent, prefix=cache_path.stem, suffix=".tmp", delete=False) as handle:
+            temp_meta = Path(handle.name)
+            json.dump(_library_cache_metadata(path), handle)
         temp_path.replace(cache_path)
-    except Exception:
-        return
+        temp_meta.replace(meta_path)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Cannot write library cache %s: %s", cache_path, exc)
+    finally:
+        for temporary in (temp_path, temp_meta):
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as exc:
+                    logging.getLogger(__name__).warning("Cannot clean library cache temporary file %s: %s", temporary, exc)
+
+
+def _bundled_prebuilt_archive(path: Path) -> Path | None:
+    if not _is_bundled_library(path):
+        return None
+    base = Path(sys._MEIPASS) / "libraries" / "ms2" / "prebuilt"
+    stem = path.name.removesuffix(".msp.gz")
+    archive = base / f"{stem}.pkl.gz"
+    metadata = base / f"{stem}.json"
+    if not archive.is_file() or not metadata.is_file():
+        return None
+    expected = {
+        "version": LIBRARY_CACHE_VERSION,
+        "source_sha256": sha256(path),
+        "rules_sha256": code_fingerprint(Path(__file__).parent),
+    }
+    try:
+        if json.loads(metadata.read_text(encoding="utf-8")) != expected:
+            return None
+        return archive
+    except (OSError, ValueError) as exc:
+        logging.getLogger(__name__).warning("Cannot read bundled library snapshot %s: %s", archive, exc)
+        return None
+
+
+def _install_bundled_prebuilt_cache(path: Path) -> bool:
+    """Expand a validated snapshot to the persistent cache without loading records."""
+    archive = _bundled_prebuilt_archive(path)
+    if archive is None:
+        return False
+    cache_path = _library_cache_path(path)
+    meta_path = cache_path.with_suffix(".json")
+    temporary = None
+    temp_meta = None
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="wb", dir=cache_path.parent, prefix=cache_path.stem, suffix=".tmp", delete=False) as destination:
+            temporary = Path(destination.name)
+            with gzip.open(archive, "rb") as source:
+                shutil.copyfileobj(source, destination, length=1024 * 1024)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_path.parent, prefix=cache_path.stem, suffix=".tmp", delete=False) as destination:
+            temp_meta = Path(destination.name)
+            json.dump(_library_cache_metadata(path), destination)
+        temporary.replace(cache_path)
+        temp_meta.replace(meta_path)
+        return True
+    except (OSError, EOFError, ValueError) as exc:
+        logging.getLogger(__name__).warning("Cannot install bundled library snapshot %s: %s", archive, exc)
+        return False
+    finally:
+        for leftover in (temporary, temp_meta):
+            if leftover is not None:
+                leftover.unlink(missing_ok=True)
+
+
+def _load_bundled_prebuilt_msp(path: Path) -> List[LibraryRecord] | None:
+    archive = _bundled_prebuilt_archive(path)
+    if archive is None:
+        return None
+    try:
+        with gzip.open(archive, "rb") as handle:
+            records = pickle.load(handle)
+        return records if isinstance(records, list) else None
+    except (OSError, ValueError, pickle.UnpicklingError) as exc:
+        logging.getLogger(__name__).warning("Cannot read bundled library snapshot %s: %s", archive, exc)
+        return None
 
 
 EXCEL_COLUMN_ALIASES = {
@@ -582,7 +718,6 @@ def _is_named_negative_headgroup_fragment(
         "[C4H11NO4P]-",
         "M-CH3",
         "[M-CH3]-",
-        "[M-CH3COOCH3+Hac-H]-",
     }
 
 
@@ -670,9 +805,9 @@ def _normalize_fragment_type(
         return "Diagnostic_HG"
     if ftype == "头基诊断碎片" or ("璇婃柇" in ftype and "纰庣墖" in ftype):
         return "Diagnostic_HG"
-    if cls in {"Cer1P", "CerP", "SM", "LSM", "LacCer", "Hex2Cer"} and ftype == "头基诊断碎片":
+    if cls in {"Cer1P", "SM", "LSM", "LacCer", "Hex2Cer"} and ftype == "头基诊断碎片":
         return "Diagnostic_HG"
-    if cls in {"PI", "LPI", "PIO", "LPIO", "PI-O", "LPI-O", "Ether-LPI"} and name == "[M-C6H13O9P+H]+":
+    if cls in {"PI", "LPI", "PIO", "LPIO", "PI-O", "LPI-O"} and name == "[M-C6H13O9P+H]+":
         return "Diagnostic_HG"
     if cls == "NAGly" and _matches_special_hg_fragment(fragment_name, fragment_mz, 76.0393):
         return "Diagnostic_HG"
@@ -785,7 +920,7 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
             raise ValueError(f"{file_path} 缺少列: {sorted(missing)}")
         grouped = df.groupby(["main_class", "lipid_name", "lipid_chain_name", "adduct", "precursor_mz"], dropna=False)
         for (main_class, lipid_name, lipid_chain_name, adduct, precursor_mz), group_df in grouped:
-            adduct = canonicalize_adduct(adduct)
+            adduct = str(adduct or "").strip()
             main_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
                 main_class,
                 lipid_name,
@@ -987,7 +1122,88 @@ def convert_excel_directory_to_msp(input_directory: str | Path, output_path: str
     return write_standard_msp(records, output_path)
 
 
-def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
+def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
+    """Explicit legacy import policy, separate from raw MSP decoding."""
+    from .oxidized_fragment_policy import normalize_oxidized_fragments
+    current = {"compoundclass": record.compound_class, "name": record.lipid_chain_name,
+               "ms1_name": record.lipid_name, "precursormz": record.precursor_mz,
+               "precursortype": record.adduct}
+    fragments = []
+    for fragment in record.fragments:
+        normalized_type = _normalize_fragment_type(
+            record.compound_class, fragment.fragment_type, fragment_name=fragment.name,
+            fragment_mz=fragment.mz, adduct=record.adduct,
+        )
+        if normalized_type is not None:
+            fragments.append(replace(fragment, fragment_type=normalized_type,
+                                     required_group=_required_group_for_fragment(normalized_type) or fragment.required_group))
+    normalized_fragments = list(fragments)
+    adduct = str(current.get("precursortype", "") or "").strip()
+    if current.get("compoundclass", "").strip() == "SL":
+        normalized_fragments = annotate_positive_sl_fragments(
+            current.get("name", ""),
+            float(current["precursormz"]),
+            adduct,
+            normalized_fragments,
+        )
+    compound_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
+        current.get("compoundclass", ""),
+        current.get("ms1_name", current.get("name", "")),
+        current.get("name", ""),
+    )
+    lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, compound_class)
+    lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(
+        lipid_chain_name,
+        compound_class,
+    )
+    normalized_fragments = _ensure_positive_choline_common_fragments(
+        compound_class,
+        adduct,
+        normalized_fragments,
+    )
+    normalized_fragments = _normalize_targeted_positive_sphingolipid_fragments(
+        compound_class,
+        lipid_chain_name,
+        float(current["precursormz"]),
+        adduct,
+        normalized_fragments,
+    )
+    normalized_fragments = _normalize_special_aminophospholipid_fragments(
+        compound_class,
+        lipid_chain_name,
+        float(current["precursormz"]),
+        adduct,
+        normalized_fragments,
+    )
+    normalized_fragments = _normalize_tg_o_fragments(
+        compound_class,
+        lipid_chain_name,
+        adduct,
+        normalized_fragments,
+    )
+    normalized_fragments = _normalize_tg_est_fragments(
+        compound_class,
+        lipid_chain_name,
+        float(current["precursormz"]),
+        adduct,
+        normalized_fragments,
+    )
+    normalized_fragments = normalize_oxidized_fragments(
+        compound_class, lipid_chain_name, record.precursor_mz, adduct, normalized_fragments,
+    )
+    normalized_fragments = _curate_positive_lyso_pe_fragments(
+        compound_class, record.precursor_mz, adduct, normalized_fragments,
+    )
+    normalized_fragments = _without_pi_ammonium_acyl_losses(
+        compound_class, adduct, normalized_fragments,
+    )
+    return annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+                   lipid_chain_name=lipid_chain_name,
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))
+
+
+def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:
+    """Decode MSP; normalize=False exposes disk records for migration/audit."""
     msp_path = Path(msp_path)
     records: List[LibraryRecord] = []
     current: Dict[str, str] = {}
@@ -1004,70 +1220,15 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
             fragments = []
             reading_peaks = False
             return
-        normalized_fragments = list(fragments)
-        adduct = canonicalize_adduct(current.get("precursortype", ""))
-        if current.get("compoundclass", "").strip() == "SL":
-            normalized_fragments = annotate_positive_sl_fragments(
-                current.get("name", ""),
-                float(current["precursormz"]),
-                adduct,
-                normalized_fragments,
-            )
-        compound_class, lipid_name, lipid_chain_name = _canonicalize_sphingoid_base_identity(
-            current.get("compoundclass", ""),
-            current.get("ms1_name", current.get("name", "")),
-            current.get("name", ""),
+        record = LibraryRecord(
+            record_id=next_id, compound_class=current.get("compoundclass", ""),
+            lipid_name=current.get("ms1_name", current.get("name", "")),
+            lipid_chain_name=current.get("name", ""), precursor_mz=float(current["precursormz"]),
+            adduct=current.get("precursortype", ""), formula=current.get("formula", ""),
+            polarity=current.get("polarity", _infer_polarity_from_adduct(current.get("precursortype", ""))),
+            fragments=list(fragments),
         )
-        lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, compound_class)
-        lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(
-            lipid_chain_name,
-            compound_class,
-        )
-        normalized_fragments = _ensure_positive_choline_common_fragments(
-            compound_class,
-            adduct,
-            normalized_fragments,
-        )
-        normalized_fragments = _normalize_targeted_positive_sphingolipid_fragments(
-            compound_class,
-            lipid_chain_name,
-            float(current["precursormz"]),
-            adduct,
-            normalized_fragments,
-        )
-        normalized_fragments = _normalize_special_aminophospholipid_fragments(
-            compound_class,
-            lipid_chain_name,
-            float(current["precursormz"]),
-            adduct,
-            normalized_fragments,
-        )
-        normalized_fragments = _normalize_tg_o_fragments(
-            compound_class,
-            lipid_chain_name,
-            adduct,
-            normalized_fragments,
-        )
-        normalized_fragments = _normalize_tg_est_fragments(
-            compound_class,
-            lipid_chain_name,
-            float(current["precursormz"]),
-            adduct,
-            normalized_fragments,
-        )
-        records.append(
-            LibraryRecord(
-                record_id=next_id,
-                compound_class=compound_class,
-                lipid_name=lipid_name,
-                lipid_chain_name=lipid_chain_name,
-                precursor_mz=float(current["precursormz"]),
-                adduct=adduct,
-                formula=current.get("formula", ""),
-                polarity=current.get("polarity", "-"),
-                fragments=list(sorted(normalized_fragments, key=lambda fragment: fragment.mz)),
-            )
-        )
+        records.append(normalize_imported_record(record) if normalize else record)
         next_id += 1
         current = {}
         fragments = []
@@ -1109,29 +1270,18 @@ def load_standard_msp(msp_path: str | Path) -> List[LibraryRecord]:
             if parsed_fragment is None:
                 continue
             mz, intensity, payload = parsed_fragment
-            compound_class = current.get("compoundclass", "")
-            normalized_type = _normalize_fragment_type(
-                compound_class,
-                str(payload.get("type", "Common")),
-                fragment_name=str(payload.get("name", "")),
-                fragment_mz=mz,
-                adduct=canonicalize_adduct(current.get("precursortype", "")),
-            )
-            if normalized_type is None:
-                continue
             fragments.append(
                 FragmentRecord(
                     mz=mz,
                     intensity=intensity,
                     name=str(payload.get("name", "")),
-                    fragment_type=normalized_type,
-                    required_group=_required_group_for_fragment(normalized_type)
-                    or (str(payload.get("required_group", "")) or None),
+                    fragment_type=str(payload.get("type", "Common")),
+                    required_group=str(payload.get("required_group", "")) or None,
                     weight=float(payload.get("weight", 1.0)),
                 )
             )
     flush_current()
-    return _expand_hydroxy_fa_sphingolipids(records)
+    return _expand_hydroxy_fa_sphingolipids(records) if normalize else records
 
 
 def load_library(path: str | Path, use_cache: bool = True) -> List[LibraryRecord]:
@@ -1143,7 +1293,13 @@ def load_library(path: str | Path, use_cache: bool = True) -> List[LibraryRecord
             cached_records = _load_cached_standard_msp(path)
             if cached_records is not None:
                 return cached_records
-        records = load_standard_msp(path)
+            if _install_bundled_prebuilt_cache(path):
+                cached_records = _load_cached_standard_msp(path)
+                if cached_records is not None:
+                    return cached_records
+        records = _load_bundled_prebuilt_msp(path) if use_cache else None
+        if records is None:
+            records = load_standard_msp(path)
         if use_cache:
             _write_cached_standard_msp(path, records)
         return records

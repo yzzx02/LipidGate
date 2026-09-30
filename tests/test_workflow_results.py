@@ -36,52 +36,6 @@ def test_feature_detection_result_keeps_legacy_path_and_rows(tmp_path: Path, mon
     assert legacy_path.exists()
 
 
-def test_peak_truth_result_reports_both_outputs(tmp_path: Path, monkeypatch) -> None:
-    import lipidgate.peak_truth.workflow as workflow
-
-    feature_table = tmp_path / "features.csv"
-    feature_table.write_text("Feature_ID,mz,RT\nF1,100.1,1.5\n", encoding="utf-8")
-    mzml = tmp_path / "sample.mzML"
-    mzml.write_text("", encoding="utf-8")
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-
-    monkeypatch.setattr(
-        workflow,
-        "load_feature_table",
-        lambda path, algo: pd.DataFrame({"Feature_ID": ["F1"], "mz": [100.1], "RT": [1.5]}),
-    )
-    monkeypatch.setattr(workflow, "standardize_rt_columns_for_display", lambda df, algo: df)
-    monkeypatch.setattr(
-        workflow,
-        "compute_peak_attributes",
-        lambda *args, **kwargs: pd.DataFrame({"Feature_ID": ["F1"], "SNR": [10.0]}),
-    )
-
-    def fake_build_eic(paths, info, plot, args) -> None:
-        Path(args.images_path).mkdir(parents=True, exist_ok=True)
-
-    def fake_predict_peak_truth(**kwargs):
-        out = pd.DataFrame({"Feature_ID": ["F1"], "pred_true_peak": [1]})
-        out.to_csv(kwargs["output_csv"], index=False)
-        return out
-
-    monkeypatch.setattr(workflow, "build_eic", fake_build_eic)
-    monkeypatch.setattr(workflow, "predict_peak_truth", fake_predict_peak_truth)
-
-    result = workflow.run_peak_truth_result(
-        feature_table=feature_table,
-        mzml_path=mzml,
-        output_dir=tmp_path / "out",
-        model_dir=model_dir,
-    )
-
-    assert result.attributes_path.exists()
-    assert result.predictions_path.exists()
-    assert result.attributes_rows == 1
-    assert result.prediction_rows == 1
-
-
 def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     import lipidgate.ms2.search as search_module
     from lipidgate.ms2 import run_ms2_search_result
@@ -131,8 +85,9 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
     assert result.xlsx_path is not None and result.xlsx_path.exists()
     assert result.mode == "positive"
     assert result.row_count == 1
-    assert int(result.data.loc[0, "total_C"]) == 34
-    assert int(result.data.loc[0, "total_DB"]) == 1
+    assert result.data.loc[0, "total_C"] == 34
+    assert result.data.loc[0, "total_DB"] == 1
+    assert len(result.data.columns) == 17
     assert "lipidname_norm" not in result.data.columns
     assert "subclass" not in result.data.columns
     assert "rank_score" not in result.data.columns
@@ -237,8 +192,9 @@ def test_ms2_feature_annotation_result_merges_cross_file_orphans(tmp_path: Path,
     assert set(workbook.sheet_names) == {
         "MS2_Spectrum_Results",
         "Feature_MS2_Annotations",
-        "MS1_Feature_Table",
     }
     assert len(workbook.parse("MS2_Spectrum_Results")) == 4
     assert len(workbook.parse("Feature_MS2_Annotations")) == 2
-    assert len(workbook.parse("MS1_Feature_Table")) == 1
+    assert "MS1_Feature_Table" not in workbook.sheet_names
+    assert len(workbook.parse("MS2_Spectrum_Results").columns) == 17
+    assert len(workbook.parse("Feature_MS2_Annotations").columns) == 17

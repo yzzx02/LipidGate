@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from lipidgate.ms2.feature_linking import (
     collect_mzml_paths,
@@ -72,6 +73,59 @@ def test_link_ms2_to_features_does_not_expand_real_peak_boundaries() -> None:
     assert pd.isna(linked.loc[0, "Feature_ID"])
     assert pd.isna(linked.loc[0, "feature_rt"])
     assert linked.loc[0, "rt_minutes"] == 5.1
+
+
+def test_feature_table_replaces_previous_custom_veto_and_respects_source_and_units():
+    features = pd.DataFrame([
+        {"Feature_ID": "F1", "mz": 790.5398, "RT": 60., "RTmin": 50., "RTmax": 70.,
+         "RT_unit": "seconds", "source_file": "a.mzML"},
+    ])
+    spectra = pd.DataFrame([
+        {"source_file": source, "rt_minutes": 1., "precursor_mz": 790.5398,
+         "ms1_support_status": "MS2-only", "ms1_support_reason": "old_custom_gate"}
+        for source in ("a.mzML", "b.mzML")
+    ])
+    linked = link_ms2_to_features(features, spectra)
+    assert linked.loc[0, "ms1_support_status"] == "MS1-supported"
+    assert linked.loc[0, "feature_rt"] == 1.
+    assert linked.loc[1, "ms1_support_status"] == "MS2-only"
+    assert pd.isna(linked.loc[1, "Feature_ID"])
+
+
+def test_legacy_rt_inference_keeps_apex_and_bounds_on_one_scale():
+    features = pd.DataFrame([{"mz": 760.1, "RT": 200., "RTmin": 195., "RTmax": 205.}])
+    spectra = pd.DataFrame([{"precursor_mz": 760.1, "rt_minutes": 200. / 60}])
+    linked = link_ms2_to_features(features, spectra)
+    assert linked.loc[0, "ms1_support_status"] == "MS1-supported"
+    assert linked.loc[0, "feature_rt"] == pytest.approx(200. / 60)
+    assert linked.loc[0, "feature_rtmin"] == pytest.approx(195. / 60)
+    assert linked.loc[0, "feature_rtmax"] == pytest.approx(205. / 60)
+
+
+@pytest.mark.parametrize("rt_column,apex,expected", [
+    ("rt_minutes", 210., 210.), ("RT (min)", 210., 210.),
+    ("rt_seconds", 60., 1.), ("RT (s)", 60., 1.),
+])
+def test_rt_column_units_override_value_based_guess(rt_column, apex, expected):
+    features = pd.DataFrame([{"mz": 760.1, rt_column: apex, "RTmin": apex-1., "RTmax": apex+1.}])
+    spectra = pd.DataFrame([{"precursor_mz": 760.1, "rt_minutes": expected}])
+    linked = link_ms2_to_features(features, spectra)
+    assert linked.loc[0, "ms1_support_status"] == "MS1-supported"
+    assert linked.loc[0, "feature_rt"] == expected
+
+
+def test_annotation_summary_accepts_missing_optional_sort_columns():
+    linked = pd.DataFrame([
+        {"Feature_ID": "F1", "matched_name": "PC(16:0_18:1)", "adduct": "[M+H]+",
+         "compound_class": "PC", "scan_id": "first", "total_score": 70.},
+        {"Feature_ID": "F1", "matched_name": "PC(16:0_18:1)", "adduct": "[M+H]+",
+         "compound_class": "PC", "scan_id": "best", "total_score": 80.},
+    ])
+    summary = summarize_feature_annotations(linked)
+    assert summary.loc[0, "selected_scan_id"] == "best"
+    assert summary.loc[0, "final_score"] == 80.
+    # A minimal imported table may omit scores as well as fragment counts/ppm.
+    assert len(summarize_feature_annotations(linked.drop(columns="total_score"))) == 1
 
 
 def test_summarize_feature_annotations_allows_multiple_names_per_feature() -> None:

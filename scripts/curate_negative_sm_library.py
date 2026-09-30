@@ -5,7 +5,7 @@ import gzip
 import re
 from pathlib import Path
 
-from curate_positive_sphingolipid_library import PEAK_RE, header_value, parse_peaks, role
+from lipidgate.ms2.msp_tools import PEAK_RE, header_value, parse_peaks, role
 
 
 NEGATIVE_SM_ADDUCTS = {"[M+CH3COO]-", "[M+HCOO]-"}

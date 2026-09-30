@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
+
 import argparse
 from pathlib import Path
 
@@ -19,24 +21,6 @@ def _detect(args: argparse.Namespace) -> int:
     return 0
 
 
-def _peak_truth(args: argparse.Namespace) -> int:
-    from lipidgate.peak_truth import run_peak_truth_result
-
-    result = run_peak_truth_result(
-        feature_table=args.feature_table,
-        mzml_path=args.mzml,
-        output_dir=args.output,
-        algo=args.algo,
-        model_dir=args.model_dir,
-        max_features=args.max_features,
-        eic_ppm=args.eic_ppm,
-    )
-    print(f"attributes: {result.attributes_path}")
-    print(f"predictions: {result.predictions_path}")
-    print(f"rows: {result.prediction_rows}")
-    return 0
-
-
 def _ms2_search(args: argparse.Namespace) -> int:
     from lipidgate.ms2 import run_ms2_feature_annotation_result, run_ms2_search_result
 
@@ -51,7 +35,7 @@ def _ms2_search(args: argparse.Namespace) -> int:
         fragment_da = None
     elif args.tolerance_unit == "da":
         precursor_da = args.ms1_tolerance if args.ms1_tolerance is not None else (args.precursor_da or 0.01)
-        fragment_da = args.msms_tolerance if args.msms_tolerance is not None else args.fragment_da
+        fragment_da = args.msms_tolerance if args.msms_tolerance is not None else (args.fragment_da if args.fragment_da is not None else 0.01)
         fragment_ppm = None
 
     allowed_adducts = [
@@ -162,6 +146,28 @@ def _gui(_: argparse.Namespace) -> int:
     return gui_main()
 
 
+def _project_run(args: argparse.Namespace) -> int:
+    from lipidgate.project import Project
+    from lipidgate.pipeline import run_project
+    project = Project.open(args.project)
+    if not project.settings:
+        raise ValueError('请先在 GUI 中保存项目参数')
+    _, _, result = run_project(project.root, project.settings, progress=print)
+    print(result.xlsx_path or result.csv_path)
+    return 0
+
+
+def _filter_results(args: argparse.Namespace) -> int:
+    import pandas as pd
+    from lipidgate.final_results import export_final_results
+    result = export_final_results(pd.read_csv(args.input), args.output,
+        use_ecn=not args.no_ecn, use_score=not args.no_score,
+        min_score=args.min_score, rt_tolerance=args.rt_tolerance,
+        plot_bands=not args.no_bands, plot_dpi=args.dpi)
+    print(result.xlsx_path)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lipidgate")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -169,22 +175,27 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("gui", help="Launch the LipidGate desktop GUI")
     p.set_defaults(func=_gui)
 
+    p = sub.add_parser('project-run', help='Run a saved GUI project with identical parameters')
+    p.add_argument('--project', type=Path, required=True)
+    p.set_defaults(func=_project_run)
+
+    p = sub.add_parser('filter-results', help='Production score/ordered ECN filtering of raw audit candidates (one LC mode)')
+    p.add_argument('--input', type=Path, required=True, help='audit/ms2_candidates.csv')
+    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--no-ecn', action='store_true')
+    p.add_argument('--no-score', action='store_true')
+    p.add_argument('--min-score', type=float, default=50)
+    p.add_argument('--rt-tolerance', type=float, default=.5)
+    p.add_argument('--no-bands', action='store_true')
+    p.add_argument('--dpi', type=int, default=300)
+    p.set_defaults(func=_filter_results)
+
     p = sub.add_parser("detect", help="Run MS1 feature detection/import")
     p.add_argument("--algo", required=True, choices=["pyopenms", "asari", "xcms", "msdial", "ms-dial"])
     p.add_argument("--input", required=True, type=Path, help="mzML file/directory, or any path for MS-DIAL import")
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--msdial-table", type=Path, help="MS-DIAL xlsx/xls input table")
     p.set_defaults(func=_detect)
-
-    p = sub.add_parser("peak-truth", help="Compute peak attributes and true/false peak predictions")
-    p.add_argument("--feature-table", required=True, type=Path)
-    p.add_argument("--algo", default="pyopenms")
-    p.add_argument("--mzml", required=True, type=Path)
-    p.add_argument("--output", required=True, type=Path)
-    p.add_argument("--model-dir", type=Path)
-    p.add_argument("--max-features", type=int)
-    p.add_argument("--eic-ppm", type=float, default=10.0)
-    p.set_defaults(func=_peak_truth)
 
     p = sub.add_parser("ms2-search", help="Run MS2 rule-based MSP search")
     p.add_argument("--mzml", required=True, type=Path)
@@ -197,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Search mode.",
     )
     p.add_argument("--library", type=Path)
-    p.add_argument("--top-n", type=int, default=1)
+    p.add_argument("--top-n", type=int, default=DEFAULT_SEARCH_CONFIG.top_n)
     p.add_argument(
         "--adduct",
         action="append",
@@ -211,22 +222,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tolerance-unit", choices=["ppm", "da"], help="Use one unit for both MS1 and MS/MS tolerances")
     p.add_argument("--ms1-tolerance", type=float, help="MS1 tolerance in --tolerance-unit")
     p.add_argument("--msms-tolerance", type=float, help="MS/MS tolerance in --tolerance-unit")
-    p.add_argument("--precursor-ppm", type=float, default=10.0)
+    p.add_argument("--precursor-ppm", type=float, default=DEFAULT_SEARCH_CONFIG.precursor_tolerance_ppm)
     p.add_argument("--precursor-da", type=float)
-    p.add_argument("--fragment-da", type=float, default=0.01)
-    p.add_argument("--fragment-ppm", type=float)
+    p.add_argument("--fragment-da", type=float, default=DEFAULT_SEARCH_CONFIG.fragment_tolerance_da)
+    p.add_argument("--fragment-ppm", type=float, default=DEFAULT_SEARCH_CONFIG.fragment_tolerance_ppm)
     p.add_argument("--min-total-score", type=float, default=50.0, help="Filter candidates below this raw MS2 total score; use 0 to disable")
     p.add_argument("--rt-window-sec", type=float, default=30.0)
     p.add_argument("--map-features", action="store_true", help="Use the multi-file MS2 workflow even without a feature table")
     p.add_argument(
         "--min-relative-intensity",
         type=float,
-        default=0.005,
+        default=DEFAULT_SEARCH_CONFIG.min_relative_intensity,
         help="Filter MS/MS peaks below this relative intensity to base peak. Example: 0.005 = 0.5 percent.",
     )
     p.set_defaults(func=_ms2_search)
 
-    p = sub.add_parser("ecn-filter", help="Evaluate lipid annotation RT consistency with ECN-style models")
+    p = sub.add_parser("ecn-filter", help="Legacy ECN workflow; use filter-results for the current ordered model")
     p.add_argument("--input", required=True, type=Path, help="Annotation CSV/XLSX table")
     p.add_argument("--output", required=True, type=Path, help="Output directory")
     p.add_argument("--lipid-column", help="Lipid name column; inferred when omitted")

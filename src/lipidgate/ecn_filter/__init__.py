@@ -9,6 +9,7 @@ from .workflow import (
     run_ecn_filter_result,
 )
 from .plots import plot_db_legend, plot_ecn_class, plot_ecn_preview
+from .confidence_filter import fit_high_confidence_ecn
 
 __all__ = [
     "LipidNameInfo",
@@ -24,4 +25,5 @@ __all__ = [
     "plot_ecn_preview",
     "plot_ecn_class",
     "plot_db_legend",
+    "fit_high_confidence_ecn",
 ]

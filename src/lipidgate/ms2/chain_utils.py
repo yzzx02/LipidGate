@@ -13,6 +13,7 @@ CHAIN_TOKEN_RE = re.compile(
 FRAGMENT_CHAIN_TOKEN_RE = re.compile(
     r"(?P<prefix>[OP]-)?(?P<base>\d+:\d+)"
     r"(?:(?:\((?P<paren_ox>\d*)O\))|(?:,O(?P<comma_ox>\d*))|"
+    r"(?:;O(?P<semicolon_ox>\d*))|"
     r"(?:;\(?(?P<oh_count>\d+)OH\)?))?"
 )
 
@@ -25,6 +26,8 @@ def canonical_chain_token(match: re.Match[str]) -> str:
     oxygen_count = match.group("paren_ox")
     if oxygen_count is None:
         oxygen_count = match.group("comma_ox")
+    if oxygen_count is None:
+        oxygen_count = match.group("semicolon_ox")
     if oxygen_count is not None:
         return f"{token};O{oxygen_count or '1'}"
     hydroxy_count = match.group("oh_count")

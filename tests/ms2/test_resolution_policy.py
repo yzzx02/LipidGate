@@ -34,7 +34,8 @@ def test_positive_glycerophospholipid_profile_combines_rco_and_hg_ketene() -> No
     assert profile is not None and profile.name == "positive_glycerophospholipid"
     assert fragment_is_chain_evidence(record, rco)
     assert fragment_is_chain_evidence(record, ketene)
-    assert profile_chain_resolution(record, [_match(rco)]) == ("chain_level", "")
+    assert profile_chain_resolution(record, [_match(rco)])[0] == "tentative_species_level"
+    assert profile_chain_resolution(record, [_match(rco), _match(ketene)]) == ("chain_level", "")
 
 
 def test_positive_ps_profile_keeps_rco_as_support_only() -> None:
@@ -45,7 +46,7 @@ def test_positive_ps_profile_keeps_rco_as_support_only() -> None:
     assert not fragment_is_chain_evidence(record, rco)
     assert fragment_is_chain_evidence(record, ketene)
     assert profile_chain_resolution(record, [_match(rco)])[0] == "species_level"
-    assert profile_chain_resolution(record, [_match(ketene)]) == ("chain_level", "")
+    assert profile_chain_resolution(record, [_match(ketene)])[0] == "tentative_species_level"
 
 
 def test_positive_sm_profile_recognizes_lcb_fragment_type() -> None:

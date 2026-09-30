@@ -15,6 +15,7 @@ class SphingoRule:
     required_type_count_groups: List[tuple[Set[str], int]] = field(default_factory=list)
     required_type_count_any_groups: List[List[tuple[Set[str], int]]] = field(default_factory=list)
     required_type_fraction_groups: List[tuple[Set[str], float]] = field(default_factory=list)
+    required_name_pattern_fraction_groups: List[tuple[str, float]] = field(default_factory=list)
     optional: Set[str] = field(default_factory=set)
     only_non_hydroxy_fa: bool = False
     prefer_d_series_if_ambiguous: bool = False
@@ -50,10 +51,19 @@ def validate_rule(rule: SphingoRule, fragment_names: Iterable[str], series: str)
 
 
 SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
+    "PE-Cer_[M+H]+": SphingoRule(
+        lipid_class="PE-Cer",
+        adduct="[M+H]+",
+        required_all={"M+H-141", "LCB-2H2O"},
+        required_type_fraction_groups=[({"Diagnostic_HG"}, 0.5), ({"LCB碎片"}, 0.5)],
+        only_non_hydroxy_fa=True,
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
+    ),
     "ASM_[M+H]+": SphingoRule(
         lipid_class="ASM",
         adduct="[M+H]+",
-        required_all={"[C5H15NO4P]+", "M+H-ROOH(head-acyl)"},
+        required_all={"[C5H15NO4P]+", "M+H-RCOOH(head-acyl)"},
         required_any_by_series={},
         optional=set(),
     ),
@@ -94,6 +104,18 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         only_non_hydroxy_fa=True,
         prefer_d_series_if_ambiguous=True,
     ),
+    "SM_[M+Na]+": SphingoRule(
+        lipid_class="SM",
+        adduct="[M+Na]+",
+        required_type_count_groups=[
+            ({"Diagnostic_HG"}, 2),
+        ],
+        optional={"[M+Na]+"},
+        only_non_hydroxy_fa=True,
+        prefer_d_series_if_ambiguous=True,
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
+    ),
 
     # Cer (positive mode)
     "Cer_[M+H]+": SphingoRule(
@@ -118,6 +140,9 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         required_type_any_groups=[
             {"Precursor Ion", "C类碎片"},
             {"LCB碎片"},
+        ],
+        required_type_count_groups=[
+            ({"LCB碎片"}, 2),
         ],
         optional={"M+H-2H2O", "M+H-CH2O-H2O", "M+H-3H2O", "M+H-CH2O-3H2O"},
     ),
@@ -194,6 +219,17 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         optional={"Cer+H-H2O"},
     ),
 
+    "GM3_[M+H]+": SphingoRule(
+        lipid_class="GM3",
+        adduct="[M+H]+",
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"LCB碎片"}, 0.5),
+        ],
+        only_non_hydroxy_fa=True,
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
+    ),
     "GM3_[M-H]-": SphingoRule(
         lipid_class="GM3",
         adduct="[M-H]-",
@@ -201,7 +237,9 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         required_type_any_groups=[
             {"Diagnostic_HG"},
         ],
-        optional={"Neu5Ac fragment 87", "M-H-291", "[M-H]-"},
+        optional={"Neu5Ac fragment 87", "M-H-291", "[M-H]-", "LCB fragment P", "LCB fragment R"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
 
     "GM1_[M+2NH4]2+": SphingoRule(
@@ -301,38 +339,35 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     "HexCer_[M-H]-": SphingoRule(
         lipid_class="HexCer",
         adduct="[M-H]-",
-        required_any_groups=[
-            {"[M-H]-", "M-H-C6H10O5", "Cer-H"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"Diagnostic_FA"}, 0.5),
+            ({"LCB碎片"}, 0.5),
         ],
-        required_type_any_groups=[
-            {"Diagnostic_HG"},
-            {"FA类碎片", "Diagnostic_FA"},
-        ],
-        optional={"[RCOO]-", "[(R=O)-H]-", "Ceramide fragment B", "Ceramide fragment C", "Ceramide fragment P", "Ceramide fragment Q", "Ceramide fragment R", "Ceramide fragment R-H2O", "Ceramide fragment Rb"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
     "HexCer_[M+CH3COO]-": SphingoRule(
         lipid_class="HexCer",
         adduct="[M+CH3COO]-",
-        required_any_groups=[
-            {"[M+CH3COO]-", "[M-H]-", "M-H-C6H10O5", "Cer-H"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"Diagnostic_FA"}, 0.5),
+            ({"LCB碎片"}, 0.5),
         ],
-        required_type_any_groups=[
-            {"Diagnostic_HG"},
-            {"FA类碎片", "Diagnostic_FA"},
-        ],
-        optional={"[RCOO]-", "[(R=O)-H]-", "Ceramide fragment B", "Ceramide fragment C", "Ceramide fragment P", "Ceramide fragment Q", "Ceramide fragment R", "Ceramide fragment R-H2O", "Ceramide fragment Rb"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
     "HexCer_[M+HCOO]-": SphingoRule(
         lipid_class="HexCer",
         adduct="[M+HCOO]-",
-        required_any_groups=[
-            {"[M+HCOO]-", "[M-H]-", "M-H-C6H10O5", "Cer-H"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_HG"}, 0.5),
+            ({"Diagnostic_FA"}, 0.5),
+            ({"LCB碎片"}, 0.5),
         ],
-        required_type_any_groups=[
-            {"Diagnostic_HG"},
-            {"FA类碎片", "Diagnostic_FA"},
-        ],
-        optional={"[RCOO]-", "[(R=O)-H]-", "Ceramide fragment B", "Ceramide fragment C", "Ceramide fragment P", "Ceramide fragment Q", "Ceramide fragment R", "Ceramide fragment R-H2O", "Ceramide fragment Rb"},
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
 
     # LacCer / Hex2Cer (positive mode)
@@ -367,20 +402,9 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         },
     ),
 
-    # Cer1P / CerP (positive mode)
+    # Cer1P (positive mode)
     "Cer1P_[M+H]+": SphingoRule(
         lipid_class="Cer1P",
-        adduct="[M+H]+",
-        required_all={"M+H-H3PO4", "LCB-2H2O"},
-        required_type_any_groups=[
-            {"Diagnostic_HG"},
-            {"LCB碎片"},
-        ],
-        optional={"M+H-H2O"},
-        only_non_hydroxy_fa=True,
-    ),
-    "CerP_[M+H]+": SphingoRule(
-        lipid_class="CerP",
         adduct="[M+H]+",
         required_all={"M+H-H3PO4", "LCB-2H2O"},
         required_type_any_groups=[
@@ -432,18 +456,28 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     "AHexCer_[M+CH3COO]-": SphingoRule(
         lipid_class="AHexCer",
         adduct="[M+CH3COO]-",
-        required_type_any_groups=[
-            {"Diagnostic_FA"},
-            {"Diagnostic_HG", "Diagnostic_FA_Loss", "C类碎片", "Precursor Ion"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_FA", "Diagnostic_FA_Loss"}, 0.5),
+            ({"Diagnostic_HG"}, 0.5),
         ],
+        required_name_pattern_fraction_groups=[
+            (r"LCB-C2H7NO", 0.5),
+        ],
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
     "AHexCer_[M+HCOO]-": SphingoRule(
         lipid_class="AHexCer",
         adduct="[M+HCOO]-",
-        required_type_any_groups=[
-            {"Diagnostic_FA"},
-            {"Diagnostic_HG", "Diagnostic_FA_Loss", "C类碎片", "Precursor Ion"},
+        required_type_fraction_groups=[
+            ({"Diagnostic_FA", "Diagnostic_FA_Loss"}, 0.5),
+            ({"Diagnostic_HG"}, 0.5),
         ],
+        required_name_pattern_fraction_groups=[
+            (r"LCB-C2H7NO", 0.5),
+        ],
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
     ),
     "PE-Cer_[M-H]-": SphingoRule(
         lipid_class="PE-Cer",
@@ -508,7 +542,7 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
         ],
         required_type_any_groups=[
             {"Diagnostic_HG"},
-            {"Diagnostic_FA"},
+            {"Diagnostic_FA", "Diagnostic_FA_Loss"},
         ],
     ),
 
@@ -545,7 +579,29 @@ SPHINGOLIPID_RULEBOOK: Dict[str, SphingoRule] = {
     ),
 }
 
-for _spb_alias in ("DHSph", "Sph", "PhytoSph"):
-    SPHINGOLIPID_RULEBOOK[f"{_spb_alias}_[M+H]+"] = SPHINGOLIPID_RULEBOOK["SPB_[M+H]+"]
-
-SPHINGOLIPID_RULEBOOK["CerP_[M-H]-"] = SPHINGOLIPID_RULEBOOK["Cer1P_[M-H]-"]
+for _eo_class in ("Cer-esterified",):
+    SPHINGOLIPID_RULEBOOK[f"{_eo_class}_[M+H]+"] = SphingoRule(
+        lipid_class=_eo_class,
+        adduct="[M+H]+",
+        required_type_fraction_groups=[
+            ({"Diagnostic_FA_Loss"}, 0.5),
+            ({"LCB碎片"}, 0.5),
+        ],
+        required_type_count_groups=[({"LCB碎片"}, 2)],
+        allow_hg_only_fallback=False,
+        allow_fah_only_fallback=False,
+    )
+    for _eo_adduct in ("[M-H]-", "[M+HCOO]-", "[M+CH3COO]-"):
+        SPHINGOLIPID_RULEBOOK[f"{_eo_class}_{_eo_adduct}"] = SphingoRule(
+            lipid_class=_eo_class,
+            adduct=_eo_adduct,
+            required_all={"[M-H]-"} if _eo_adduct != "[M-H]-" else set(),
+            # Scoring combines both FA interpretations in FAH, but the gate
+            # keeps the outer-FA 2/3 requirement independent of mandatory T.
+            required_name_pattern_fraction_groups=[
+                (r"^(?:\[RCOO\]-|M-H-RCOOH|M-H-ketene)\(", 0.5),
+                (r"^T ion \(omega-hydroxy ", 1.0),
+            ],
+            allow_hg_only_fallback=False,
+            allow_fah_only_fallback=False,
+        )
