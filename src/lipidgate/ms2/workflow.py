@@ -59,6 +59,8 @@ def run_ms2_search_result(
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
+    precursor_mz_min: float | None = None,
+    precursor_mz_max: float | None = None,
     export_xlsx: bool = True,
 ) -> MS2SearchResult:
     mode_norm = mode.strip().lower().replace("_", "-")
@@ -88,9 +90,14 @@ def run_ms2_search_result(
         min_total_score=float(min_total_score),
         allowed_adducts=allowed_adducts,
         allowed_classes=allowed_classes,
+        precursor_mz_min=precursor_mz_min,
+        precursor_mz_max=precursor_mz_max,
     )
 
-    df = searcher.search_mzml(mzml_path, top_n=int(top_n))
+    try:
+        df = searcher.search_mzml(mzml_path, top_n=int(top_n))
+    finally:
+        searcher.close()
     df = deduplicate_fa_results(df)
     df = add_lipid_name_features(df, lipid_column="matched_name", subclass_column="compound_class")
     if "source_file" not in df:
@@ -124,6 +131,8 @@ def run_ms2_search_result(
             "min_total_score": min_total_score,
             "allowed_adducts": list(allowed_adducts or []),
             "allowed_classes": list(allowed_classes or []),
+            "precursor_mz_min": precursor_mz_min,
+            "precursor_mz_max": precursor_mz_max,
             "export_xlsx": export_xlsx,
         },
         message=f"MS2 search finished: {csv_path} ({len(df)} rows)",
@@ -145,6 +154,8 @@ def run_ms2_search(
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
+    precursor_mz_min: float | None = None,
+    precursor_mz_max: float | None = None,
     export_xlsx: bool = True,
 ) -> tuple[pd.DataFrame, Path, Path | None]:
     """Return the legacy tuple for compatibility.
@@ -166,6 +177,8 @@ def run_ms2_search(
         min_total_score=min_total_score,
         allowed_adducts=allowed_adducts,
         allowed_classes=allowed_classes,
+        precursor_mz_min=precursor_mz_min,
+        precursor_mz_max=precursor_mz_max,
         export_xlsx=export_xlsx,
     )
     return result.data, result.csv_path, result.xlsx_path
@@ -214,6 +227,8 @@ def run_ms2_feature_annotation_result(
     min_total_score: float = 50.0,
     allowed_adducts: Sequence[str] | None = None,
     allowed_classes: Sequence[str] | None = None,
+    precursor_mz_min: float | None = None,
+    precursor_mz_max: float | None = None,
     rt_window_sec: float = 30.0,
     export_xlsx: bool = True,
     export_csv: bool = False,
@@ -230,6 +245,8 @@ def run_ms2_feature_annotation_result(
         summarize_feature_annotations,
         summarize_orphan_annotations,
     )
+    from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
+    from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership
     from lipidgate.ms2.search import deduplicate_fa_results, prepare_ms2_result_export_df
     from lipidgate.ms2.file_search import search_files
 
@@ -258,6 +275,8 @@ def run_ms2_feature_annotation_result(
         min_total_score=float(min_total_score),
         allowed_adducts=allowed_adducts,
         allowed_classes=allowed_classes,
+        precursor_mz_min=precursor_mz_min,
+        precursor_mz_max=precursor_mz_max,
     )
 
     ms2_frames: list[pd.DataFrame] = []
@@ -309,9 +328,16 @@ def run_ms2_feature_annotation_result(
         )
         linked_df = deduplicate_fa_results(linked_df)
         linked_df = remove_feature_supported_fa_orphans(linked_df)
+        if progress is not None:
+            progress("MS2 正在按原始 EIC 峰顶整理跨样本注释…")
+        linked_df = annotate_chromatographic_membership(linked_df, mzml_paths,
+                                                        mz_ppm=float(precursor_tolerance_ppm))
+        linked_df = associate_ms2_with_alignment(linked_df, feature_df,
+                                                mz_tol_ppm=float(precursor_tolerance_ppm))
         ms2_df = prepare_ms2_result_export_df(linked_df)
         matched = summarize_feature_annotations(linked_df, include_details=True)
-        orphan_df = linked_df[linked_df["Feature_ID"].isna()].copy()
+        orphan_df = linked_df[linked_df["Feature_ID"].isna()
+                             & linked_df["Aligned_Feature_ID"].isna()].copy()
         orphan = summarize_orphan_annotations(
             orphan_df=orphan_df,
             mzml_paths=mzml_paths,
@@ -331,6 +357,8 @@ def run_ms2_feature_annotation_result(
             detailed_annotations.to_csv(out_dir / "aligned_feature_annotations.csv", index=False)
     else:
         combined = deduplicate_fa_results(combined)
+        combined = annotate_chromatographic_membership(combined, mzml_paths,
+                                                      mz_ppm=float(precursor_tolerance_ppm))
         ms2_df = prepare_ms2_result_export_df(combined)
 
     if export_csv:
@@ -381,6 +409,8 @@ def run_ms2_feature_annotation_result(
             "min_total_score": min_total_score,
             "allowed_adducts": list(allowed_adducts or []),
             "allowed_classes": list(allowed_classes or []),
+            "precursor_mz_min": precursor_mz_min,
+            "precursor_mz_max": precursor_mz_max,
             "rt_window_sec": rt_window_sec,
             "export_xlsx": export_xlsx,
             "export_csv": export_csv,

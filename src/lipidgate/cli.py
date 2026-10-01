@@ -67,6 +67,8 @@ def _ms2_search(args: argparse.Namespace) -> int:
             min_total_score=args.min_total_score,
             allowed_adducts=allowed_adducts,
             allowed_classes=allowed_classes,
+            precursor_mz_min=args.precursor_mz_min,
+            precursor_mz_max=args.precursor_mz_max,
             rt_window_sec=args.rt_window_sec,
             map_to_features=bool(args.feature_table),
         )
@@ -85,6 +87,8 @@ def _ms2_search(args: argparse.Namespace) -> int:
             min_total_score=args.min_total_score,
             allowed_adducts=allowed_adducts,
             allowed_classes=allowed_classes,
+            precursor_mz_min=args.precursor_mz_min,
+            precursor_mz_max=args.precursor_mz_max,
         )
     if result.csv_path:
         print(f"csv: {result.csv_path}")
@@ -209,6 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--library", type=Path)
     p.add_argument("--top-n", type=int, default=DEFAULT_SEARCH_CONFIG.top_n)
+    p.add_argument("--precursor-mz-min", type=float, help="Inclusive lower bound for experimental precursor m/z")
+    p.add_argument("--precursor-mz-max", type=float, help="Inclusive upper bound for experimental precursor m/z")
     p.add_argument(
         "--adduct",
         action="append",

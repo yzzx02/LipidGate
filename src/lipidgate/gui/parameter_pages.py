@@ -5,6 +5,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
 from lipidgate.paths import default_negative_msp, default_positive_msp
 from .components import path_row
+from .library_selection import LibraryChoiceField
 
 
 def number(value, minimum=0, maximum=1e9, decimals=2):
@@ -184,7 +185,7 @@ class FeaturePage(QtWidgets.QWidget):
         marker.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(marker, 0, QtCore.Qt.AlignmentFlag.AlignTop)
         message = QtWidgets.QLabel(
-            "默认使用 pyOpenMS。关闭 MS1 特征提取后，鉴定结果按缺少 MS1 特征支持处理。"
+            "默认使用 pyOpenMS。关闭特征提取后，仍可进行 MS2 匹配并查看原始 MS1 EIC。"
         )
         message.setWordWrap(True)
         info_layout.addWidget(message, 1)
@@ -343,7 +344,8 @@ class MS2Page(QtWidgets.QWidget):
         self.mode.addItem("正模式", "positive")
         self.library = QtWidgets.QLineEdit(str(default_negative_msp()))
         library_row = path_row(
-            self.library, [("选择", self.browse_library, "选择自定义谱库")]
+            self.library, [("选择", self.browse_library, "选择自定义谱库"),
+                           ("内置库", self._on_mode_changed, "使用当前离子模式的内置谱库")]
         )
         self.tolerance_unit = QtWidgets.QComboBox()
         self.tolerance_unit.addItem("ppm", "ppm")
@@ -357,10 +359,23 @@ class MS2Page(QtWidgets.QWidget):
         self.ms2_peak_filter_percent = number(
             DEFAULT_SEARCH_CONFIG.min_relative_intensity * 100, 0, 100, 3
         )
-        self.adduct_filter = QtWidgets.QLineEdit()
-        self.class_filter = QtWidgets.QLineEdit()
-        self.adduct_filter.setPlaceholderText("留空检索全部；例如 [M+H]+, [M+Na]+")
-        self.class_filter.setPlaceholderText("留空检索全部；例如 PC, PE, TG")
+        self.adduct_filter = LibraryChoiceField("adducts", lambda: self.library.text())
+        self.class_filter = LibraryChoiceField("classes", lambda: self.library.text())
+        self.mz_range_enabled = QtWidgets.QCheckBox("限定范围")
+        self.mz_min = number(0, 0, 1000000, 4)
+        self.mz_max = number(0, 0, 1000000, 4)
+        mz_range = QtWidgets.QWidget()
+        mz_layout = QtWidgets.QHBoxLayout(mz_range)
+        mz_layout.setContentsMargins(0, 0, 0, 0)
+        mz_layout.addWidget(self.mz_range_enabled)
+        for label, widget in (("下限", self.mz_min), ("上限", self.mz_max)):
+            widget.setSpecialValueText("不限")
+            widget.setEnabled(False)
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+            mz_layout.addWidget(QtWidgets.QLabel(label))
+            mz_layout.addWidget(widget, 1)
+            self.mz_range_enabled.toggled.connect(widget.setEnabled)
+        mz_range.setToolTip("范围作用于待鉴定的 MS2 前体及候选谱库。上下限均包含；0 表示该端不限。")
         self.output_topn = QtWidgets.QCheckBox("保留每张谱图的 Top N 候选")
         self.output_topn.setChecked(True)
         self.top_n = QtWidgets.QSpinBox()
@@ -369,8 +384,8 @@ class MS2Page(QtWidgets.QWidget):
         self.workers = QtWidgets.QSpinBox()
         self.workers.setRange(1, 4)
         self.workers.setValue(1)
-        self.workers.setToolTip("按 mzML 文件并行；每个进程单独加载一次谱库，最多 4 个。单文件始终串行。")
-        self.worker_hint = QtWidgets.QLabel("多进程按文件分配任务，每个进程分别加载谱库；运行前会检查可用内存。")
+        self.workers.setToolTip("按 mzML 文件并行，最多 4 个。内置谱库按需读取；单文件始终串行。")
+        self.worker_hint = QtWidgets.QLabel("默认使用 1 个进程。内置谱库按需读取候选，运行前会检查可用内存。")
         self.worker_hint.setWordWrap(True)
         self.mode_hint = QtWidgets.QLabel()
         self.mode_hint.setWordWrap(True)
@@ -378,24 +393,27 @@ class MS2Page(QtWidgets.QWidget):
         for label, widget in [
             ("离子模式", self.mode),
             ("谱库", library_row),
+            ("前体 m/z 范围", mz_range),
             ("质量误差单位", self.tolerance_unit),
             ("母离子质量误差", self.ms1_tolerance),
             ("碎片质量误差", self.msms_tolerance),
             ("碎片最低相对强度 (%)", self.ms2_peak_filter_percent),
-            ("加合物（逗号分隔）", self.adduct_filter),
-            ("脂质类型（逗号分隔）", self.class_filter),
+            ("加合物", self.adduct_filter),
+            ("脂质类型", self.class_filter),
             ("MS2 处理进程数", self.workers),
         ]:
             form.addRow(label, widget)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("MS2 谱库匹配"))
         layout.addLayout(form)
+        layout.addWidget(QtWidgets.QLabel("程序已包含正、负离子谱库；使用默认谱库无需另外导入。"))
         layout.addWidget(self.mode_hint)
         layout.addWidget(self.worker_hint)
         next_button(layout, window, "下一步：过滤与导出", 4)
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
         self.tolerance_unit.currentIndexChanged.connect(self._on_tolerance_unit_changed)
         self.output_topn.toggled.connect(self.top_n.setEnabled)
+        self.library.textChanged.connect(lambda: (self.adduct_filter.clear(), self.class_filter.clear()))
         self._on_mode_changed()
 
     def browse_library(self):
@@ -416,11 +434,8 @@ class MS2Page(QtWidgets.QWidget):
                 else default_negative_msp()
             )
         )
-        self.adduct_filter.setPlaceholderText(
-            "留空检索全部；例如 [M+H]+, [M+Na]+"
-            if self._mode_value() == "positive"
-            else "留空检索全部；例如 [M-H]-, [M+CH3COO]-"
-        )
+        self.adduct_filter.clear()
+        self.class_filter.clear()
         self._update_mode_hint()
 
     def _on_tolerance_unit_changed(self, _index=None):

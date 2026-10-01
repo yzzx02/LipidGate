@@ -167,3 +167,102 @@ def test_pyopenms_reads_mzml_under_unicode_directory(tmp_path):
     )
     assert result.table_path.exists()
     assert result.native_table_path.exists()
+
+
+def test_refinement_keeps_detected_features_but_excludes_neighbor_area():
+    import numpy as np
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    exp = pyopenms.MSExperiment()
+    values = []
+    for rt in range(80):
+        value = (8500 * np.exp(-.5 * ((rt - 30.) / 1.5) ** 2)
+                 + 18000 * np.exp(-.5 * ((rt - 38.) / 1.5) ** 2))
+        values.append(value)
+        scan = pyopenms.MSSpectrum()
+        scan.setRT(float(rt))
+        scan.setMSLevel(1)
+        scan.set_peaks((np.array([520.3392]), np.array([value])))
+        exp.addSpectrum(scan)
+    feature = pyopenms.Feature()
+    feature.setRT(38.)
+    feature.setMZ(520.3392)
+    feature.setWidth(6.)
+    feature.setIntensity(100000.)
+    feature.setUniqueId(123)
+    hull = pyopenms.ConvexHull2D()
+    hull.setHullPoints(np.array([[25., 520.3392], [45., 520.3392]], dtype=np.float32))
+    feature.setConvexHulls([hull])
+    fm = pyopenms.FeatureMap()
+    fm.push_back(feature)
+    refined = refine_feature_map(exp, fm, oms=pyopenms, mz_tol=10,
+                                 min_fwhm=3, max_fwhm=30, min_peak_height=3000)
+    assert refined.size() == fm.size() == 1
+    result = refined[0]
+    assert result.getRT() == 38. and result.getUniqueId() == 123
+    lower, upper = _feature_rt_bounds(result)
+    assert 32 < lower < 36
+    raw = np.asarray(values, dtype=np.float32)
+    expected = np.trapezoid(raw[int(lower):int(upper) + 1], np.arange(lower, upper + 1))
+    assert result.getIntensity() == pytest.approx(expected, rel=1e-6)
+    assert result.getIntensity() < 80000
+    exported = single_feature_dataframe(refined, "a.mzML")
+    assert exported.loc[0, "area_method"] == "raw_eic_trapezoid"
+    assert exported.loc[0, "detector_area"] == 100000
+
+
+def test_grouping_keeps_close_isomers_separate_despite_intensity_changes():
+    from lipidbench.runners.run_pyopenms import _group_peak_members
+
+    maps = []
+    for sample, offset in enumerate([0., .4, -.5, .7]):
+        fm = pyopenms.FeatureMap()
+        for peak, rt in enumerate([354., 361.]):
+            feature = pyopenms.Feature()
+            feature.setMZ(520.3392 + (sample % 2) * .0001)
+            feature.setRT(rt + offset)
+            feature.setIntensity((100 if sample % 2 == peak else 1) * 10000.)
+            feature.setUniqueId(sample * 2 + peak + 1)
+            fm.push_back(feature)
+        maps.append(fm)
+    grouped = _group_peak_members(maps, pyopenms)
+    assert grouped.size() == 2
+    memberships = [sorted(int(h.getUniqueId()) % 2 for h in f.getFeatureList()) for f in grouped]
+    assert sorted(memberships) == [[0] * 4, [1] * 4]
+    assert all(len(f.getFeatureList()) == 4 for f in grouped)
+
+
+def test_grouping_does_not_fill_a_missing_isomer_with_its_neighbor():
+    from lipidbench.runners.run_pyopenms import _group_peak_members
+
+    maps = []
+    for sample, rts in enumerate([[354., 361.], [361.5], [354.3, 361.3]]):
+        fm = pyopenms.FeatureMap()
+        for rt in rts:
+            f = pyopenms.Feature()
+            f.setMZ(520.3392)
+            f.setRT(rt)
+            f.setIntensity(10000.)
+            f.setUniqueId(int(rt * 10) + sample)
+            fm.push_back(f)
+        maps.append(fm)
+    grouped = _group_peak_members(maps, pyopenms)
+    sizes = [len(f.getFeatureList()) for f in sorted(grouped, key=lambda f: f.getRT())]
+    assert sizes == [2, 3]
+
+
+def test_grouping_preserves_known_charge_distinctions():
+    from lipidbench.runners.run_pyopenms import _group_peak_members
+
+    maps = []
+    for sample, charge in enumerate([1, 2]):
+        feature = pyopenms.Feature()
+        feature.setMZ(520.3392)
+        feature.setRT(361.)
+        feature.setIntensity(10000.)
+        feature.setCharge(charge)
+        feature.setUniqueId(sample + 1)
+        fm = pyopenms.FeatureMap()
+        fm.push_back(feature)
+        maps.append(fm)
+    assert _group_peak_members(maps, pyopenms).size() == 2

@@ -518,6 +518,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "min_relative_intensity": m.ms2_peak_filter_percent.value() / 100,
                 "allowed_adducts": m._filter_values(m.adduct_filter),
                 "allowed_classes": m._filter_values(m.class_filter),
+                "precursor_mz_min": (m.mz_min.value() or None) if m.mz_range_enabled.isChecked() else None,
+                "precursor_mz_max": (m.mz_max.value() or None) if m.mz_range_enabled.isChecked() else None,
                 "workers": m.workers.value(),
             },
             "filter": {
@@ -554,7 +556,9 @@ class MainWindow(QtWidgets.QMainWindow):
         default_name = (
             default_positive_msp() if m._mode_value() == "positive" else default_negative_msp()
         ).name
-        if saved_library and (Path(saved_library).exists() or Path(saved_library).name != default_name):
+        default_stem = "current_positive" if m._mode_value() == "positive" else "current_negative"
+        default_names = {default_name, default_stem + ".msp.gz", default_stem + ".msp", default_stem + ".sqlite"}
+        if saved_library and (Path(saved_library).exists() or Path(saved_library).name not in default_names):
             m.library.setText(saved_library)
         unit = "da" if b.get("precursor_tolerance_da") is not None else "ppm"
         m.tolerance_unit.setCurrentIndex(m.tolerance_unit.findData(unit))
@@ -578,6 +582,9 @@ class MainWindow(QtWidgets.QMainWindow):
         m.ms2_peak_filter_percent.setValue(b.get("min_relative_intensity", 0.002) * 100)
         m.adduct_filter.setText(", ".join(b.get("allowed_adducts") or []))
         m.class_filter.setText(", ".join(b.get("allowed_classes") or []))
+        m.mz_range_enabled.setChecked(b.get("precursor_mz_min") is not None or b.get("precursor_mz_max") is not None)
+        m.mz_min.setValue(b.get("precursor_mz_min") or 0)
+        m.mz_max.setValue(b.get("precursor_mz_max") or 0)
         r.use_score.setChecked(c.get("use_score", True))
         r.score.setValue(c.get("min_score", 50))
         r.use_ecn.setChecked(c.get("use_ecn", False))
@@ -588,6 +595,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.filter_page._thread is not None or self.results_page._jobs:
             event.ignore()
             self.status.showMessage("分析仍在运行，请等待完成后关闭")
+            return
+        if not self.results_page.shutdown_eic():
+            event.ignore()
+            QtCore.QTimer.singleShot(30, self.close)
             return
         if self.project:
             try:

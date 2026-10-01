@@ -256,7 +256,7 @@ def load_pyopenms_results(
 
     for col in ["RT", "RTmin", "RTmax"]:
         if col in df.columns:
-            df[col] = (pd.to_numeric(df[col], errors="coerce") * rt_to_minutes_factor).round(3)
+            df[col] = (pd.to_numeric(df[col], errors="coerce") * rt_to_minutes_factor).round(6)
 
     df["RT_unit"] = "minutes"
 
@@ -264,6 +264,8 @@ def load_pyopenms_results(
     other_cols = [c for c in df.columns if c not in base_cols]
     df = df[base_cols + other_cols]
 
-    df.to_csv(file_path, index=False, float_format="%.4f")
+    # Preserve valley edges and scan times for association; display precision
+    # is a GUI concern, not a reason to round the quantitative source table.
+    df.to_csv(file_path, index=False, float_format="%.8f")
     print(f"Processed pyOpenMS results overwritten: {file_path}")
     return df

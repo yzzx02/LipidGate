@@ -11,8 +11,14 @@ def project_root() -> Path:
 
 
 def default_positive_msp() -> Path:
+    indexed = project_root() / "libraries" / "ms2" / "current_positive.sqlite"
+    if getattr(sys, "frozen", False) and indexed.is_file():
+        return indexed
     return project_root() / "libraries" / "ms2" / "current_positive.msp.gz"
 
 
 def default_negative_msp() -> Path:
+    indexed = project_root() / "libraries" / "ms2" / "current_negative.sqlite"
+    if getattr(sys, "frozen", False) and indexed.is_file():
+        return indexed
     return project_root() / "libraries" / "ms2" / "current_negative.msp.gz"

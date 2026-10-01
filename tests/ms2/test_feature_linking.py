@@ -75,6 +75,79 @@ def test_link_ms2_to_features_does_not_expand_real_peak_boundaries() -> None:
     assert linked.loc[0, "rt_minutes"] == 5.1
 
 
+def _confirmed_precursor_row(**overrides):
+    return {
+        "source_file": "a.mzML", "precursor_mz": 520.3392,
+        "rt_minutes": 6.06015, "precursor_ms1_rt_raw_min": 6.042633,
+        "precursor_ms1_mz": 520.3392, "precursor_ms1_scan_id": "scan_1443",
+        "precursor_mz_source": "MS1_REFERENCE_CENTROID",
+        "precursor_refinement_status": "confirmed", "precursor_confirmation_count": 1,
+        **overrides,
+    }
+
+
+def test_detected_peak_links_by_its_verified_precursor_survey_scan():
+    features = pd.DataFrame([dict(Feature_ID="F45", Aligned_Feature_ID="F185",
+                                  source_file="a.mzML", mz=520.3392, RT=6.02,
+                                  RTmin=5.95, RTmax=6.043, RT_unit="minutes")])
+    linked = link_ms2_to_features(features, pd.DataFrame([_confirmed_precursor_row()]))
+    row = linked.iloc[0]
+    assert row.Feature_ID == "F45" and row.Aligned_Feature_ID == "F185"
+    assert row.feature_rtmax == 6.043
+    assert row.rt_minutes == 6.06015
+    assert row.feature_link_rt_raw_min == 6.042633
+    assert row.ms1_support_reason == "feature_precursor_ms1_bounds_match"
+    assert row.feature_link_rt_source == "confirmed_precursor_ms1_scan"
+
+
+def test_ms2_crossing_a_valley_stays_with_its_original_precursor_peak():
+    features = pd.DataFrame([
+        dict(Feature_ID="left", source_file="a.mzML", mz=520.3392, RT=5.9, RTmin=5.85, RTmax=5.95),
+        dict(Feature_ID="right", source_file="a.mzML", mz=520.3392, RT=6., RTmin=5.95, RTmax=6.05),
+    ])
+    row = _confirmed_precursor_row(rt_minutes=5.96, precursor_ms1_rt_raw_min=5.94)
+    linked = link_ms2_to_features(features, pd.DataFrame([row]))
+    assert linked.loc[0, "Feature_ID"] == "left"
+    assert linked.loc[0, "rt_minutes"] == 5.96
+
+
+@pytest.mark.parametrize("invalid", [
+    {"precursor_refinement_status": "unconfirmed"},
+    {"precursor_confirmation_count": 0},
+    {"precursor_ms1_mz": 521.3392},
+    {"precursor_ms1_scan_id": ""},
+    {"precursor_ms1_rt_raw_min": 5.85},
+    {"source_file": "b.mzML"},
+])
+def test_unverified_or_wrong_sample_reference_cannot_rescue_a_feature_link(invalid):
+    features = pd.DataFrame([dict(Feature_ID="F45", source_file="a.mzML",
+                                  mz=520.3392, RT=6.02, RTmin=5.95, RTmax=6.043)])
+    linked = link_ms2_to_features(features, pd.DataFrame([_confirmed_precursor_row(**invalid)]))
+    assert pd.isna(linked.loc[0, "Feature_ID"])
+
+
+def test_confirmed_precursor_does_not_invent_a_missing_detector_feature():
+    features = pd.DataFrame([dict(Feature_ID="F45", source_file="a.mzML",
+                                  mz=760.1234, RT=6.02, RTmin=5.95, RTmax=6.043)])
+    linked = link_ms2_to_features(features, pd.DataFrame([_confirmed_precursor_row()]))
+    assert pd.isna(linked.loc[0, "Feature_ID"])
+
+
+@pytest.mark.parametrize("source,mz,rt,reason", [
+    ("b.mzML", 760.1, 1.0, "no_ms1_feature_for_sample"),
+    ("a.mzML", 800.0, 1.0, "no_ms1_feature_within_mz_tolerance"),
+    ("a.mzML", 760.1, 2.0, "ms2_outside_ms1_peak_bounds"),
+])
+def test_unlinked_reasons_describe_feature_association_instead_of_missing_signal(source, mz, rt, reason):
+    features = pd.DataFrame([{"Feature_ID": "F1", "source_file": "a.mzML", "mz": 760.1,
+                              "RT": 1.0, "RTmin": 0.9, "RTmax": 1.1, "RT_unit": "minutes"}])
+    spectra = pd.DataFrame([{"source_file": source, "precursor_mz": mz, "rt_minutes": rt}])
+    linked = link_ms2_to_features(features, spectra)
+    assert linked.loc[0, "ms1_support_status"] == "MS2-only"
+    assert linked.loc[0, "ms1_support_reason"] == reason
+    assert pd.isna(linked.loc[0, "Feature_ID"])
+
+
 def test_feature_table_replaces_previous_custom_veto_and_respects_source_and_units():
     features = pd.DataFrame([
         {"Feature_ID": "F1", "mz": 790.5398, "RT": 60., "RTmin": 50., "RTmax": 70.,

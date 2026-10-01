@@ -17,6 +17,13 @@ Library parsing must not contain class-specific scoring or ranking decisions.
 Passing a gate must not itself award a high score, and a high score must not
 bypass a required gate.
 
+## Positive PE-P supporting evidence
+
+Positive PE-P [M+H]+ Other retains only precursor and the P-chain-dependent
+Common support ion (P-18:0: 294.3155). RCO acylium support is excluded. Chain
+and headgroup pools keep their existing gates and intensity-aware weights;
+missing headgroup rescue stays Low regardless of feature-group membership.
+
 ## Locked glyceride rules
 
 ### TG

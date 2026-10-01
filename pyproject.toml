@@ -7,6 +7,8 @@ name = "lipidgate"
 version = "1.0.0"
 description = "Lipid feature detection, MS2 identification and ordered ECN retention-time filtering."
 readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "yzzx02"}]
 requires-python = ">=3.10"
 dependencies = [
   "numpy",
@@ -23,13 +25,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest>=9"]
+build = ["pyinstaller"]
+
+[project.urls]
+Repository = "https://github.com/yzzx02/LipidGate"
+Releases = "https://github.com/yzzx02/LipidGate/releases"
+Issues = "https://github.com/yzzx02/LipidGate/issues"
 
 [project.scripts]
 lipidgate = "lipidgate.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+lipidbench = ["runners/*.R"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

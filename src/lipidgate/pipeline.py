@@ -64,7 +64,9 @@ def run_project(project_path, settings, progress=lambda message: None):
     ):
         raise ValueError("谱库尚未下载，请在项目目录运行 git lfs pull")
     from lipidgate.ms2.file_search import validate_parallel_capacity
+    from lipidgate.ms2.indexed_library import validate_precursor_range
 
+    validate_precursor_range(options.get("precursor_mz_min"), options.get("precursor_mz_max"))
     validate_parallel_capacity(options.get("workers", 1), len(files), library)
     ms1 = settings["ms1"]
     if ms1.get("enabled", True):

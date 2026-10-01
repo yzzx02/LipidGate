@@ -7,9 +7,9 @@ import math
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .plot_axes import MIN_VIEW_SPAN, clamp_window, decimal_tick_step, scaled_window, tick_label, tick_values
+from .plot_axes import MIN_VIEW_SPAN, axis_drag_factor, clamp_window, decimal_tick_step, intensity_tick_label, scaled_from_minimum, scaled_window, tick_label, tick_values
 from .result_plots import FRAGMENT_COLORS, FRAGMENT_LABELS, display_role
-from .ui_icons import reset_view_button
+from .ui_icons import plot_cursor, reset_view_button
 
 
 def _nice_step(span: float) -> float:
@@ -79,7 +79,7 @@ class _SpectrumCanvas(QtWidgets.QWidget):
             painter.setPen(tick_pen)
             painter.drawLine(QtCore.QPointF(rect.left() - 5, y), QtCore.QPointF(rect.left(), y))
             painter.setPen(tick_text)
-            painter.drawText(QtCore.QRectF(30, y - 10, rect.left() - 39, 20), QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter, tick_label(intensity, y_step))
+            painter.drawText(QtCore.QRectF(30, y - 10, rect.left() - 39, 20), QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter, intensity_tick_label(intensity, y_step))
             intensity += y_step
 
         step = decimal_tick_step(x0, x1, max(3.0, rect.width() / 90.0))
@@ -99,7 +99,7 @@ class _SpectrumCanvas(QtWidgets.QWidget):
         painter.save()
         painter.translate(23, rect.center().y())
         painter.rotate(-90)
-        painter.drawText(QtCore.QRectF(-rect.height() / 2, -14, rect.height(), 28), QtCore.Qt.AlignmentFlag.AlignCenter, "相对强度 (%)")
+        painter.drawText(QtCore.QRectF(-rect.height() / 2, -14, rect.height(), 28), QtCore.Qt.AlignmentFlag.AlignCenter, self.owner.y_axis_label)
         painter.restore()
 
         if not self.owner.peaks:
@@ -143,13 +143,8 @@ class _SpectrumCanvas(QtWidgets.QWidget):
         return None
 
     def _cursor_at(self, position):
-        axis = self._axis_at(position)
-        cursor = (
-            QtCore.Qt.CursorShape.SizeHorCursor if axis == "x" else
-            QtCore.Qt.CursorShape.SizeVerCursor if axis == "y" else
-            QtCore.Qt.CursorShape.ArrowCursor
-        )
-        self.setCursor(cursor)
+        axis = (self._right_axis or self._left_axis) if self._press is not None else self._axis_at(position)
+        self.setCursor(plot_cursor(axis) if axis else QtGui.QCursor(QtCore.Qt.CursorShape.ArrowCursor))
 
     def mousePressEvent(self, event):
         position = event.position()
@@ -166,9 +161,11 @@ class _SpectrumCanvas(QtWidgets.QWidget):
         if self._right_axis is not None:
             x, y = self._data(position)
             self._axis_anchor = x if self._right_axis == "x" else y
+        self._cursor_at(position)
         event.accept()
 
     def mouseMoveEvent(self, event):
+        self._cursor_at(event.position())
         if self._press is not None:
             position = event.position()
             if self._right_axis is not None:
@@ -177,7 +174,7 @@ class _SpectrumCanvas(QtWidgets.QWidget):
                 previous = self._last.x() if coordinate == "x" else self._last.y()
                 delta = current - previous
                 if delta:
-                    factor = math.exp(max(-3.0, min(3.0, delta * 0.012)))
+                    factor = axis_drag_factor(previous, current, coordinate)
                     self.owner.zoom_axis(self._right_axis, self._axis_anchor, factor)
             elif self._left_axis is not None:
                 x0, x1, y0, y1 = self.owner.limits
@@ -255,13 +252,15 @@ class _SpectrumCanvas(QtWidgets.QWidget):
 class SpectrumPlot(QtWidgets.QWidget):
     """One measured spectrum; no equal-height theoretical sticks."""
 
+    y_axis_label = "Intensity (%)"
+
     def __init__(self):
         super().__init__()
         self.peaks = []
         self.limits = (0.0, 1.0, 0.0, 110.0)
         self.home_limits = self.limits
         self.canvas = _SpectrumCanvas(self)
-        self.canvas.setToolTip("坐标轴上右键拖动缩放、左键拖动平移；图内滚轮缩放")
+        self.canvas.setToolTip("轴上右键：右拖/上拖放大，左拖/下拖缩小；强度从 0 开始；左键拖动平移；图内滚轮缩放")
         self.reset_button = reset_view_button(self, self.reset_view)
         controls = QtWidgets.QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
@@ -289,7 +288,7 @@ class SpectrumPlot(QtWidgets.QWidget):
         if axis == "x":
             x0, x1 = scaled_window(x0, x1, anchor, factor, bx0, bx1)
         elif axis == "y":
-            y0, y1 = scaled_window(y0, y1, anchor, factor, by0, by1)
+            y0, y1 = scaled_from_minimum(y0, y1, factor, by0, by1)
         self.set_limits((x0, x1, y0, y1))
 
     def reset_view(self):

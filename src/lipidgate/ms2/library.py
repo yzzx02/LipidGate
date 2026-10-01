@@ -34,6 +34,7 @@ from .library_fragment_policy import (
     normalize_tg_est_fragments as _normalize_tg_est_fragments,
     normalize_tg_o_fragments as _normalize_tg_o_fragments,
     curate_positive_lyso_pe_fragments as _curate_positive_lyso_pe_fragments,
+    curate_positive_pe_p_fragments as _curate_positive_pe_p_fragments,
     without_pi_ammonium_acyl_losses as _without_pi_ammonium_acyl_losses,
     synthetic_fragment as _synthetic_fragment,
 )
@@ -46,7 +47,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 36
+LIBRARY_CACHE_VERSION = 37
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -1193,6 +1194,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     )
     normalized_fragments = _curate_positive_lyso_pe_fragments(
         compound_class, record.precursor_mz, adduct, normalized_fragments,
+    )
+    normalized_fragments = _curate_positive_pe_p_fragments(
+        compound_class, lipid_chain_name, adduct, normalized_fragments,
     )
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,

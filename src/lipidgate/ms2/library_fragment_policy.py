@@ -89,6 +89,35 @@ def curate_positive_lyso_pe_fragments(
     ]
 
 
+def curate_positive_pe_p_fragments(
+    compound_class: str, lipid_chain_name: str, adduct: str,
+    fragments: Iterable[FragmentRecord],
+) -> list[FragmentRecord]:
+    """Keep PE-P support as its precursor and P-chain/ethanolamine Common ion."""
+    source = list(fragments)
+    if compound_class != "PE-P" or adduct != "[M+H]+":
+        return source
+    source = [fragment for fragment in source if not re.match(
+        r"^(?:\(R=O\)\+|RCO\(|\[RCO\]\+)", str(fragment.name or "").strip(),
+    )]
+    chain = re.search(r"(?:^|[ (])P-(\d+):(\d+)[/_]\d+:\d+(?:\)|$)", lipid_chain_name)
+    if chain is None:
+        return source
+    carbon, double_bonds = map(int, chain.groups())
+    if carbon <= 0 or double_bonds < 0 or double_bonds >= carbon:
+        return source
+    # C(n+2)H(2n+4-2d)N+; use the proton mass with one fewer neutral H.
+    mz = round((carbon + 2) * CARBON_MONOISOTOPIC_MASS
+               + (2 * carbon + 3 - 2 * double_bonds) * HYDROGEN_MONOISOTOPIC_MASS
+               + NITROGEN_MONOISOTOPIC_MASS + PROTON_MONOISOTOPIC_MASS, 4)
+    name = f"[P-chain+PEtn-H3PO4]+(P-{carbon}:{double_bonds})"
+    retained = [fragment for fragment in source if abs(fragment.mz - mz) > 0.0001]
+    existing = next((fragment for fragment in source if abs(fragment.mz - mz) <= 0.0001), None)
+    retained.append(replace(existing, name=name, fragment_type="Common", required_group=None)
+                    if existing is not None else synthetic_fragment(mz, name, "Common"))
+    return retained
+
+
 def without_pi_ammonium_acyl_losses(
     compound_class: str, adduct: str, fragments: Iterable[FragmentRecord],
 ) -> list[FragmentRecord]:

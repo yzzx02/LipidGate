@@ -8,9 +8,9 @@ import math
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from .plot_axes import MIN_VIEW_SPAN, clamp_window, decimal_tick_step, scaled_window, tick_label, tick_values
+from .plot_axes import MIN_VIEW_SPAN, axis_drag_factor, clamp_window, decimal_tick_step, scaled_from_minimum, scaled_window, tick_label, tick_values
 from .result_data import FAMILY_COLORS, family_for, number, text
-from .ui_icons import plot_tool_icon, reset_view_button
+from .ui_icons import plot_cursor, plot_tool_icon, reset_view_button
 
 
 def _readable_step(raw: float) -> float:
@@ -187,15 +187,15 @@ class _Canvas(QtWidgets.QWidget):
         return None
 
     def _cursor_at(self, position):
-        axis = self._axis_at(position)
-        cursor = (
-            QtCore.Qt.CursorShape.SizeHorCursor if axis == "x" else
-            QtCore.Qt.CursorShape.SizeVerCursor if axis == "y" else
-            QtCore.Qt.CursorShape.CrossCursor if self.owner.mode == "box" and self.plot_rect().contains(position) else
-            QtCore.Qt.CursorShape.OpenHandCursor if self.plot_rect().contains(position) else
-            QtCore.Qt.CursorShape.ArrowCursor
-        )
-        self.setCursor(cursor)
+        active = self._press is not None
+        axis = (self._right_axis or self._left_axis) if active else self._axis_at(position)
+        if axis:
+            self.setCursor(plot_cursor(axis))
+        elif active or self.plot_rect().contains(position):
+            kind = "cross" if self.owner.mode == "box" else "grabbing" if active and self._dragged else "grab"
+            self.setCursor(plot_cursor(kind))
+        else:
+            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def mousePressEvent(self, event):
         position = event.position()
@@ -219,22 +219,22 @@ class _Canvas(QtWidgets.QWidget):
         self._last = position
         self._drag_button = event.button()
         self._dragged = False
-        if self._left_axis is None:
+        if self._left_axis is None and self._right_axis is None:
             if self.owner.mode == "box":
                 self._rubber = QtCore.QRectF(position, position)
-            else:
-                self.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
+        self._cursor_at(position)
         event.accept()
 
     def mouseMoveEvent(self, event):
         position = event.position()
+        self._cursor_at(position)
         if self._press is not None and self._drag_button == QtCore.Qt.MouseButton.RightButton:
             coordinate = "x" if self._right_axis == "x" else "y"
             current = position.x() if coordinate == "x" else position.y()
             previous = self._last.x() if coordinate == "x" else self._last.y()
             delta = current - previous
             if delta:
-                factor = math.exp(max(-3.0, min(3.0, delta * 0.012)))
+                factor = axis_drag_factor(previous, current, coordinate)
                 self.owner.zoom_axis(self._right_axis, self._axis_anchor, factor, record=False)
                 self._dragged = True
             self._last = position
@@ -267,7 +267,7 @@ class _Canvas(QtWidgets.QWidget):
             dy = (position.y() - self._last.y()) / rect.height() * (y1-y0)
             self.owner._set_limits((x0-dx, x1-dx, y0+dy, y1+dy), record=False)
             self._last = position
-            self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+            self.setCursor(plot_cursor("grabbing"))
             return
         self._cursor_at(position)
         if not self.plot_rect().contains(position):
@@ -314,6 +314,7 @@ class _Canvas(QtWidgets.QWidget):
         self._drag_button = None
         self._right_axis = None
         self._left_axis = None
+        self._axis_anchor = None
         self._dragged = False
         self._cursor_at(event.position())
         self.update()
@@ -336,6 +337,7 @@ class NavigationPlot(QtWidgets.QWidget):
         self._history = [self.limits]
         self._history_position = 0
         self.canvas = _Canvas(self)
+        self.canvas.setToolTip("轴上右键：右拖/上拖放大，左拖/下拖缩小；纵轴固定最低值；左键拖动平移；图内滚轮缩放")
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 2)
         toolbar.setSpacing(3)
@@ -410,7 +412,7 @@ class NavigationPlot(QtWidgets.QWidget):
         if axis == "x":
             x0, x1 = scaled_window(x0, x1, anchor, factor, bx0, bx1)
         elif axis == "y":
-            y0, y1 = scaled_window(y0, y1, anchor, factor, by0, by1)
+            y0, y1 = scaled_from_minimum(y0, y1, factor, by0, by1)
         self._set_limits((x0, x1, y0, y1), record=record)
 
     def _back(self):

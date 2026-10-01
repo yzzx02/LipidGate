@@ -33,11 +33,21 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
                        ("支持文件", "_supporting_files"),
                        ("原始扫描号", "_linked_scan_ids")):
         feature_table[title] = features[key].values
+    # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
+    # detected peak area; leave those cells empty rather than assigning signal.
+    area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
+    for column in area_columns:
+        feature_table[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
+    if not area_columns and "intensity" in features:
+        feature_table["Peak area"] = pd.to_numeric(features["intensity"], errors="coerce").to_numpy()
     candidates = bundle.candidates.loc[bundle.candidates._key.isin(features._key)]
     evidence_table = prepare_ms2_result_export_df(candidates)
     if not evidence_table.empty:
         evidence_table["置信度"] = candidates["_confidence"].to_numpy()
         evidence_table["归并特征 ID"] = candidates["_feature"].to_numpy()
+        from .result_data import ms1_feature_display, ms1_feature_description
+        evidence_table["MS1 检测特征状态"] = [ms1_feature_display(row) for _, row in candidates.iterrows()]
+        evidence_table["MS1 特征说明"] = [ms1_feature_description(row) for _, row in candidates.iterrows()]
     paths = []
     if csv:
         feature_path = output_dir / "feature_results.csv"

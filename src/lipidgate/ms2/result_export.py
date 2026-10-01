@@ -2,6 +2,7 @@
 
 import pandas as pd
 from .confidence import identification_confidence
+from .ms1_evidence import restore_ms1_support
 
 
 MS2_RESULT_EXPORT_COLUMNS = (
@@ -50,7 +51,7 @@ def annotation_level_label(
 def prepare_ms2_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
     if combined.empty:
         return pd.DataFrame(columns=MS2_RESULT_EXPORT_COLUMNS)
-    export_df = combined.copy()
+    export_df = restore_ms1_support(combined)
     export_df["置信度"] = [
         identification_confidence(row) for _, row in export_df.iterrows()
     ]

@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "released_at_utc": "2026-10-01T11:17:40.892169+00:00",
+  "platform": "Windows x64",
+  "product_code_sha256": "159797491f52bf9d32f50e36acfc2997d55a2235121bf9d6170625150f578ae1",
+  "ms1_runtime_sha256": "ac25f2d7cae9b63a72c1092d0be1b3b59170188d5e97a4263431edaadcd29635",
+  "ms2_rules_sha256": "cbb111b1e8bd6e3526ac284c54caec5aaccabede6e937d3f7be23c247fc71505",
+  "entry_point_sha256": "81adcfa5924224546061e512e712496461e3bd9c7ee3d16554b74118d680b241",
+  "build_spec_sha256": "ecf2745d6b4fe2972ca7454a16d7ac28371d63fbab03baee6e8b786efe92de6e",
+  "library_cache_version": 37,
+  "index_format": 1,
+  "record_encoding": "tuples-v1",
+  "maximum_cached_records": 4096,
+  "executable": {
+    "name": "LipidGate.exe",
+    "bytes": 275422481,
+    "sha256": "427b2f6ce68df75f00c657de02f2a63343949e560a3f64d08952471fad6e6295"
+  },
+  "libraries": {
+    "positive": {
+      "records": 1262157,
+      "classes": 110,
+      "adducts": 4,
+      "source_gzip_sha256": "bcb855821bf49eb73499dcca3b47a6030b28be86380f2d41e1adf877222eafcb",
+      "source_gzip_bytes": 23760058,
+      "decompressed_source_sha256": "b2815e0ffcba9182c065fdee097d120ee24d85233ed6da3312776f8835147c19",
+      "index_sha256": "c3e753a65c6c696f1b3b9f2f3ad09bfa039a54fe782c376dff75637d874d4acc",
+      "index_bytes": 66658304
+    },
+    "negative": {
+      "records": 1084782,
+      "classes": 117,
+      "adducts": 4,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "206473c4f2685f504c745b08963c25136d8cc1dbd607931289f4f3e99daa37c6",
+      "index_bytes": 72122368
+    }
+  },
+  "verification": {
+    "junit_test_cases": 3872,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "frozen": {
+      "executable_sha256": "427b2f6ce68df75f00c657de02f2a63343949e560a3f64d08952471fad6e6295",
+      "libraries": [
+        {
+          "mode": "positive",
+          "records": 1262157,
+          "seconds": 0.8776042999998026
+        },
+        {
+          "mode": "negative",
+          "records": 1084782,
+          "seconds": 0.674280600000202
+        }
+      ],
+      "library_check_seconds": 10.221974000000046,
+      "synthetic_project_rows": 1,
+      "backend_verified": true,
+      "worker_seconds": 10.553089400000317,
+      "gui_verified": true,
+      "eic": {
+        "ms1_points": 31,
+        "feature_id": "eic_probe",
+        "ms1_detected_samples": 1,
+        "ms2_samples": 1,
+        "ms2_spectra": 1,
+        "peak_intensity": 10100.0,
+        "rt_window": [
+          0.0,
+          2.0
+        ],
+        "peak_bounds": [
+          0.8,
+          1.2
+        ],
+        "signal_status": "有 MS1 信号",
+        "feature_status": "Linked",
+        "ms1_evidence": "Detected feature",
+        "confidence": "未提供",
+        "plot_interactions_checked": true
+      },
+      "gui_check_seconds": 11.376921999999468
+    },
+    "tests_passed": 754,
+    "subtests_passed": 3118
+  }
+}

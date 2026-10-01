@@ -34,9 +34,14 @@ def _available_memory_bytes():
 
 def _estimated_worker_memory_bytes(library_path):
     """Conservative estimate based on the parsed cache or source library size."""
+    from .indexed_library import prebuilt_index_path
     from .library import _library_cache_path
 
     library_path = Path(library_path)
+    if prebuilt_index_path(library_path) is not None:
+        # Shared read-only disk index, small precursor arrays and bounded LRU.
+        # Reserve space for native readers, results and compressed raw scans.
+        return 768 * 1024**2
     cache_path = _library_cache_path(library_path)
     if cache_path.is_file() and cache_path.stat().st_size >= 100_000_000:
         return max(int(6.5 * 1024**3), cache_path.stat().st_size * 8)
@@ -62,7 +67,7 @@ def validate_parallel_capacity(workers, file_count, library_path):
     if per_worker and available is not None and available < required:
         raise MemoryError(
             f"{effective} 个 MS2 进程预计需要约 {required / 1024**3:.1f} GB 空闲内存，"
-            f"当前约 {available / 1024**3:.1f} GB；每个进程都会单独加载谱库，请减少进程数"
+            f"当前约 {available / 1024**3:.1f} GB；请减少进程数"
         )
     return effective
 
@@ -91,20 +96,25 @@ def search_files(paths, *, search_options, top_n, workers=1, on_file_done=None, 
     effective_workers = validate_parallel_capacity(workers, len(paths), search_options.get("library_path"))
     if effective_workers <= 1:
         searcher = _make_searcher(search_options)
-        if on_library_ready is not None:
-            on_library_ready()
-        results = []
-        for path in paths:
-            results.append(searcher.search_mzml(path, top_n=top_n))
-            if on_file_done is not None:
-                on_file_done(path, len(results), len(paths))
-        return results
+        try:
+            if on_library_ready is not None:
+                on_library_ready()
+            results = []
+            for path in paths:
+                results.append(searcher.search_mzml(path, top_n=top_n))
+                if on_file_done is not None:
+                    on_file_done(path, len(results), len(paths))
+            return results
+        finally:
+            searcher.close()
     # A cold cache must be built once before workers start; otherwise every
     # spawned process parses and serializes the same large MSP independently.
     from .library import _library_cache_valid, _install_bundled_prebuilt_cache, load_library
+    from .indexed_library import prebuilt_index_path
 
     library_path = Path(search_options["library_path"])
-    if not _library_cache_valid(library_path) and not _install_bundled_prebuilt_cache(library_path):
+    if (prebuilt_index_path(library_path) is None and not _library_cache_valid(library_path)
+            and not _install_bundled_prebuilt_cache(library_path)):
         records = load_library(library_path)
         del records
         gc.collect()

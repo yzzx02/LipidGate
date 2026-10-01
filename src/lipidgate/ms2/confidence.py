@@ -3,6 +3,7 @@
 import math
 
 from .resolution_policy import SINGLE_CHAIN_COVERAGE_REASON
+from .ms1_evidence import has_ms1_evidence
 
 
 def identification_confidence(row) -> str:
@@ -15,7 +16,7 @@ def identification_confidence(row) -> str:
         score = math.nan
     if math.isfinite(score) and score < 50.0:
         return "低"
-    if str(row.get("ms1_support_status", "")) != "MS1-supported":
+    if not has_ms1_evidence(row):
         return "低"
     if str(row.get("downgrade_reason", "")).startswith(
         ("missing_positive_gate", "missing_required_")

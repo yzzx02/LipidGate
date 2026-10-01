@@ -18,9 +18,15 @@ pymzml_dir = Path(next(iter(importlib.util.find_spec("pymzml").submodule_search_
 hiddenimports = collect_submodules("lipidgate.ms2")
 datas = [
     (str(root / "assets"), "assets"),
-    (str(root / "libraries" / "ms2" / "current_positive.msp.gz"), "libraries/ms2"),
-    (str(root / "libraries" / "ms2" / "current_negative.msp.gz"), "libraries/ms2"),
-    (str(prebuilt), "libraries/ms2/prebuilt"),
+    (str(root / "LICENSE"), "."),
+    (str(root / "THIRD_PARTY_NOTICES.md"), "."),
+    (str(root / "licenses"), "licenses"),
+    (str(root / "src" / "lipidbench" / "runners" / "xcms.R"), "lipidbench/runners"),
+    (str(prebuilt / "current_positive.sqlite"), "libraries/ms2"),
+    (str(prebuilt / "current_negative.sqlite"), "libraries/ms2"),
+    (str(prebuilt / "current_positive.catalog.json"), "libraries/ms2/prebuilt"),
+    (str(prebuilt / "current_negative.catalog.json"), "libraries/ms2/prebuilt"),
+    (str(prebuilt / "cache_rules_sha256.txt"), "libraries/ms2/prebuilt"),
     (str(pyopenms_dir / "share"), "pyopenms/share"),
     (str(pymzml_dir / "version.txt"), "pymzml"),
     (str(pymzml_dir / "obo"), "pymzml/obo"),

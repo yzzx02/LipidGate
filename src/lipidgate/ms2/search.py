@@ -21,6 +21,7 @@ from .positive_pc_sodium import is_positive_pc_sodium
 from .fragment_labels import canonical_fragment_label
 
 from .library import load_library
+from .indexed_library import open_indexed_library, validate_precursor_range
 from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name, canonicalize_single_chain_name
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord
 from .ranking_policy import (
@@ -124,7 +125,19 @@ class LipidMS2Searcher:
         fragment_prefilter_min_candidates: int = 8,
         allowed_adducts: Sequence[str] | None = None,
         allowed_classes: Sequence[str] | None = None,
+        precursor_mz_min: float | None = None,
+        precursor_mz_max: float | None = None,
     ) -> None:
+        self.precursor_mz_min, self.precursor_mz_max = validate_precursor_range(precursor_mz_min, precursor_mz_max)
+        # Keep theoretical candidates just outside the boundary when they can
+        # match an experimental precursor inside it under the chosen tolerance.
+        def padded_bound(value, direction):
+            if value is None:
+                return None
+            tolerance = precursor_tolerance_da if precursor_tolerance_da is not None else value * precursor_tolerance_ppm * 1e-6
+            return value + direction * tolerance
+        library_min = padded_bound(self.precursor_mz_min, -1)
+        library_max = padded_bound(self.precursor_mz_max, 1)
         allowed_adduct_set = {
             str(value).strip()
             for value in (allowed_adducts or [])
@@ -135,25 +148,38 @@ class LipidMS2Searcher:
             for value in (allowed_classes or [])
             if str(value).strip()
         }
-        loaded_library = load_library(library_path)
-        self.available_adducts = tuple(sorted({record.adduct for record in loaded_library if record.adduct}))
-        self.available_classes = tuple(sorted({record.compound_class for record in loaded_library if record.compound_class}))
         self.allowed_adducts = tuple(sorted(allowed_adduct_set))
         self.allowed_classes = tuple(sorted(allowed_class_keys))
-        self.library = sorted(
-            (
-                record
-                for record in loaded_library
-                if not (record.compound_class == "PS" and record.adduct == "[M+NH4]+")
-                if not (record.compound_class == "LPS" and record.adduct == "[M+NH4]+")
-                if (not allowed_adduct_set or record.adduct in allowed_adduct_set)
-                and (
-                    not allowed_class_keys
-                    or self._normal_class_key(record.compound_class) in allowed_class_keys
-                )
-            ),
-            key=lambda record: record.precursor_mz,
+        indexed = open_indexed_library(
+            library_path, allowed_adducts=allowed_adduct_set, allowed_class_keys=allowed_class_keys,
+            mz_min=library_min, mz_max=library_max,
         )
+        if indexed is not None:
+            self.library = indexed
+            self.available_adducts = indexed.available_adducts
+            self.available_classes = indexed.available_classes
+            self.precursors = indexed.precursors
+        else:
+            loaded_library = load_library(library_path)
+            self.available_adducts = tuple(sorted({record.adduct for record in loaded_library if record.adduct}))
+            self.available_classes = tuple(sorted({record.compound_class for record in loaded_library if record.compound_class}))
+            self.library = sorted(
+                (
+                    record
+                    for record in loaded_library
+                    if not (record.compound_class == "PS" and record.adduct == "[M+NH4]+")
+                    if not (record.compound_class == "LPS" and record.adduct == "[M+NH4]+")
+                    if library_min is None or record.precursor_mz >= library_min
+                    if library_max is None or record.precursor_mz <= library_max
+                    if (not allowed_adduct_set or record.adduct in allowed_adduct_set)
+                    and (
+                        not allowed_class_keys
+                        or self._normal_class_key(record.compound_class) in allowed_class_keys
+                    )
+                ),
+                key=lambda record: record.precursor_mz,
+            )
+            self.precursors = [record.precursor_mz for record in self.library]
         self.rules = rules or DEFAULT_RULES
         self.precursor_tolerance_da = precursor_tolerance_da
         self.precursor_tolerance_ppm = float(precursor_tolerance_ppm)
@@ -163,8 +189,12 @@ class LipidMS2Searcher:
         self.min_total_score = max(0.0, float(min_total_score))
         self.use_fragment_index = bool(use_fragment_index)
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
-        self.precursors = [record.precursor_mz for record in self.library]
         self.last_output_path: Path | None = None
+
+    def close(self) -> None:
+        close = getattr(self.library, "close", None)
+        if close is not None:
+            close()
 
     @staticmethod
     def prepare_result_export_df(combined: pd.DataFrame) -> pd.DataFrame:
@@ -254,6 +284,9 @@ class LipidMS2Searcher:
         return self.library[left:right]
 
     def _find_candidate_index_range(self, precursor_mz: float) -> tuple[int, int]:
+        lower, upper = getattr(self, "precursor_mz_min", None), getattr(self, "precursor_mz_max", None)
+        if (lower is not None and precursor_mz < lower) or (upper is not None and precursor_mz > upper):
+            return 0, 0
         if self.precursor_tolerance_da is not None:
             window_da = self.precursor_tolerance_da
         else:
@@ -1128,6 +1161,8 @@ class LipidMS2Searcher:
                 yield prepared
 
     def search_mzml(self, mzml_path: str | Path, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> pd.DataFrame:
+        from .ms1_evidence import restore_ms1_support
+
         rows: List[Dict[str, object]] = []
         for spectrum in self._iter_mzml_spectra(mzml_path):
             rows.extend(self.score_spectrum(spectrum, top_n=top_n))
@@ -1135,7 +1170,7 @@ class LipidMS2Searcher:
         if not frame.empty:
             frame["ms1_support_status"] = "MS2-only"
             frame["ms1_support_reason"] = "feature_table_not_supplied"
-        return frame
+        return restore_ms1_support(frame)
 
     def search_directory(self, directory: str | Path, output_path: str | Path | None = None, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> pd.DataFrame:
         directory = Path(directory)

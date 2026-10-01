@@ -4,6 +4,7 @@ import html
 import json
 import math
 from pathlib import Path
+from threading import Event
 
 import pandas as pd
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -18,12 +19,17 @@ from .result_data import (
     family_for,
     number,
     text,
+    ms1_feature_display,
+    ms1_feature_description,
+    ms1_evidence_display,
+    confidence_description,
 )
+from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
 from .qt_navigation import NavigationPlot
 from .qt_eic import EICPlot
 from .result_plots import FRAGMENT_COLORS, FRAGMENT_LABELS
 from .qt_spectrum import SpectrumPlot
-from .eic_trace import read_eic_window
+from .eic_trace import ByteLRU, EICReader, EIC_HALF_WINDOW_MIN, source_signature
 from .result_details import DetailPanel
 from .ui_icons import icon_path
 
@@ -34,6 +40,54 @@ def confidence_display(value):
 
 def ecn_display(value):
     return "-" if text(value) in {"", "无法判断"} else text(value)
+
+
+def eic_coordinates(feature, spectra, source):
+    """Use the selected sample's observed RT, including unlinked MS2 records."""
+    sample = Path(source).name
+    records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
+    row = records.iloc[0] if not records.empty else feature
+    if records.empty and Path(text(feature.get("_source"))).name != sample:
+        return number(feature.get("_mz")), number(feature.get("_rt"))
+    unlinked = (text(row.get("ms1_support_status")) == "MS2-only" or
+                text(row.get("ms1_support_reason")) == CONFIRMED_WITHOUT_FEATURE)
+    rt_columns = (("rt_minutes_raw", "rt_minutes", "_rt") if unlinked else
+                  ("ms1_feature_rt_raw_min", "rt_minutes_raw", "rt_minutes", "_rt"))
+    rt = next((number(row.get(column)) for column in rt_columns
+               if math.isfinite(number(row.get(column)))), number(feature.get("_rt")))
+    mz = number(feature.get("_mz"))
+    native_mz = number(row.get("feature_mz"))
+    precursor = number(row.get("precursor_mz"))
+    if unlinked and math.isfinite(precursor) and precursor > 0:
+        mz = precursor
+    elif math.isfinite(native_mz) and native_mz > 0:
+        mz = native_mz
+    return mz, rt
+
+
+def eic_peak_bounds(feature, spectra, source):
+    """Only shade real, sample-specific detected peak boundaries."""
+    sample = Path(source).name
+    records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
+    row = records.iloc[0] if not records.empty else feature
+    if (Path(text(row.get("_source"))).name != sample
+            or text(row.get("ms1_support_status")) == "MS2-only"
+            or text(row.get("ms1_support_reason")) == CONFIRMED_WITHOUT_FEATURE
+            or text(row.get("ms1_peak_boundary_method", row.get("peak_boundary_method"))) == "unresolved_detector_bounds"):
+        return None
+    _, rt = eic_coordinates(feature, spectra, source)
+    left = number(row.get("ms1_peak_left_raw_min"))
+    right = number(row.get("ms1_peak_right_raw_min"))
+    if not (math.isfinite(left) and math.isfinite(right)):
+        # Aligned table boundaries belong to the reference RT, not this sample.
+        if math.isfinite(number(row.get("_aligned_rt"))):
+            return None
+        left, right = number(row.get("RTmin")), number(row.get("RTmax"))
+        if text(row.get("RT_unit")).lower() in {"s", "second", "seconds"}:
+            left, right = left / 60, right / 60
+    if all(math.isfinite(v) for v in (left, right, rt)) and 0 <= left < right and left <= rt <= right:
+        return left, right
+    return None
 
 
 class BrowserTableModel(QtCore.QAbstractTableModel):
@@ -68,12 +122,16 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
                 return confidence_display(value)
             if key == "_ecn":
                 return ecn_display(value)
+            if key == "ms1_support_status":
+                return ms1_feature_display(row)
             if key in {"_rt", "_mz", "final_score"}:
                 v = number(value)
                 decimals = 4 if key == "_mz" else 3 if key == "_rt" else 2
                 return "—" if not math.isfinite(v) else f"{v:.{decimals}f}"
             return text(value) or "—"
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
+            if key == "ms1_support_status":
+                return ms1_feature_description(row)
             return text(value)
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and key in {
             "_rt",
@@ -129,13 +187,21 @@ class ResultsPage(QtWidgets.QWidget):
         self.sort_order = QtCore.Qt.SortOrder.AscendingOrder
         self._jobs = {}
         self._load_generation = 0
-        self._eic_cache = {}
+        self._eic_cache = ByteLRU(8 * 1024**2, 128)
+        self._eic_reader = EICReader()
+        self._eic_generation = 0
+        self._eic_cancel = None
         self._eic_thread = None
         self._eic_worker = None
         self._eic_pending = None
         self._eic_active_key = None
         self._eic_current_key = None
+        self._eic_current_peak_bounds = None
         self._eic_ppm = 10.0
+        self.eic_timer = QtCore.QTimer(self)
+        self.eic_timer.setSingleShot(True)
+        self.eic_timer.setInterval(90)
+        self.eic_timer.timeout.connect(self._start_eic_job)
         self.path = QtWidgets.QLineEdit()
         self.path.setReadOnly(True)
         self.path.hide()
@@ -360,13 +426,14 @@ class ResultsPage(QtWidgets.QWidget):
         eic_layout.setContentsMargins(0, 0, 0, 0)
         eic_layout.setSpacing(4)
         self.eic_source = QtWidgets.QComboBox()
-        self.eic_source.setToolTip("选择用于提取 MS1 EIC 的 mzML 样本")
+        self.eic_source.setToolTip("选择 MS1 EIC 样本；窗口为 RT ±1 min。未关联到检测峰的注释点也可查看原始信号。")
         self.eic_source.currentIndexChanged.connect(self._request_eic)
         eic_layout.addWidget(self.eic_source)
         self.eic_plot = EICPlot()
         eic_layout.addWidget(self.eic_plot, 1)
         self.ms1_tab = eic_tab
         self.plot_tabs.addTab(eic_tab, "MS1")
+        self.plot_tabs.setTabToolTip(0, "MS1 EIC · RT ±1 min，未关联到检测特征的注释点也显示原始 MS1 信号")
         self.plot_tabs.addTab(ms2_tab, "MS2")
         self.plot_tabs.setCurrentWidget(ms2_tab)
         self.plot_tabs.currentChanged.connect(self._request_eic)
@@ -486,6 +553,8 @@ class ResultsPage(QtWidgets.QWidget):
             self.set_path(path)
 
     def set_bundle(self, bundle):
+        self._cancel_eic_request()
+        self._eic_generation += 1
         self.bundle = bundle
         self._eic_current_key = None
         self._eic_pending = None
@@ -568,7 +637,7 @@ class ResultsPage(QtWidgets.QWidget):
                     break
         self.eic_source.setEnabled(self.eic_source.count() > 0)
         self.eic_source.blockSignals(False)
-        self.eic_plot.set_status("选择特征后查看 MS1 EIC" if self.eic_source.count() else "打开项目运行结果后可查看 MS1 EIC")
+        self.eic_plot.set_status("选择特征后查看 EIC" if self.eic_source.count() else "打开项目运行结果后可查看 EIC")
 
     def _select_eic_source(self, feature):
         source_name = Path(text(feature.get("_source"))).name
@@ -589,39 +658,76 @@ class ResultsPage(QtWidgets.QWidget):
 
     def _request_eic(self, *args):
         if self.plot_tabs.currentWidget() is not self.ms1_tab:
-            self._eic_pending = None
+            self._cancel_eic_request()
             return
         if not self.current_key:
+            self._cancel_eic_request()
             return
         feature = self.bundle.features.loc[self.bundle.features._key.eq(self.current_key)]
         if feature.empty or not self.eic_source.currentData():
+            self._cancel_eic_request()
             self.eic_plot.set_status("此结果没有可读取的项目 mzML")
             return
         row = feature.iloc[0]
-        mz, rt = number(row.get("_mz")), number(row.get("_rt"))
-        if not math.isfinite(mz) or not math.isfinite(rt):
+        source = str(self.eic_source.currentData())
+        spectra = self.bundle.spectra(self.current_key)
+        selected = self.spectrum_choice.currentData()
+        if selected:
+            spectra = spectra.sort_values("_spectrum", key=lambda values: values.ne(selected), kind="stable")
+        mz, rt = eic_coordinates(row, spectra, source)
+        if not math.isfinite(mz) or not math.isfinite(rt) or mz <= 0 or rt < 0:
+            self._cancel_eic_request()
             self.eic_plot.set_status("此特征缺少 m/z 或 RT")
             return
-        source = str(self.eic_source.currentData())
-        key = (source, round(mz, 6), round(rt, 5), round(self._eic_ppm, 3))
-        self._eic_current_key = key
-        if key in self._eic_cache:
-            times, intensities = self._eic_cache[key]
-            self.eic_plot.set_trace(times, intensities, feature_rt=rt, mz=mz, ppm=self._eic_ppm)
+        try:
+            signature = source_signature(source)
+        except OSError as exc:
+            self._cancel_eic_request()
+            self.eic_plot.set_status("EIC 样本文件不可读取")
+            self.eic_plot.setToolTip(str(exc))
             return
-        self.eic_plot.set_status("正在读取 MS1 EIC…")
-        self._eic_pending = (key, source, mz, rt, self._eic_ppm)
-        self._start_eic_job()
+        key = (self._eic_generation, signature, mz, rt, self._eic_ppm, EIC_HALF_WINDOW_MIN)
+        self._eic_current_key = key
+        self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source)
+        cached = self._eic_cache.get(key)
+        if cached is not None:
+            self._cancel_eic_request(clear_current=False)
+            self.eic_plot.set_eic(cached, peak_bounds=self._eic_current_peak_bounds)
+            return
+        if key == self._eic_active_key and self._eic_cancel is not None and not self._eic_cancel.is_set():
+            self._eic_pending = None
+            self.eic_timer.stop()
+            return
+        if self._eic_cancel is not None:
+            self._eic_cancel.set()
+        self.eic_plot.set_status("正在读取 EIC…")
+        self._eic_pending = key
+        self.eic_timer.start()
+
+    def _cancel_eic_request(self, *, clear_current=True):
+        self.eic_timer.stop()
+        self._eic_pending = None
+        if clear_current:
+            self._eic_current_key = None
+            self._eic_current_peak_bounds = None
+        if self._eic_cancel is not None:
+            self._eic_cancel.set()
 
     def _start_eic_job(self):
         if self._eic_thread is not None or self._eic_pending is None:
             return
-        request = self._eic_pending
+        key = self._eic_pending
         self._eic_pending = None
-        self._eic_active_key = request[0]
-        _, source, mz, rt, ppm = request
+        if key != self._eic_current_key:
+            return
+        self._eic_active_key = key
+        _, signature, mz, rt, ppm, half_window = key
+        cancelled = self._eic_cancel = Event()
         thread = QtCore.QThread(self)
-        worker = Worker(lambda: read_eic_window(source, mz, rt, ppm))
+        worker = Worker(lambda: self._eic_reader.read_trace(
+            signature[0], mz, rt, ppm, half_window,
+            cancelled=cancelled.is_set,
+        ))
         worker.moveToThread(thread)
         self._eic_thread, self._eic_worker = thread, worker
         thread.started.connect(worker.run)
@@ -637,14 +743,16 @@ class ResultsPage(QtWidgets.QWidget):
     @QtCore.Slot(object)
     def _eic_loaded(self, trace):
         key = self._eic_active_key
-        self._eic_cache[key] = trace
+        if trace is None or key is None or key[0] != self._eic_generation:
+            return
+        self._eic_cache.put(key, trace, trace.nbytes)
         if key == self._eic_current_key and self.plot_tabs.currentWidget() is self.ms1_tab:
-            self.eic_plot.set_trace(*trace, feature_rt=key[2], mz=key[1], ppm=key[3])
+            self.eic_plot.set_eic(trace, peak_bounds=self._eic_current_peak_bounds)
 
     @QtCore.Slot(str)
     def _eic_failed(self, message):
         if self._eic_active_key == self._eic_current_key:
-            self.eic_plot.set_status("MS1 EIC 读取失败")
+            self.eic_plot.set_status("EIC 读取失败")
             self.eic_plot.setToolTip(message)
 
     @QtCore.Slot()
@@ -652,10 +760,28 @@ class ResultsPage(QtWidgets.QWidget):
         self._eic_thread = None
         self._eic_worker = None
         self._eic_active_key = None
-        if self._eic_pending is not None and self._eic_pending[0] == self._eic_current_key:
-            self._start_eic_job()
+        self._eic_cancel = None
+        if self._eic_pending is not None and self._eic_pending == self._eic_current_key:
+            if not self.eic_timer.isActive():
+                self._start_eic_job()
         else:
             self._eic_pending = None
+
+    def shutdown_eic(self):
+        """Cooperatively stop disk reads before Qt destroys the worker thread."""
+        self._cancel_eic_request()
+        if self._eic_thread is not None:
+            return False
+        self._eic_reader.close()
+        self._eic_cache.clear()
+        return True
+
+    def closeEvent(self, event):
+        if not self.shutdown_eic():
+            event.ignore()
+            QtCore.QTimer.singleShot(30, self.close)
+            return
+        super().closeEvent(event)
 
     def selected_classes(self):
         if self._solo_class is not None:
@@ -841,8 +967,8 @@ class ResultsPage(QtWidgets.QWidget):
     def clear_selection(self):
         self.current_key = None
         self.current_candidate = None
-        self._eic_current_key = None
-        self.eic_plot.set_status("选择特征后查看 MS1 EIC")
+        self._cancel_eic_request()
+        self.eic_plot.set_status("选择特征后查看 EIC")
         self.navigation.select_key(None)
         self.candidates.blockSignals(True)
         self.candidates.setRowCount(0)
@@ -872,6 +998,7 @@ class ResultsPage(QtWidgets.QWidget):
     def _spectrum_selected(self, index):
         if index >= 0 and self.current_key:
             self._display_spectrum()
+            self._request_eic()
 
     def _display_spectrum(self):
         key = self.current_key
@@ -948,8 +1075,10 @@ class ResultsPage(QtWidgets.QWidget):
             ("Score", formatted(row.get("final_score"), 2)),
             ("Confidence", confidence_display(row.get("_confidence"))),
             ("ECN", ecn_display(row.get("_ecn"))),
-            ("MS1 support", feature.get("ms1_support_status")),
-            ("对齐样本数", feature.get("_sample_count")),
+            ("MS1 feature", ms1_feature_display(row)),
+            ("MS1 evidence", ms1_evidence_display(row)),
+            ("MS1 检出样本数", 0 if text(feature.get("_key")).startswith("MS2|") else feature.get("_sample_count")),
+            ("MS2 样本数", feature.get("_ms2_sample_count")),
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
@@ -982,8 +1111,19 @@ class ResultsPage(QtWidgets.QWidget):
                 f'<tr><td style="color:#7b8798;white-space:nowrap">{k}</td><td>{html.escape(text(v)) or "—"}</td></tr>'
                 for k, v in values
             )
-            + "</table><p><b>鉴定证据</b></p>"
+            + "</table><p>MS1 特征：" + html.escape(ms1_feature_description(row))
+            + "</p><p>鉴定置信度：" + html.escape(confidence_description(row))
+            + "</p><p><b>鉴定证据</b></p>"
         )
+        area = number(row.get("ms1_feature_area"))
+        if math.isfinite(area):
+            units = " intensity·s" if text(row.get("ms1_area_unit")) == "intensity*seconds" else ""
+            content += f"<p>MS1 积分面积（当前谱图样本）：{area:.2f}{units}</p>"
+        boundary_method = text(row.get("ms1_peak_boundary_method", row.get("peak_boundary_method")))
+        if boundary_method == "eic_local_valley":
+            content += "<p>峰边界按该样本原始 EIC 的谷底和低强度峰脚划分；面积使用未平滑的扫描强度及实际采集时间积分。</p>"
+        elif boundary_method == "unresolved_detector_bounds":
+            content += "<p>该峰未能可靠分界，保留检测器的原始面积并标记待复核。</p>"
         evidence_lines = []
         if evidence:
             spectrum = self._experimental or evidence.get("spectrum", [])

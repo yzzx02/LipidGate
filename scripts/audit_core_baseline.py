@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from datetime import date
 
 from lipidgate.ms2.provenance import sha256, code_fingerprint
 from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
@@ -18,14 +19,13 @@ from dataclasses import asdict
 
 
 def audit_library(path):
-    raw = path.with_suffix("")
     uncompressed = hashlib.sha256()
     with gzip.open(path, "rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             uncompressed.update(chunk)
     result = {
         "gzip_sha256": sha256(path),
-        "raw_sha256": sha256(raw),
+        "raw_sha256": uncompressed.hexdigest(),
         "decompressed_sha256": uncompressed.hexdigest(),
     }
     classes, adducts = Counter(), Counter()
@@ -59,7 +59,7 @@ def audit_library(path):
             if len(errors) < 20:
                 errors.append(record.get("Name", "missing name"))
 
-    with raw.open(encoding="utf-8-sig") as stream:
+    with gzip.open(path, "rt", encoding="utf-8-sig") as stream:
         for line in stream:
             line = line.strip()
             if line.startswith("Name:"):
@@ -110,7 +110,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     manifest = {
-        "baseline": "2026-09-20",
+        "baseline": date.today().isoformat(),
         "search_defaults": asdict(DEFAULT_SEARCH_CONFIG),
         "product_code_sha256": code_fingerprint(root / "src/lipidgate"),
         "ms1_runtime_sha256": code_fingerprint(root / "src/lipidbench"),

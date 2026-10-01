@@ -56,38 +56,6 @@ def test_real_mzml_preserves_polarity_and_refines_precursor(tmp_path, monkeypatc
     assert len(sp.peaks) == 6
 
 
-def test_2d_and_general_reader_use_same_spectra_and_keep_original_sample_name(tmp_path, monkeypatch):
-    import importlib.util
-    import pandas as pd
-    from lipidgate.ms2.models import LibraryRecord
-    from lipidgate.ms2 import search as module
-
-    path = tmp_path / "011_cache_name.mzML"
-    m = write_mzml(path)
-    rec = LibraryRecord(1, "PE-Cer", m.species_name, m.name, m.precursor_mz, "[M+H]+", fragments=m.fragments())
-    monkeypatch.setattr(module, "load_library", lambda _: [rec])
-    searcher = LipidMS2Searcher("unused")
-    spec = importlib.util.spec_from_file_location("runner_2d_test", Path(__file__).resolve().parents[2] / "scripts/run_2d_reanalysis.py")
-    runner = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(runner)
-    row = pd.Series(dict(source_path=str(path), source_file="original.mzML", start_rt_min=.5,
-                         mode="positive", folder="batch", fragment="frag1", energy_eV=20, iteration=1))
-    general = searcher.search_mzml(path)
-    frame, metadata = runner.search_file(searcher, row)
-    assert len(frame) == len(general) == 1
-    assert frame.iloc[0].source_file == "original.mzML"
-    assert frame.iloc[0].matched_name == general.iloc[0].matched_name == m.name
-    assert frame.iloc[0].precursor_mz == general.iloc[0].precursor_mz
-    assert frame.iloc[0].final_score == general.iloc[0].final_score
-    assert metadata["precursor_refinement_counts"] == {"confirmed": 1}
-    benchmark_path = tmp_path / "benchmark.json"
-    runner.benchmark_file_workers(searcher, pd.DataFrame([row, row]), 2, benchmark_path)
-    import json
-    assert json.loads(benchmark_path.read_text())["exact_results_and_audits_equal"]
-    row["start_rt_min"] = 1.1
-    frame, metadata = runner.search_file(searcher, row)
-    assert frame.empty
-    assert metadata["spectra_filtered_before_start"] == 1
 
 
 @pytest.mark.parametrize("workers", [2, 4])
@@ -139,6 +107,34 @@ def test_parallel_file_search_rejects_excessive_process_count():
 
     with pytest.raises(ValueError, match="1–4"):
         search_files([], search_options={}, top_n=3, workers=5)
+
+
+def test_real_ms1_confirmation_survives_a_missing_native_feature_in_workflow(tmp_path):
+    from lipidgate.ms2.workflow import run_ms2_feature_annotation_result
+
+    source = tmp_path / "pe_cer.mzML"
+    m = write_mzml(source)
+    library = tmp_path / "tiny.msp"
+    library.write_text("\n".join([
+        f"Name: {m.name}", f"PrecursorMZ: {m.precursor_mz}", "PrecursorType: [M+H]+",
+        "CompoundClass: PE-Cer", f"Num Peaks: {len(m.fragments())}",
+        *[f'{f.mz} 100 "{f.name}" "{f.fragment_type}"' for f in m.fragments()],
+    ]) + "\n\n", encoding="utf-8")
+    features = tmp_path / "native.csv"
+    pd.DataFrame([{"Feature_ID": "F1", "source_file": source.name, "mz": 700,
+                   "RT": 1, "RTmin": .9, "RTmax": 1.1, "RT_unit": "minutes"}]).to_csv(features, index=False)
+    result = run_ms2_feature_annotation_result(
+        mzml_input=source, feature_table=features, mode="positive", library_path=library,
+        output_dir=tmp_path / "results", min_total_score=0, export_csv=True, export_xlsx=False,
+    )
+    audit = pd.read_csv(result.output_dir / "audit/ms2_candidates.csv")
+    assert audit.loc[0, "precursor_refinement_status"] == "confirmed"
+    assert audit.loc[0, "ms1_support_status"] == "MS1-supported"
+    assert audit.loc[0, "ms1_support_reason"] == "confirmed_ms1_precursor_without_feature"
+    assert pd.isna(audit.loc[0, "Feature_ID"])
+    assert pd.isna(audit.loc[0, "ms1_feature_rt_raw_min"])
+    assert result.ms2_spectrum_results.loc[0, "置信度"] == "高"
+    assert pd.isna(result.ms2_spectrum_results.loc[0, "feature_rt"])
 
 
 def test_parallel_file_search_checks_available_memory(tmp_path, monkeypatch):

@@ -49,6 +49,9 @@ def test_ms2_search_result_reports_outputs(tmp_path: Path, monkeypatch) -> None:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
+        def close(self):
+            pass
+
         def search_mzml(self, mzml_path: Path, top_n: int = 5) -> pd.DataFrame:
             return pd.DataFrame(
                 {
@@ -117,6 +120,9 @@ def test_ms2_feature_annotation_result_merges_cross_file_orphans(tmp_path: Path,
     class FakeSearcher:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+
+        def close(self):
+            pass
 
         def search_mzml(self, mzml_path: Path, top_n: int = 5) -> pd.DataFrame:
             suffix = "1" if Path(mzml_path).name == "iter20.mzML" else "2"

@@ -147,25 +147,94 @@ def _consensus_feature_dataframe(feature_maps, consensus_map):
     return table
 
 
+def _group_peak_members(feature_maps, oms, mz_tol=10.0, rt_tol=15.0):
+    """Group aligned apices without crossing a neighboring chromatographic peak.
+
+    Each group contains at most one peak per sample and every pair must agree.
+    Narrow isomers use less than half their apex separation as the RT limit;
+    intensity differences cannot make an adjacent isomer a better match.
+    """
+    import numpy as np
+
+    records = [(map_index, feature) for map_index, feature_map in enumerate(feature_maps) for feature in feature_map]
+    records.sort(key=lambda item: (item[1].getMZ(), item[1].getRT(), item[0]))
+    masses = np.asarray([f.getMZ() for _, f in records])
+    limits = np.full(len(records), rt_tol)
+    neighborhoods = []
+    for position, (map_index, feature) in enumerate(records):
+        mz, rt = float(feature.getMZ()), float(feature.getRT())
+        left = int(np.searchsorted(masses, mz / (1.0 + mz_tol * 1e-6), side="left"))
+        right = int(np.searchsorted(masses, mz * (1.0 + mz_tol * 1e-6), side="right"))
+        neighbors = [abs(other.getRT() - rt) for source, other in records[left:right]
+                     if source == map_index and abs(other.getRT() - rt) > 1e-6]
+        if feature.metaValueExists("neighbor_apex_distance_sec"):
+            neighbors.append(float(feature.getMetaValue("neighbor_apex_distance_sec")))
+        if neighbors:
+            limits[position] = min(rt_tol, 0.45 * min(neighbors))
+        neighborhoods.append((left, right))
+    reference = max(range(len(feature_maps)), key=lambda i: feature_maps[i].size())
+    seeds = sorted(range(len(records)), key=lambda i: (records[i][0] != reference, records[i][0], records[i][1].getMZ(), records[i][1].getRT()))
+    available = np.ones(len(records), dtype=bool)
+    consensus_map = oms.ConsensusMap()
+    for seed in seeds:
+        if not available[seed]:
+            continue
+        members = [seed]
+        available[seed] = False
+        left, right = neighborhoods[seed]
+        for sample in range(len(feature_maps)):
+            if sample == records[seed][0]:
+                continue
+            compatible = []
+            for candidate in range(left, right):
+                if not available[candidate] or records[candidate][0] != sample:
+                    continue
+                feature = records[candidate][1]
+                if all(
+                    abs(feature.getRT() - records[member][1].getRT()) <= min(limits[candidate], limits[member])
+                    and abs(feature.getMZ() - records[member][1].getMZ()) / min(feature.getMZ(), records[member][1].getMZ()) * 1e6 <= mz_tol
+                    and (feature.getCharge() == 0 or records[member][1].getCharge() == 0
+                         or feature.getCharge() == records[member][1].getCharge())
+                    for member in members
+                ):
+                    compatible.append(candidate)
+            if compatible:
+                chosen = min(compatible, key=lambda i: (
+                    abs(records[i][1].getRT() - records[seed][1].getRT()),
+                    abs(records[i][1].getMZ() - records[seed][1].getMZ()),
+                ))
+                members.append(chosen)
+                available[chosen] = False
+        consensus = oms.ConsensusFeature()
+        for member in members:
+            map_index, feature = records[member]
+            # pyOpenMS's overload dispatcher requires an exact BaseFeature,
+            # despite Feature inheriting from that class in C++.
+            handle = oms.BaseFeature()
+            handle.setUniqueId(int(feature.getUniqueId()))
+            handle.setMZ(float(feature.getMZ()))
+            handle.setRT(float(feature.getRT()))
+            handle.setIntensity(float(feature.getIntensity()))
+            handle.setCharge(int(feature.getCharge()))
+            consensus.insert(map_index, handle)
+        consensus.computeConsensus()
+        consensus_map.push_back(consensus)
+    return consensus_map
+
+
 def group_features(feature_maps, output_file):
     import pandas as pd
 
     oms = _get_oms()
-    feature_grouper = oms.FeatureGroupingAlgorithmKD()
-    grouping = feature_grouper.getDefaults()
-    # Pose clustering already transformed the feature maps above. KD's own
-    # LOWESS warp would align a second time and can join separate LC peaks.
-    grouping.setValue(b"warp:enabled", "false")
-    grouping.setValue(b"link:rt_tol", 15.0)
-    feature_grouper.setParameters(grouping)
-    consensus_map = oms.ConsensusMap()
+    # Pose clustering already transforms RTs and hulls. Do not apply another
+    # warp during grouping, or use a fixed 15 s window across resolved isomers.
+    consensus_map = _group_peak_members(feature_maps, oms)
     file_descriptions = consensus_map.getColumnHeaders()
     for i, feature_map in enumerate(feature_maps):
         file_description = file_descriptions.get(i, oms.ColumnHeader())
         file_description.filename = os.path.basename(feature_map.getMetaValue("spectra_data")[0].decode())
         file_description.size = feature_map.size()
         file_descriptions[i] = file_description
-    feature_grouper.group(feature_maps, consensus_map)
     consensus_map.setColumnHeaders(file_descriptions)
     consensus_map.setUniqueIds()
     _consensus_feature_dataframe(feature_maps, consensus_map).to_csv(output_file, index=False)
@@ -203,7 +272,7 @@ def filter_feature_map_by_height(feature_map, minimum):
 
 def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
                        min_peak_height=0.0):
-    """The shared OpenMS detector; chromatographic decisions belong to OpenMS."""
+    """OpenMS detection, followed by raw-EIC quantification of existing apices."""
     oms = _get_oms()
     ms1_exp = oms.MSExperiment()
     ms1_exp.setSpectra([s for s in exp if s.getMSLevel() == 1])
@@ -245,12 +314,18 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     feature_map = filter_feature_map_by_height(feature_map, min_peak_height)
     feature_map.setUniqueIds()
-    return feature_map
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    return refine_feature_map(
+        ms1_exp, feature_map, oms=oms, mz_tol=mz_tol, min_fwhm=min_fwhm,
+        max_fwhm=max_fwhm, min_peak_height=min_peak_height, sn=sn,
+    )
 
 
 def single_feature_dataframe(feature_map, source_file=None):
     """Export detected bounds, explicit RT units, and reproducible display IDs."""
     import pandas as pd
+    from lipidbench.utils.feature_quantification import QUANTIFICATION_META
 
     rows = []
     features = sorted(feature_map, key=lambda f: (f.getMZ(), f.getRT()))
@@ -270,6 +345,9 @@ def single_feature_dataframe(feature_map, source_file=None):
             row["source_file"] = str(source_file)
         if feature.metaValueExists("max_height"):
             row["max_height"] = float(feature.getMetaValue("max_height"))
+        for key in QUANTIFICATION_META:
+            if feature.metaValueExists(key):
+                row[key] = feature.getMetaValue(key)
         rows.append(row)
     columns = ["Feature_ID", "native_uid", "mz", "RT", "RTmin", "RTmax", "RT_unit", "intensity", "FWHM", "charge", "quality"]
     if source_file is not None:

@@ -1,14 +1,13 @@
 *.msp filter=lfs diff=lfs merge=lfs -text
 *.msp.gz filter=lfs diff=lfs merge=lfs -text
-*.pth filter=lfs diff=lfs merge=lfs -text
-*.pt filter=lfs diff=lfs merge=lfs -text
-*.ckpt filter=lfs diff=lfs merge=lfs -text
 
-# Local 2D experiments are reproducibility tools, not release runtime code.
-# These rules apply to git archive source exports; wheels only package src/.
-scripts/*2d* export-ignore
-outputs/ export-ignore
-
-# Retired peak-truth research code and weights are not product assets.
-archive/ export-ignore
-models/peak_truth/ export-ignore
+# Stable provenance bytes across clones
+*.py text eol=lf
+*.R text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.spec text eol=lf
+*.txt text eol=lf

@@ -9,6 +9,7 @@ import pandas as pd
 from lipidgate.ecn_filter import ECNFilterConfig, fit_high_confidence_ecn
 from lipidgate.ms2.search import identification_confidence, prepare_ms2_result_export_df
 from lipidgate.ms2.workbook_export import write_workbook
+from lipidgate.ms2.ms1_evidence import restore_ms1_support
 
 
 @dataclass
@@ -28,7 +29,7 @@ def filter_results(
 ):
     if not 0 <= min_score <= 100 or not np.isfinite(rt_tolerance) or rt_tolerance <= 0:
         raise ValueError("分数应为 0–100，RT 阈值须大于零")
-    work = data.copy().reset_index(drop=True)
+    work = restore_ms1_support(data).reset_index(drop=True)
     if "mode" in work and work["mode"].dropna().nunique() > 1:
         raise ValueError("正式项目筛选一次只处理一个离子模式")
     if not work.empty and not {

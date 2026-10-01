@@ -41,3 +41,12 @@ libraries/ms2/.library_cache/
 .codex_worktrees/
 tmp/
 libraries/ms2/*.msp
+
+# Local research, raw data and historical agent notes
+/data/
+/archive/
+/models/
+/AGENT.md
+.env
+.env.*
+!.env.example

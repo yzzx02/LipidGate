@@ -1,3 +1,1 @@
-"""LipidBench package """
-
-__all__ = ["main"]
+"""Feature detection adapters and table/quantification utilities for LipidGate."""

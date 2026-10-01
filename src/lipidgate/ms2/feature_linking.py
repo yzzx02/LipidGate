@@ -7,6 +7,7 @@ from typing import Iterable, Sequence
 
 import pandas as pd
 from lipidbench.utils.ascii_paths import ascii_mzml_path
+from .ms1_evidence import confirmed_ms1_precursor, restore_ms1_support
 
 try:
     import pyopenms
@@ -23,6 +24,7 @@ SUPPORT_COLUMNS = (
     "ms1_support_status", "ms1_support_reason", "ms1_feature_rt_raw_min",
     "ms1_feature_apex_intensity", "ms1_peak_left_raw_min", "ms1_peak_right_raw_min",
     "ms1_peak_fwhm_sec",
+    "ms1_peak_boundary_method", "ms1_feature_area", "ms1_area_method", "ms1_area_unit",
 )
 
 
@@ -190,7 +192,9 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
         pd.to_numeric(out.loc[missing_rt, "_feature_rtmin"], errors="coerce")
         + pd.to_numeric(out.loc[missing_rt, "_feature_rtmax"], errors="coerce")
     ) / 2.0
-    for source, target in [("source_file", "_source_file"), ("FWHM", "_fwhm"), ("max_height", "_apex_intensity")]:
+    for source, target in [("source_file", "_source_file"), ("FWHM", "_fwhm"), ("max_height", "_apex_intensity"),
+                           ("peak_boundary_method", "_boundary_method"), ("intensity", "_area"),
+                           ("area_method", "_area_method"), ("area_unit", "_area_unit")]:
         if source in feature_df:
             out[target] = feature_df[source]
     return out.dropna(subset=["_feature_mz"]).reset_index(drop=True)
@@ -212,18 +216,24 @@ def _rt_delta_seconds(ms2_rt: float, feature_rt: float | None) -> float:
     return abs(float(ms2_rt) - float(feature_rt)) * 60.0
 
 
+def _finish_feature_links(out):
+    out["ms1_feature_link_reason"] = out["ms1_support_reason"]
+    return restore_ms1_support(out)
+
+
 def link_ms2_to_features(
     feature_df: pd.DataFrame,
     ms2_df: pd.DataFrame,
     mz_tol_ppm: float = 10.0,
     rt_window_sec: float = 30.0,
 ) -> pd.DataFrame:
-    """Link an MS2 spectrum only when it falls inside a real MS1 feature.
+    """Associate each spectrum with its precursor's real, same-file MS1 peak.
 
     When RTmin/RTmax are available they are authoritative peak boundaries; the
-    fallback rt_window_sec is used only for feature tables that provide an apex
-    RT without peak bounds.  Out-of-bound spectra remain unlinked so their MS1
-    feature time stays empty while their original MS2 acquisition time is kept.
+    fallback rt_window_sec is used only for feature tables without peak bounds.
+    A confirmed precursor's survey scan provides its chromatographic time:
+    DDA fragments are acquired later and can fall just beyond an edge/valley.
+    Otherwise use the original MS2 acquisition time. Neither path widens peaks.
     """
     out = ms2_df.copy().reset_index(drop=True)
     # A supplied feature table is authoritative. Do not carry a previous EIC
@@ -241,15 +251,21 @@ def link_ms2_to_features(
         "feature_rtmax",
         "mz_error_to_feature_ppm",
         "rt_delta_sec",
+        "feature_link_rt_raw_min",
+        "feature_link_rt_source",
     ]:
         out[column] = pd.NA
 
-    if feature_df.empty or ms2_df.empty:
+    if feature_df.empty:
+        out["ms1_support_reason"] = "no_ms1_feature_for_sample"
+        return _finish_feature_links(out)
+    if ms2_df.empty:
         return out
 
     features = _feature_work_table(feature_df)
     if features.empty:
-        return out
+        out["ms1_support_reason"] = "no_ms1_feature_for_sample"
+        return _finish_feature_links(out)
 
     ms2_mz_col, ms2_rt_col = _ms2_numeric_columns(out)
     feature_mz = pd.to_numeric(features["_feature_mz"], errors="coerce")
@@ -259,6 +275,8 @@ def link_ms2_to_features(
     has_bounds = feature_rtmin.notna() & feature_rtmax.notna()
     ms2_masses = pd.to_numeric(out[ms2_mz_col], errors="coerce")
     ms2_times = pd.to_numeric(out[ms2_rt_col], errors="coerce")
+    if "ms2_rt_raw_min" in out:
+        ms2_times = pd.to_numeric(out["ms2_rt_raw_min"], errors="coerce").fillna(ms2_times)
     feature_sources = (
         features["_source_file"].map(lambda value: Path(str(value)).name.casefold())
         if "_source_file" in features else None
@@ -272,23 +290,36 @@ def link_ms2_to_features(
         ms2_rt = ms2_times.loc[row_index]
         if pd.isna(ms2_mz) or pd.isna(ms2_rt):
             continue
+        use_precursor_scan = confirmed_ms1_precursor(row)
+        link_rt = float(row["precursor_ms1_rt_raw_min"]) if use_precursor_scan else float(ms2_rt)
 
         ppm_errors = ((float(ms2_mz) - feature_mz) / feature_mz) * 1e6
         mz_ok = ppm_errors.abs() <= mz_tol_ppm
         if feature_sources is not None:
             source_name = Path(str(row.get("source_file", ""))).name.casefold()
-            mz_ok &= feature_sources.eq(source_name)
+            same_source = feature_sources.eq(source_name)
+            if not same_source.any():
+                out.at[row_index, "ms1_support_reason"] = "no_ms1_feature_for_sample"
+                continue
+            mz_ok &= same_source
+        if not mz_ok.any():
+            out.at[row_index, "ms1_support_reason"] = "no_ms1_feature_within_mz_tolerance"
+            continue
 
-        rt_ok_with_bounds = has_bounds & (float(ms2_rt) >= feature_rtmin) & (float(ms2_rt) <= feature_rtmax)
-        rt_ok_without_bounds = (~has_bounds) & feature_rt.notna() & ((feature_rt - float(ms2_rt)).abs() <= window_min)
+        rt_ok_with_bounds = has_bounds & (link_rt >= feature_rtmin) & (link_rt <= feature_rtmax)
+        rt_ok_without_bounds = (~has_bounds) & feature_rt.notna() & ((feature_rt - link_rt).abs() <= window_min)
         rt_ok = rt_ok_with_bounds | rt_ok_without_bounds
 
         candidates = features.loc[mz_ok & rt_ok].copy()
         if candidates.empty:
+            out.at[row_index, "ms1_support_reason"] = (
+                "ms2_outside_ms1_peak_bounds" if has_bounds.loc[mz_ok].all()
+                else "ms2_outside_ms1_rt_window"
+            )
             continue
 
         candidate_ppm_errors = ppm_errors.loc[candidates.index]
-        rt_deltas = (pd.to_numeric(candidates["_feature_rt"], errors="coerce") - float(ms2_rt)).abs() * 60.0
+        rt_deltas = (pd.to_numeric(candidates["_feature_rt"], errors="coerce") - link_rt).abs() * 60.0
         rt_deltas = rt_deltas.fillna(0.0)
         candidates["_mz_error_abs_ppm"] = candidate_ppm_errors.abs()
         candidates["_rt_delta_sec"] = rt_deltas
@@ -305,16 +336,27 @@ def link_ms2_to_features(
         out.at[row_index, "feature_rtmin"] = best["_feature_rtmin"]
         out.at[row_index, "feature_rtmax"] = best["_feature_rtmax"]
         out.at[row_index, "mz_error_to_feature_ppm"] = best_error
-        out.at[row_index, "rt_delta_sec"] = float(best["_rt_delta_sec"])
+        out.at[row_index, "rt_delta_sec"] = _rt_delta_seconds(float(ms2_rt), best["_feature_rt"])
+        out.at[row_index, "feature_link_rt_raw_min"] = link_rt
+        out.at[row_index, "feature_link_rt_source"] = "confirmed_precursor_ms1_scan" if use_precursor_scan else "ms2_scan"
         out.at[row_index, "ms1_support_status"] = "MS1-supported"
-        out.at[row_index, "ms1_support_reason"] = "feature_bounds_match" if has_bounds.loc[best.name] else "feature_rt_window_match"
+        out.at[row_index, "ms1_support_reason"] = (
+            "feature_precursor_ms1_bounds_match" if use_precursor_scan and has_bounds.loc[best.name]
+            else "feature_bounds_match" if has_bounds.loc[best.name] else "feature_rt_window_match"
+        )
+        if "ms1_feature_link_reason" in out:
+            out.at[row_index, "ms1_feature_link_reason"] = out.at[row_index, "ms1_support_reason"]
         out.at[row_index, "ms1_feature_rt_raw_min"] = best["_feature_rt"]
         out.at[row_index, "ms1_peak_left_raw_min"] = best["_feature_rtmin"]
         out.at[row_index, "ms1_peak_right_raw_min"] = best["_feature_rtmax"]
         out.at[row_index, "ms1_feature_apex_intensity"] = best.get("_apex_intensity", pd.NA)
         out.at[row_index, "ms1_peak_fwhm_sec"] = best.get("_fwhm", pd.NA)
+        out.at[row_index, "ms1_peak_boundary_method"] = best.get("_boundary_method", pd.NA)
+        out.at[row_index, "ms1_feature_area"] = best.get("_area", pd.NA)
+        out.at[row_index, "ms1_area_method"] = best.get("_area_method", pd.NA)
+        out.at[row_index, "ms1_area_unit"] = best.get("_area_unit", pd.NA)
 
-    return out
+    return _finish_feature_links(out)
 
 
 def _join_unique(values: Iterable[object]) -> str:
@@ -557,7 +599,8 @@ def summarize_feature_annotations(linked_df: pd.DataFrame, include_details: bool
     if linked_df.empty or "Feature_ID" not in linked_df.columns:
         return pd.DataFrame(columns=columns)
 
-    matched = linked_df[linked_df["Feature_ID"].notna()].copy()
+    aligned = linked_df.get("Aligned_Feature_ID", pd.Series(pd.NA, index=linked_df.index))
+    matched = linked_df[linked_df["Feature_ID"].notna() | aligned.notna()].copy()
     if matched.empty:
         return pd.DataFrame(columns=columns)
 
@@ -586,6 +629,16 @@ def _orphan_key(row: pd.Series) -> tuple[str, str, str]:
 def _cluster_orphan_rows(orphan_df: pd.DataFrame, mz_tol_ppm: float, rt_window_sec: float) -> list[pd.DataFrame]:
     if orphan_df.empty:
         return []
+
+    if "chromatographic_apex_rt_raw_min" in orphan_df:
+        from .cohort_groups import cluster_unlinked_spectra
+        work = orphan_df.copy().reset_index(drop=True)
+        work["_cohort"] = cluster_unlinked_spectra(work, mz_ppm=mz_tol_ppm,
+                                                 rt_minutes=min(.1, rt_window_sec / 60.))
+        # Different annotations can remain separate rows for the same peak.
+        group_cols = ["_cohort", "matched_name", "adduct", "compound_class"]
+        return [group.drop(columns="_cohort").copy()
+                for _, group in work.dropna(subset=["_cohort"]).groupby(group_cols, sort=False, dropna=False)]
 
     work = orphan_df.copy().reset_index(drop=True)
     work["_precursor_mz_num"] = pd.to_numeric(work.get("precursor_mz"), errors="coerce")

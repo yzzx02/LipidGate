@@ -211,28 +211,6 @@ def test_pe_cer_curation_is_idempotent_and_preserves_other_classes(tmp_path):
     assert len(records[-1].fragments) == 6
 
 
-def test_manifest_validation_ignores_rogue_files_and_rejects_missing_expected(tmp_path, monkeypatch):
-    runner = load_script("run_2d_reanalysis")
-    csv, row, _ = checkpoint(tmp_path)
-    manifest = pd.DataFrame([row])
-    library = tmp_path / "library.gz"
-    library.write_bytes(b"library content")
-    monkeypatch.setattr(runner, "default_positive_msp", lambda: library)
-    monkeypatch.setattr(runner, "run_code_hash", lambda: "code")
-    expected = runner.output_csv_path(tmp_path, row)
-    expected.parent.mkdir(parents=True)
-    expected.write_bytes(csv.read_bytes())
-    metadata = json.loads(csv.with_suffix(".json").read_text())
-    metadata["checkpoint_identity"] = checkpoint_identity(row, runner.PARAMETERS, sha256(library), "code")
-    expected.with_suffix(".json").write_text(json.dumps(metadata))
-    (expected.parent / "rogue.csv").write_text("bad extra result")
-    paths, metadata = runner.validated_manifest_outputs(tmp_path, manifest)
-    assert paths == [expected]
-    assert len(metadata) == 1
-    expected.unlink()
-    with pytest.raises(RuntimeError, match="Incomplete"):
-        runner.integrate(tmp_path, manifest)
-    assert not (tmp_path / "integrated").exists()
 
 
 def test_cache_concurrent_writers_use_unique_temporary_files(tmp_path, monkeypatch):
