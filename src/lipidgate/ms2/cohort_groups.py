@@ -5,13 +5,15 @@ import pandas as pd
 from pathlib import Path
 
 
-def cluster_unlinked_spectra(data, *, mz_ppm=10., rt_minutes=.1):
+def cluster_unlinked_spectra(data, *, mz_ppm=10., rt_minutes=.1, mz_da=None):
     """Return spectrum groups with bounded mass/apex span and local-peak identity.
 
     A valley-separated pair in the same sample cannot join one group even when
     their apices are closer than the cohort tolerance. All alternate candidates
     from a spectrum retain the same physical membership.
     """
+    if mz_da is not None and not (np.isfinite(mz_da) and mz_da > 0):
+        raise ValueError("Cohort Da tolerance must be positive and finite")
     def series(name, default=""):
         return data[name] if name in data else pd.Series(default, index=data.index)
 
@@ -32,13 +34,14 @@ def cluster_unlinked_spectra(data, *, mz_ppm=10., rt_minutes=.1):
     groups = []
     for row in work.itertuples():
         sample = Path(row.source).name.casefold()
+        mass_window = mz_da if mz_da is not None else row.mz * mz_ppm * 1e-6
         options = []
         for group in reversed(groups):
             if group["mode"] != row.mode:
                 break
-            if row.mz - group["min_mz"] > row.mz * mz_ppm * 1e-6:
+            if row.mz - group["min_mz"] > mass_window:
                 break
-            if (max(group["max_mz"], row.mz) - group["min_mz"] > row.mz * mz_ppm * 1e-6
+            if (max(group["max_mz"], row.mz) - group["min_mz"] > mass_window
                     or max(group["max_rt"], row.rt) - min(group["min_rt"], row.rt) > rt_minutes + 1e-10):
                 continue
             local_peak = group["peaks"].get(sample)

@@ -18,6 +18,7 @@ def check(executable: Path) -> dict:
     sys.path.insert(0, str(root / "src"))
     from lipidgate.ms2.provenance import sha256
     from lipidgate.ms2.positive_pe_cer import PositivePECer
+    from lipidgate.project import Project
 
     executable = executable.resolve()
     with tempfile.TemporaryDirectory(prefix="lipidgate_release_check_") as directory:
@@ -93,18 +94,27 @@ def check(executable: Path) -> dict:
             *[f'{f.mz} 100 "{f.name}" "{f.fragment_type}"' for f in molecule.fragments()]
         ]) + "\n\n", encoding="utf-8")
         project = temp / "project"
-        project.mkdir()
-        (project / "lipidgate.project.json").write_text(json.dumps(dict(schema=1,files=[str(source)],settings={})))
         settings = dict(ms1=dict(enabled=True, algo="pyopenms", params=dict(noise=100,min_peak_height=100,
                          sn=3,min_fwhm=3,max_fwhm=60)),
                         ms2=dict(mode="positive",library_path=str(library)),
                         filter=dict(use_ecn=False,use_score=False))
-        worker_output, worker_seconds = run(["--worker", project], json.dumps(settings))
+        named_project = Project.create(project / "synthetic.lipidgate")
+        named_project.add_files([source])
+        named_project.settings = settings
+        named_project.save()
+        worker_output, worker_seconds = run(["--worker", named_project.path], json.dumps(settings))
         events = [json.loads(line.removeprefix("LIPIDGATE_EVENT ")) for line in worker_output.splitlines()
                   if line.startswith("LIPIDGATE_EVENT ")]
         final = next((event for event in events if event["type"] == "result"), None)
         if final is None or final["row_count"] < 1 or not Path(final["csv_path"]).is_file():
             raise RuntimeError("Frozen backend did not export an identified synthetic feature")
+        project_output, project_seconds = run(["--self-test", "--project-file", named_project.path,
+                                                "--project-check-dir", temp / "project_check"])
+        restored = next((json.loads(line) for line in project_output.splitlines()
+                         if line.startswith('{"project_file_verified":')), None)
+        if restored is None or not all(restored.get(key) for key in
+                ("project_file_verified", "new_project_verified", "latest_result_restored", "isotope_export_verified")):
+            raise RuntimeError("Frozen named-project recovery/export verification did not succeed")
 
         # Encode all 31 surveys through a shared parameter group, retaining an
         # unused negative group. Read it with OpenMS before checking our worker.
@@ -179,7 +189,9 @@ def check(executable: Path) -> dict:
                     parallel_processes=2, parallel_project_rows=parallel_final["row_count"],
                     parallel_ms2_samples=int(audit.source_file.nunique()),
                     parallel_native_features=len(native), parallel_check_seconds=parallel_seconds,
-                    gui_verified=True, eic=eic, gui_check_seconds=eic_seconds)
+                    gui_verified=True, eic=eic, gui_check_seconds=eic_seconds,
+                    project_file_verified=True, isotope_export_verified=True,
+                    project=restored, project_check_seconds=project_seconds)
 
 
 if __name__ == "__main__":

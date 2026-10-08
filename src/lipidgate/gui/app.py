@@ -207,7 +207,7 @@ class FilterPage(WorkflowPage):
         title.setStyleSheet("font-size:22px;font-weight:600;color:#172438")
         body.addWidget(title)
         body.addWidget(
-            label("设置分析前参数。运行完成后，在结果查看页面浏览、筛选及查看谱图。")
+            label("设置分析前参数。运行完成后，自动打开独立结果窗口浏览、筛选及查看谱图。")
         )
         scoring, scoring_layout = card("候选与分数")
         form = QtWidgets.QFormLayout()
@@ -272,7 +272,7 @@ class FilterPage(WorkflowPage):
                 "params"
             ].get("max_fwhm", float("inf")):
                 raise ValueError("最小峰宽不能大于最大峰宽")
-            project_path = str(self.window.project.root)
+            project_path = str(self.window.project.path)
             self.window.project.settings = settings
             self.window.project.save()
         except Exception as exc:
@@ -340,13 +340,41 @@ class FilterPage(WorkflowPage):
 
     def _done(self, payload):
         result = payload
-        self.window.results_page.set_path(str(result.xlsx_path or result.csv_path))
+        self.window.show_results(str(result.xlsx_path or result.csv_path))
         self.run_progress.finish()
         self.log.append(
             f"完成：{result.row_count} 个最终名称\n{result.xlsx_path or result.csv_path}"
         )
         self.window.status.showMessage("分析完成")
-        self.window.nav.setCurrentRow(5)
+
+
+class ResultsWindow(QtWidgets.QMainWindow):
+    """Persistent independent workbench; its workers belong to the application."""
+
+    def __init__(self, main):
+        super().__init__(main, QtCore.Qt.WindowType.Window)
+        self.main = main
+        self.setWindowTitle("LipidGate · 结果查看")
+        self.setWindowIcon(main.windowIcon())
+        self.setMinimumSize(900, 600)
+        screen = main.screen()
+        available = screen.availableGeometry()
+        self.resize(min(1400, available.width()), min(900, available.height()))
+        geometry = main.settings.value("results/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        self.page = ResultsPage(main)
+        self.setCentralWidget(self.page)
+
+    def closeEvent(self, event):
+        if not self.page.shutdown_eic():
+            event.ignore()
+            QtCore.QTimer.singleShot(30, self.close)
+            return
+        self.main.settings.setValue("results/geometry", self.saveGeometry())
+        # QMainWindow hides on close. Retain the bundle and any table/export jobs
+        # so the workbench can be reopened without destroying a running thread.
+        super().closeEvent(event)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -438,7 +466,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack = QtWidgets.QStackedWidget()
         self.feature_page = FeaturePage(self)
         self.ms2_page = MS2Page(self)
-        self.results_page = ResultsPage(self)
+        self.results_window = ResultsWindow(self)
+        self.results_page = self.results_window.page
         from .project_pages import ProjectPage, ImportPage
 
         self.project = None
@@ -451,13 +480,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.feature_page,
             self.ms2_page,
             self.filter_page,
-            self.results_page,
         ):
-            if page is self.results_page:
-                # The workbench has its own splitters and scrolling panes;
-                # wrapping it in a scroll area prevents it shrinking vertically.
-                self.stack.addWidget(page)
-                continue
             scroll = QtWidgets.QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(page)
@@ -479,9 +502,36 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(right_area, 1)
         self.setCentralWidget(central)
 
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self._navigate)
         self.nav.setCurrentRow(0)
         self._apply_style()
+
+    def _navigate(self, index):
+        if index == 5:
+            self.show_results()
+            blocker = QtCore.QSignalBlocker(self.nav)
+            self.nav.setCurrentRow(self.stack.currentIndex())
+            del blocker
+        else:
+            self.stack.setCurrentIndex(index)
+
+    def show_results(self, path=None):
+        if path is not None:
+            self.results_page.set_path(path)
+        first_open = not self.settings.contains("results/geometry")
+        if first_open:
+            self.results_window.showMaximized()
+        else:
+            self.results_window.show()
+        self.results_window.raise_()
+        self.results_window.activateWindow()
+        self.results_page._request_eic()
+
+    def show_parameters(self):
+        self.nav.setCurrentRow(4)
+        self.showNormal() if self.isMinimized() else self.show()
+        self.raise_()
+        self.activateWindow()
 
     def analysis_settings(self):
         f, m, r = self.feature_page, self.ms2_page, self.filter_page
@@ -609,6 +659,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.warning(self, "项目保存失败", str(exc))
                 return
         self.settings.setValue("main/geometry", self.saveGeometry())
+        self.results_window.close()
         super().closeEvent(event)
 
     def _apply_style(self) -> None:

@@ -41,6 +41,35 @@ def test_gui_main_window_instantiates() -> None:
         window = MainWindow()
         assert window.windowTitle() == "LipidGate"
         assert window.nav.count() == 6
+        assert window.stack.count() == 5
+        assert window.results_window.isWindow()
+        assert window.results_window.centralWidget() is window.results_page
+        assert window.stack.indexOf(window.results_page) == -1
+        window.show()
+        window.nav.setCurrentRow(5)
+        app.processEvents()
+        assert window.results_window.isVisible()
+        assert not window.sidebar.isAncestorOf(window.results_page)
+        assert window.nav.currentRow() == window.stack.currentIndex() == 0
+        window.results_window.close()
+        app.processEvents()
+        assert not window.results_window.isVisible() and window.isVisible()
+        window.nav.setCurrentRow(5)
+        assert window.results_window.isVisible()
+        assert not hasattr(window.results_page, 'scatter_focus')
+        assert not window.results_page.filter_panel.isHidden()
+        assert not window.results_page.detail_panel.isHidden()
+        window.show_parameters()
+        assert window.stack.currentIndex() == 4
+        # Finishing an analysis opens the existing independent workbench.
+        window.results_window.close()
+        from types import SimpleNamespace
+        loaded_paths = []
+        original_set_path = window.results_page.set_path
+        window.results_page.set_path = loaded_paths.append
+        window.filter_page._done(SimpleNamespace(xlsx_path=None,csv_path='result.csv',row_count=2))
+        assert loaded_paths == ['result.csv'] and window.results_window.isVisible()
+        window.results_page.set_path = original_set_path
         assert 'combo_down_hover.svg' in window.styleSheet()
         assert 'tree_right_hover.svg' in window.results_page.styleSheet()
         assert window.results_page.class_tree.objectName() == 'lipidClassTree'
@@ -144,6 +173,7 @@ def test_gui_main_window_instantiates() -> None:
         assert not progress._timer.isActive()
         window.close()
         app.processEvents()
+        assert not window.results_window.isVisible()
         print("OK")
         """
     )

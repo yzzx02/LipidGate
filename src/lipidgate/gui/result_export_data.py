@@ -6,8 +6,9 @@ import pandas as pd
 
 from lipidgate.ms2.result_export import prepare_ms2_result_export_df
 from lipidgate.ms2.workbook_export import write_workbook
+from lipidgate.ms2.isotope_export import ISOTOPE_RESULT_COLUMNS, isotope_export_fields
 
-from .result_data import COLUMNS
+from .result_data import COLUMNS, ms1_feature_display, ms1_feature_description, ms1_evidence_display
 
 
 def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
@@ -29,28 +30,69 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     if feature_keys is not None:
         features = features.loc[features._key.isin(feature_keys)]
     feature_table = pd.DataFrame({title: features[key].values for title, key in COLUMNS})
+    feature_table["MS1 Feature"] = [ms1_feature_display(row) for _, row in features.iterrows()]
+    feature_table["MS1 前体证据"] = [ms1_evidence_display(row) for _, row in features.iterrows()]
+    feature_table["MS1 特征说明"] = [ms1_feature_description(row) for _, row in features.iterrows()]
+    feature_table["ms1_support_status"] = features.ms1_support_status.to_numpy()
+    feature_table["原始特征 ID"] = features._feature.values
     for title, key in (("关联 MS2 谱图", "_linked_ms2_scans"),
-                       ("支持文件", "_supporting_files"),
-                       ("原始扫描号", "_linked_scan_ids")):
+                       ("支持文件", "_supporting_files")):
         feature_table[title] = features[key].values
     # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
     # detected peak area; leave those cells empty rather than assigning signal.
     area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
     for column in area_columns:
         feature_table[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
-    if not area_columns:
-        for column in ("intensity", "Area", "peak_area", "into"):
+    if area_columns:
+        # Fill only the measured native peak's own sample. Raw precursor
+        # confirmation without a detected feature never creates an area.
+        local = features._native_feature.ne("") & features._aligned_feature.eq("")
+        measured = pd.Series(float("nan"), index=features.index)
+        for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
+            if column in features:
+                measured = measured.combine_first(pd.to_numeric(features[column], errors="coerce"))
+        for source in features.loc[local, "_source"].unique():
+            if not source or not str(source).lower().endswith(".mzml"):
+                continue
+            if source not in feature_table:
+                feature_table[source] = float("nan")
+                area_columns.append(source)
+            mask = local & features._source.eq(source)
+            values = pd.to_numeric(feature_table[source], errors="coerce").to_numpy(copy=True)
+            fill = mask.to_numpy() & pd.isna(values)
+            values[fill] = measured.to_numpy()[fill]
+            feature_table[source] = values
+    else:
+        for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
             if column in features:
                 feature_table["Peak area"] = pd.to_numeric(features[column], errors="coerce").to_numpy()
+                area_columns = ["Peak area"]
                 break
+    has_area = feature_table[area_columns].notna().any(axis=1) if area_columns else pd.Series(False, index=feature_table.index)
+    feature_table["面积状态"] = ["已有检测峰面积" if available else
+                               ("检测峰未记录面积" if ms1_feature_display(row) in {"Linked", "Detected"}
+                                else "无关联检测峰，未计算面积")
+                               for available, (_, row) in zip(has_area, features.iterrows())]
     candidates = bundle.candidates.loc[bundle.candidates._key.isin(features._key)]
-    evidence_table = prepare_ms2_result_export_df(candidates)
+    # Each feature already carries its ranked identification representative.
+    # Export just that MS2's preceding survey, without changing identification
+    # selection or repeating isotope windows across the spectrum evidence rows.
+    isotopes = isotope_export_fields(features, bundle.path)
+    for column in ISOTOPE_RESULT_COLUMNS:
+        feature_table[column] = isotopes[column].to_numpy()
+    # Scan IDs remain in the saved project audit and in-memory candidates.
+    # The final user-facing tables omit them, including isotope JSON diagnostics.
+    evidence_table = prepare_ms2_result_export_df(candidates).drop(columns="scan_id")
     if not evidence_table.empty:
         evidence_table["置信度"] = candidates["_confidence"].to_numpy()
-        evidence_table["归并特征 ID"] = candidates["_feature"].to_numpy()
-        from .result_data import ms1_feature_display, ms1_feature_description
+        evidence_table["归并特征 ID"] = candidates["_display_feature"].to_numpy()
+        evidence_table["原始归并特征 ID"] = candidates["_feature"].to_numpy()
         evidence_table["MS1 检测特征状态"] = [ms1_feature_display(row) for _, row in candidates.iterrows()]
+        evidence_table["MS1 前体证据"] = [ms1_evidence_display(row) for _, row in candidates.iterrows()]
         evidence_table["MS1 特征说明"] = [ms1_feature_description(row) for _, row in candidates.iterrows()]
+        evidence_table["MS1 积分面积（当前样本）"] = pd.to_numeric(
+            candidates.get("ms1_feature_area", pd.Series(float("nan"), index=candidates.index)), errors="coerce").to_numpy()
+        evidence_table["MS1 面积单位"] = candidates.get("ms1_area_unit", pd.Series("", index=candidates.index)).to_numpy()
     paths = []
     if csv:
         feature_path = output_dir / "feature_results.csv"

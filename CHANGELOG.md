@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.2 — 2026-10-08
+
+- Separate New Project and Open Project. Save named `.lipidgate` files, open
+  existing files without implicit creation, and restore inputs, parameters and
+  the latest completed result. Keep legacy JSON projects supported and refuse
+  creation in folders that already hold projects or runs. Resolve EIC/isotope
+  inputs from either project format; keep backend directory compatibility.
+- Open results in an independent window after analysis or reopening a saved
+  project. Prioritize scatter space in the default layout, tighten margins and
+  spectrum tabs, and keep readable details scrollable on small screens. Keep
+  the parameter window accessible without losing the loaded results.
+- Keep scatter wheel zoom centered on the cursor in both RT and m/z; record
+  each gesture as one navigation-history step.
+- Read indexed EIC spectra as binary XML fragments, fixing CRLF/UTF-8 files
+  that fail with `junk after document element`. Retain bounded on-demand
+  reads, add retry/error details, and exclude non-mzML project attachments.
+- Show numeric feature labels, retain the MS2- prefix for unlinked spectra,
+  and preserve native IDs, association keys and original exported provenance.
+- Apply Da tolerance to MS1 feature/cohort association and chromatographic
+  membership as well as library search, including when reopening results.
+  Explain that 0.01 Da equals 20 ppm only at m/z 500. Library contents,
+  scoring rules, evidence gates and measured peak areas remain unchanged.
+- Distinguish confirmed raw MS1 precursors from linked detector features in
+  exports, explain missing areas, and retain unaligned native peak areas beside
+  the aligned sample matrix without assigning areas to unlinked MS2 rows.
+- Export one measured isotope window per feature from the immediately preceding
+  MS1 survey of its existing ranked MS2 representative, with RT/source and
+  explicit missing or ambiguous statuses. Omit scan IDs and isotope diagnostic
+  JSON from final CSV/Excel tables, retain project audit records, and avoid
+  repeating isotope windows in spectrum evidence. Enrich old runs from raw mzML.
+
 ## 1.0.1 — 2026-10-08
 
 - Fix OpenMS startup/analysis failure when a Windows user profile or TEMP path

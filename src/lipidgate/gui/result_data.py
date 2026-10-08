@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
+import re
 
 import numpy as np
 import pandas as pd
@@ -15,7 +16,7 @@ from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_
 
 
 COLUMNS = [
-    ("Feature ID", "_feature"),
+    ("Feature ID", "_display_feature"),
     ("RT", "_rt"),
     ("m/z", "_mz"),
     ("Annotation", "matched_name"),
@@ -79,8 +80,8 @@ def ms1_feature_description(row):
         "no_matching_ms1_feature": "未找到同一样本中满足 m/z 容差及峰时间边界的检测特征",
         "no_ms1_feature_for_sample": "该样本的峰表没有检测特征",
         "no_ms1_feature_within_mz_tolerance": "该样本的峰表没有质量容差内的检测特征",
-        "ms2_outside_ms1_peak_bounds": "MS2 采集时间位于该样本检测特征的峰边界之外",
-        "ms2_outside_ms1_rt_window": "MS2 采集时间位于该样本检测特征的 RT 窗口之外",
+        "ms2_outside_ms1_peak_bounds": "对应扫描时间位于该样本检测特征的峰边界之外",
+        "ms2_outside_ms1_rt_window": "对应扫描时间位于该样本检测特征的 RT 窗口之外",
         "feature_detection_disabled": "未运行 MS1 峰检测",
         "feature_table_not_supplied": "未提供 MS1 检测峰表",
         "no_ms1_scans": "原始文件不含 MS1 扫描",
@@ -193,6 +194,27 @@ def number(value):
         return float("nan")
 
 
+def display_feature_ids(features):
+    """Number browser rows without replacing native IDs or association keys."""
+    preferred = pd.Series([
+        int(match[1]) if (match := re.fullmatch(r"F?(\d+)(?:\.0)?", text(value))) else None
+        for value in features._feature
+    ], index=features.index, dtype=object)
+    counts = preferred.value_counts()
+    reserved = {int(value) for value in preferred.dropna()}
+    next_id = max(reserved, default=0) + 1
+    result = {}
+    for index, row in features.iterrows():
+        if row._key.startswith("MS2|"):
+            result[row._key] = row._feature
+        elif pd.notna(preferred.loc[index]) and counts[preferred.loc[index]] == 1:
+            result[row._key] = str(int(preferred.loc[index]))
+        else:
+            result[row._key] = str(next_id)
+            next_id += 1
+    return result
+
+
 def first_series(df, names, numeric=False):
     result = pd.Series(
         np.nan if numeric else "", index=df.index, dtype=float if numeric else object
@@ -276,7 +298,7 @@ def normalize_candidates(data):
     out["_source"] = out.source_file.fillna("").astype(str)
     out["_scan"] = out.scan_id.fillna("").astype(str)
     out["_native_feature"] = first_series(
-        out, ["Feature_ID", "Feature ID", "feature_id"]
+        out, ["Feature_ID", "原始特征 ID", "Feature ID", "feature_id"]
     )
     out["_aligned_feature"] = first_series(out, ["Aligned_Feature_ID"])
     out["_feature"] = out["_native_feature"].where(
@@ -311,7 +333,7 @@ def normalize_candidates(data):
 
 
 def group_ms2_only(candidates: pd.DataFrame, mz_ppm: float = 10.0,
-                   rt_minutes: float = 0.1) -> pd.DataFrame:
+                   rt_minutes: float = 0.1, mz_da=None) -> pd.DataFrame:
     """Give nearby MS2-only scans a putative cross-file feature, retaining every scan.
 
     Complete-link bounds prevent a chain of nearby scans from merging distant peaks.
@@ -324,7 +346,7 @@ def group_ms2_only(candidates: pd.DataFrame, mz_ppm: float = 10.0,
     selected = out.loc[orphan]
     if selected.empty:
         return out
-    groups = cluster_unlinked_spectra(selected, mz_ppm=mz_ppm, rt_minutes=rt_minutes)
+    groups = cluster_unlinked_spectra(selected, mz_ppm=mz_ppm, rt_minutes=rt_minutes, mz_da=mz_da)
     valid = groups.notna()
     indices = groups.index[valid]
     out.loc[indices, "_feature"] = groups.loc[valid].map(lambda value: f"MS2-{int(value):05d}")
@@ -369,11 +391,12 @@ class ResultBundle:
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
-                    alignment_mz_ppm=10.0):
+                    alignment_mz_ppm=10.0, alignment_mz_da=None):
         # Reuse the same conservative membership for previously saved audits.
         candidates = associate_ms2_with_alignment(candidates, features,
-                                                  mz_tol_ppm=alignment_mz_ppm)
-        candidates = group_ms2_only(normalize_candidates(candidates), mz_ppm=alignment_mz_ppm)
+                                                  mz_tol_ppm=alignment_mz_ppm, mz_tol_da=alignment_mz_da)
+        candidates = group_ms2_only(normalize_candidates(candidates), mz_ppm=alignment_mz_ppm,
+                                    mz_da=alignment_mz_da)
         native_features = None
         if features is not None:
             native_features = features.copy()
@@ -410,6 +433,7 @@ class ResultBundle:
                 aligned["_raw_rt_max"] = aligned["Feature_ID"].map(rt_summary["max"])
             selected = representatives.set_index("_key", drop=False)
             protected = {"_key", "_feature", "_aligned_feature", "_rt", "_mz", "Feature_ID", "mz", "RT", "RTmin", "RTmax"}
+            protected.update(sample_columns)
             mapped = {column: aligned["_key"].map(selected[column])
                       for column in selected if column not in protected}
             # Copy all evidence columns together, avoiding hundreds of tiny
@@ -428,16 +452,20 @@ class ResultBundle:
             notice = "以跨样本对齐的 MS1 特征为主行；原始 MS1 已确认且唯一匹配的其他样本 MS2 也归入该行。其余未对齐峰和 MS2 注释单独显示。"
         if features is not None:
             native = normalize_candidates(native_features)
-            if aligned_features is None:
-                # Keep real quantitative values for identified native rows too.
-                quantitative = [column for column in native if str(column).lower().endswith(".mzml")
-                                or column in {"intensity", "Area", "peak_area", "into"}]
-                if quantitative:
-                    if native._key.duplicated().any():
-                        raise ValueError("MS1 峰表中的样本与特征 ID 必须唯一")
-                    indexed = native.set_index("_key")
-                    for column in quantitative:
-                        measured = representatives._key.map(indexed[column])
+            # Unaligned native rows retain their detector areas even when the
+            # same run also contains a cross-sample area matrix.
+            quantitative = [column for column in native if str(column).lower().endswith(".mzml")
+                            or column in {"intensity", "Area", "peak_area", "into"}]
+            local_native = native.loc[native._aligned_feature.eq("")] if aligned_features is not None else native
+            if quantitative:
+                if local_native._key.duplicated().any():
+                    raise ValueError("MS1 峰表中的样本与特征 ID 必须唯一")
+                indexed = local_native.set_index("_key")
+                for column in quantitative:
+                    measured = representatives._key.map(indexed[column])
+                    if column in representatives:
+                        representatives[column] = measured.combine_first(representatives[column])
+                    else:
                         representatives[column] = measured
             if aligned_features is not None:
                 native = native.loc[native._aligned_feature.eq("")]
@@ -482,6 +510,9 @@ class ResultBundle:
         representatives.loc[ms2_only, "_sample_count"] = representatives.loc[ms2_only, "_key"].map(linked_file_counts).astype(int)
         representatives["_cohort_ms1_detected_samples"] = np.where(
             representatives._key.str.startswith("ALIGN|"), representatives._sample_count, 0)
+        display_ids = display_feature_ids(representatives)
+        representatives["_display_feature"] = representatives._key.map(display_ids)
+        candidates["_display_feature"] = candidates._key.map(display_ids)
         return cls(
             candidates, representatives, Path(path) if path else None, notice=notice
         )
@@ -530,6 +561,7 @@ class ResultBundle:
             columns = [
                 df.matched_name.fillna("").astype(str),
                 df._feature,
+                df._display_feature,
                 df._linked_scan_ids,
                 df._mz.map(lambda x: f"{x:.4f}"),
                 df._rt.map(lambda x: f"{x:.3f}"),
@@ -642,15 +674,19 @@ def load_result_bundle(path):
         data = data.copy()
         data.loc[assign, "Aligned_Feature_ID"] = local_ids.loc[assign]
     mz_ppm = 10.0
+    mz_da = None
     settings_path = base.parent / "run_settings.json"
     if settings_path.is_file():
         try:
-            mz_ppm = float(json.loads(settings_path.read_text(encoding="utf-8"))["ms2"].get("precursor_tolerance_ppm", 10.0))
+            ms2_settings = json.loads(settings_path.read_text(encoding="utf-8"))["ms2"]
+            mz_ppm = float(ms2_settings.get("precursor_tolerance_ppm", 10.0))
+            mz_da = ms2_settings.get("precursor_tolerance_da")
+            mz_da = float(mz_da) if mz_da is not None else None
         except (OSError, ValueError, KeyError, TypeError):
             pass
-    data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm)
+    data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
-                                    alignment_mz_ppm=mz_ppm)
+                                    alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
     if legacy_mapping:
         bundle.notice += " 旧运行没有保存精确对齐成员表，仅将唯一匹配的原始峰归入对齐行；重新分析可获得完整映射。"
     if audit.exists():

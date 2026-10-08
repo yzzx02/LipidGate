@@ -242,6 +242,42 @@ def test_invalid_coordinates_rejected_before_io(tmp_path, mz, rt, ppm, window):
         reader.read_trace(tmp_path / "missing.mzML", mz, rt, ppm, window)
 
 
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"])
+@pytest.mark.parametrize("unicode_metadata", [False, True])
+def test_indexed_window_reads_use_bytes_for_crlf_and_utf8(tmp_path, newline, unicode_metadata):
+    """Reproduce MSConvert fragments whose byte and character lengths differ."""
+    oms = pytest.importorskip("pyopenms")
+    source = tmp_path / "中文样本.mzML"
+    generated = tmp_path / "generated.mzML"
+    experiment = oms.MSExperiment()
+    for i in range(3):
+        spectrum = oms.MSSpectrum()
+        spectrum.setMSLevel(1)
+        spectrum.setRT((4 + i) * 60)
+        spectrum.setNativeID(f"scan={i + 1}")
+        spectrum.set_peaks(([500.001], [10.0 * (i + 1)]))
+        experiment.addSpectrum(spectrum)
+    writer = oms.MzMLFile()
+    options = writer.getOptions()
+    options.setWriteIndex(False)
+    writer.setOptions(options)
+    writer.store(str(generated), experiment)
+    content = generated.read_bytes().replace(b"\r\n", b"\n")
+    if unicode_metadata:
+        content = content.replace(b'<scanList count="1">',
+                                  '<userParam name="中文说明" value="食用油"/><scanList count="1">'.encode())
+    source.write_bytes(content.replace(b"\n", newline))
+    reader = EICReader()
+    try:
+        trace = reader.read_trace(source, 500, 5)
+        np.testing.assert_allclose(trace.times, [4, 5, 6])
+        np.testing.assert_allclose(trace.intensities, [10, 20, 30])
+        # A second read uses the same binary handle and neighboring cached scans.
+        np.testing.assert_allclose(reader.read_trace(source, 500, 4).intensities, [10, 20])
+    finally:
+        reader.close()
+
+
 def test_pyinstaller_uses_packaged_obo_without_changing_global_frozen_state(tmp_path, monkeypatch):
     import sys
     import pymzml
