@@ -38,8 +38,11 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
     for column in area_columns:
         feature_table[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
-    if not area_columns and "intensity" in features:
-        feature_table["Peak area"] = pd.to_numeric(features["intensity"], errors="coerce").to_numpy()
+    if not area_columns:
+        for column in ("intensity", "Area", "peak_area", "into"):
+            if column in features:
+                feature_table["Peak area"] = pd.to_numeric(features[column], errors="coerce").to_numpy()
+                break
     candidates = bundle.candidates.loc[bundle.candidates._key.isin(features._key)]
     evidence_table = prepare_ms2_result_export_df(candidates)
     if not evidence_table.empty:

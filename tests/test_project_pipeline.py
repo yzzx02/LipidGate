@@ -233,6 +233,10 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
         == 3
     )
     assert (final.output_dir.parent / "provenance.json").exists()
+    ms1_metadata = json.loads((final.output_dir.parent / "ms1/feature_table.json").read_text())
+    assert ms1_metadata["algorithm"] == "xcms"
+    assert Path(ms1_metadata["table"]) == tmp_path / "features.csv"
+    assert Path(ms1_metadata["native_table"]) == tmp_path / "native.csv"
     _, _, second = pipeline.run_project(project.root, settings)
     assert second.output_dir != final.output_dir
 
@@ -280,7 +284,8 @@ def test_wrong_polarity_rejected_before_work(tmp_path):
 
     f = tmp_path / "mixed.mzML"
     f.write_text(
-        '<mzML><cvParam accession="MS:1000130"/><cvParam accession="MS:1000129"/></mzML>'
+        '<mzML><spectrum><cvParam accession="MS:1000130"/>'
+        '<cvParam accession="MS:1000129"/></spectrum></mzML>'
     )
     for mode in ("positive", "negative"):
         with pytest.raises(ValueError, match="模式"):

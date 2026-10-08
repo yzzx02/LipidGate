@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 — 2026-10-08
+
+- Fix OpenMS startup/analysis failure when a Windows user profile or TEMP path
+  contains Chinese or other non-ASCII characters. Bundled resources override
+  stale OPENMS_DATA_PATH settings automatically.
+- Resolve referenced mzML parameter groups for MS1 availability and scan
+  polarity; ignore unused groups while still rejecting actual mixed polarity.
+- Reopen complete XCMS, Asari and MS-DIAL peak tables, including unidentified
+  features and measured sample areas; preserve candidate scores and evidence.
+- Convert all raw Asari RT fields from seconds consistently, record explicit
+  units and avoid converting normalized minute values twice.
+- Retain the v1.0.0 MS2 rules and both library payloads/indexes unchanged.
+
 ## 1.0.0 — 2026-10-01
 
 - Desktop project workflow: MS1 extraction/alignment, MS2 identification,

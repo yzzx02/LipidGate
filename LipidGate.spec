@@ -43,6 +43,7 @@ analysis = Analysis(
     runtime_hooks=[str(root / "scripts" / "qt_runtime.py")],
     excludes=[
         "pytest", "IPython", "jupyter", "notebook",
+        "PyQt5", "PyQt6", "PySide2",
         "torch", "torchvision", "torchaudio", "tensorflow",
         "numba", "llvmlite", "bokeh", "panel", "dask", "xarray",
     ],

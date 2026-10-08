@@ -17,26 +17,52 @@ def check_polarity(path, mode):
     expected = "MS:1000130" if mode == "positive" else "MS:1000129"
     has_ms1 = False
     in_spectrum = False
+    groups = {}
+    group_id = None
+    group_parameters = []
+    stack = []
+
+    def inspect(accession, value):
+        nonlocal has_ms1
+        if accession in {"MS:1000130", "MS:1000129"} and accession != expected:
+            raise ValueError(
+                f"{Path(path).name} 与项目离子模式不一致；一个项目仅处理一个模式"
+            )
+        if accession == "MS:1000511" and value == "1":
+            has_ms1 = True
+
     # Parse the whole stream, releasing binary arrays as soon as consumed.
     for event, element in ET.iterparse(path, events=("start", "end")):
         name = element.tag.rsplit("}", 1)[-1]
         if event == "start":
+            stack.append(element)
             if name == "spectrum":
                 in_spectrum = True
+            elif name == "referenceableParamGroup":
+                group_id = element.get("id")
+                group_parameters = []
             continue
-        if name == "cvParam" and element.get("accession") in {
-            "MS:1000130",
-            "MS:1000129",
-        }:
-            if element.get("accession") != expected:
-                raise ValueError(
-                    f"{Path(path).name} 与项目离子模式不一致；一个项目仅处理一个模式"
-                )
-        if in_spectrum and name == "cvParam" and element.get("accession") == "MS:1000511":
-            has_ms1 |= element.get("value") == "1"
-        if name == "spectrum":
+        if name == "cvParam":
+            parameter = element.get("accession"), element.get("value")
+            if group_id is not None:
+                group_parameters.append(parameter)
+            elif in_spectrum:
+                inspect(*parameter)
+        elif name == "referenceableParamGroup":
+            groups[group_id] = tuple(group_parameters)
+            group_id = None
+        elif name == "referenceableParamGroupRef" and in_spectrum:
+            reference = element.get("ref")
+            if reference not in groups:
+                raise ValueError(f"{Path(path).name} 引用了不存在的 mzML 参数组：{reference}")
+            for parameter in groups[reference]:
+                inspect(*parameter)
+        elif name == "spectrum":
             in_spectrum = False
         element.clear()
+        if len(stack) > 1:
+            stack[-2].remove(element)
+        stack.pop()
     return has_ms1
 
 
@@ -135,6 +161,27 @@ def run_project(project_path, settings, progress=lambda message: None):
             msdial_table=ms1.get("msdial_table"),
             config=config,
             progress=progress,
+        )
+        native_path = getattr(feature, "native_table_path", None)
+        # Store the actual generated table so every MS1 algorithm can be reopened.
+        feature_path = Path(feature.table_path)
+        def recorded_path(path):
+            path = Path(path).resolve()
+            try:
+                return str(path.relative_to(out / "ms1"))
+            except ValueError:
+                return str(path)
+        columns = pd.read_csv(feature_path, nrows=0).columns
+        sample_names = {key.casefold(): file.name for file in files
+                        for key in (file.name, file.stem, str(file))}
+        metadata = dict(schema=1, algorithm=ms1["algo"],
+                        table=recorded_path(feature_path),
+                        native_table=recorded_path(native_path) if native_path else None,
+                        sample_columns={str(column): sample_names[str(column).casefold()]
+                                        for column in columns if str(column).casefold() in sample_names})
+        (out / "ms1").mkdir(exist_ok=True)
+        (out / "ms1" / "feature_table.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
         )
     elif ms1.get("enabled", True):
         progress("所有文件均无 MS1 扫描，跳过特征提取并继续 MS2 匹配。")

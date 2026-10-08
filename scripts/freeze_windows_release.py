@@ -34,6 +34,9 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path, tests
     digest = sha256(executable)
     if frozen.get("executable_sha256") != digest or not all(frozen.get(key) for key in ("backend_verified","gui_verified")):
         raise ValueError("Verify the current executable before packaging")
+    if version != "1.0.0" and not all(frozen.get(key) for key in
+            ("unicode_temp_verified", "inherited_openms_path_overridden", "referenceable_params_verified")):
+        raise ValueError("Unicode TEMP and shared mzML parameters must pass before packaging")
     rules = code_fingerprint(root / "src" / "lipidgate" / "ms2")
     verification = dict(junit_test_cases=tests, skipped=sum(int(s.get("skipped",0)) for s in suites),
                         failures=0, errors=0, frozen=frozen)

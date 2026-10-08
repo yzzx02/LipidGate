@@ -6,7 +6,7 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 下载与运行
 
-从 [v1.0.0 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.0) 下载 **LipidGate-v1.0.0-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
+从 [v1.0.1 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.1) 下载 **LipidGate-v1.0.1-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
 
 1. 创建项目，导入同一 LC 方法、同一离子模式的 mzML 文件。
 2. 设置 MS1 参数；默认使用 pyOpenMS，也可导入 MS-DIAL 特征表。
@@ -34,7 +34,7 @@ Windows 包仅携带运行索引。源码保留无损压缩 MSP，供检查和�
 
 开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。
 
-可下载 Release 中的 **LipidGate-v1.0.0-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
+可下载 Release 中的 **LipidGate-v1.0.1-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
 
 ```powershell
 git lfs install

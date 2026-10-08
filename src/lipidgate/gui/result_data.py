@@ -428,6 +428,17 @@ class ResultBundle:
             notice = "以跨样本对齐的 MS1 特征为主行；原始 MS1 已确认且唯一匹配的其他样本 MS2 也归入该行。其余未对齐峰和 MS2 注释单独显示。"
         if features is not None:
             native = normalize_candidates(native_features)
+            if aligned_features is None:
+                # Keep real quantitative values for identified native rows too.
+                quantitative = [column for column in native if str(column).lower().endswith(".mzml")
+                                or column in {"intensity", "Area", "peak_area", "into"}]
+                if quantitative:
+                    if native._key.duplicated().any():
+                        raise ValueError("MS1 峰表中的样本与特征 ID 必须唯一")
+                    indexed = native.set_index("_key")
+                    for column in quantitative:
+                        measured = representatives._key.map(indexed[column])
+                        representatives[column] = measured
             if aligned_features is not None:
                 native = native.loc[native._aligned_feature.eq("")]
             native = native.loc[~native._key.isin(representatives._key)].copy()
@@ -533,6 +544,58 @@ class ResultBundle:
         return df.loc[mask]
 
 
+def _load_ms1_tables(run):
+    """Locate the saved detector table, including older algorithm-specific runs."""
+    from lipidbench.utils.feature_table_io import find_feature_table, load_feature_table, standardize_rt_columns_for_display
+
+    ms1 = run / "ms1"
+    metadata = {}
+    metadata_path = ms1 / "feature_table.json"
+    settings_path = run / "run_settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
+    if metadata_path.is_file():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    algorithm = metadata.get("algorithm") or settings.get("ms1", {}).get("algo")
+    if algorithm == "ms-dial":
+        algorithm = "msdial"
+    algorithms = [algorithm] if algorithm else ["pyopenms", "xcms", "asari", "msdial"]
+    table_path = None
+    if metadata.get("table"):
+        table_path = ms1 / metadata["table"]
+    else:
+        for algorithm in algorithms:
+            try:
+                table_path = find_feature_table(ms1, algorithm)
+                break
+            except FileNotFoundError:
+                pass
+    if table_path is None or not table_path.is_file():
+        # Earlier pyOpenMS runs could save a native-only table or custom basename.
+        if not metadata and "pyopenms" in algorithms:
+            native_files = sorted((ms1 / "pyopenms").glob("*_native.csv"))
+            if native_files:
+                native = native_files[0]
+                aligned = native.with_name(native.name.replace("_native.csv", ".csv"))
+                return (pd.read_csv(native, low_memory=False),
+                        pd.read_csv(aligned, low_memory=False) if aligned.is_file() else None, "pyopenms")
+        return None, None, algorithm
+    table = standardize_rt_columns_for_display(load_feature_table(table_path, algorithm), algorithm)
+    sample_columns = metadata.get("sample_columns", {})
+    provenance = run / "provenance.json"
+    if not sample_columns and provenance.is_file():
+        sources = [Path(row["path"]) for row in json.loads(provenance.read_text(encoding="utf-8")).get("inputs", [])]
+        names = {key.casefold(): source.name for source in sources for key in (source.name, source.stem, str(source))}
+        sample_columns = {str(column): names[str(column).casefold()] for column in table if str(column).casefold() in names}
+    table = table.rename(columns={key: value for key, value in sample_columns.items()
+                                 if key == value or value not in table})
+    native_path = ms1 / metadata["native_table"] if metadata.get("native_table") else table_path.with_name(table_path.stem + "_native.csv")
+    if algorithm == "pyopenms" and native_path.is_file():
+        return pd.read_csv(native_path, low_memory=False), table, algorithm
+    if "source_file" in table and table.source_file.notna().any():
+        return table, None, algorithm
+    return None, table, algorithm
+
+
 def load_result_bundle(path):
     path = Path(path)
     base = path.parent
@@ -554,28 +617,30 @@ def load_result_bundle(path):
             data = pd.read_excel(book, sheet_name=sheet)
     else:
         data = pd.read_csv(path, low_memory=False)
-    features = None
-    aligned_features = None
+    features, aligned_features, _ = _load_ms1_tables(base.parent)
     legacy_mapping = False
-    native_files = sorted((base.parent / "ms1/pyopenms").glob("*_native.csv"))
-    if native_files:
-        features = pd.read_csv(native_files[0])
-        aligned_path = native_files[0].with_name(native_files[0].name.replace("_native.csv", ".csv"))
-        if aligned_path.is_file():
-            aligned_features = pd.read_csv(aligned_path)
-            if "Aligned_Feature_ID" not in features:
-                mz_ppm = 10.0
-                settings_path = base.parent / "run_settings.json"
-                if settings_path.is_file():
-                    try:
-                        mz_ppm = float(json.loads(settings_path.read_text(encoding="utf-8"))["ms2"].get("precursor_tolerance_ppm", 10.0))
-                    except (ValueError, KeyError, TypeError):
-                        pass
-                features = infer_legacy_alignment(features, aligned_features, mz_ppm)
-                legacy_mapping = True
-            if "Aligned_Feature_ID" not in data and {"Feature_ID", "source_file"}.issubset(data):
-                mapping = features[["source_file", "Feature_ID", "Aligned_Feature_ID"]].drop_duplicates(["source_file", "Feature_ID"])
-                data = data.merge(mapping, on=["source_file", "Feature_ID"], how="left", validate="many_to_one")
+    if features is not None and aligned_features is not None:
+        if "Aligned_Feature_ID" not in features:
+            mz_ppm = 10.0
+            settings_path = base.parent / "run_settings.json"
+            if settings_path.is_file():
+                try:
+                    mz_ppm = float(json.loads(settings_path.read_text(encoding="utf-8"))["ms2"].get("precursor_tolerance_ppm", 10.0))
+                except (ValueError, KeyError, TypeError):
+                    pass
+            features = infer_legacy_alignment(features, aligned_features, mz_ppm)
+            legacy_mapping = True
+        if "Aligned_Feature_ID" not in data and {"Feature_ID", "source_file"}.issubset(data):
+            mapping = features[["source_file", "Feature_ID", "Aligned_Feature_ID"]].drop_duplicates(["source_file", "Feature_ID"])
+            data = data.merge(mapping, on=["source_file", "Feature_ID"], how="left", validate="many_to_one")
+    elif aligned_features is not None and "Feature_ID" in data:
+        # Imported cohort IDs are genuine table IDs, not newly detected local peaks.
+        valid_ids = set(aligned_features.Feature_ID.map(text))
+        current = data.get("Aligned_Feature_ID", pd.Series("", index=data.index)).map(text)
+        local_ids = data.Feature_ID.map(text)
+        assign = current.eq("") & local_ids.isin(valid_ids)
+        data = data.copy()
+        data.loc[assign, "Aligned_Feature_ID"] = local_ids.loc[assign]
     mz_ppm = 10.0
     settings_path = base.parent / "run_settings.json"
     if settings_path.is_file():
