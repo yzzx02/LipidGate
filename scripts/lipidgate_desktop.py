@@ -247,6 +247,8 @@ def main() -> int:
         _restore_worker_streams()
         from lipidgate.paths import default_positive_msp, default_negative_msp
         from lipidgate.ms2.search import LipidMS2Searcher
+        from lipidgate.ms2.native_policy import policy_backend_status
+        from lipidgate.ms2.native_engine import native_available
 
         import json
 
@@ -255,7 +257,9 @@ def main() -> int:
             searcher = LipidMS2Searcher(path)
             try:
                 print(json.dumps({"mode": mode, "records": len(searcher.library),
-                                  "seconds": time.perf_counter() - start}), flush=True)
+                                  "seconds": time.perf_counter() - start,
+                                  "numeric_kernel_available": native_available(),
+                                  "policy_modules": policy_backend_status()}), flush=True)
             finally:
                 searcher.close()
         return 0

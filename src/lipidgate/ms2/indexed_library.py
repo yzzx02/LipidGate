@@ -10,6 +10,7 @@ from array import array
 from collections import OrderedDict
 from collections.abc import Sequence
 import json
+from itertools import accumulate
 import math
 import operator
 from pathlib import Path
@@ -23,11 +24,24 @@ import zlib
 from .models import FragmentRecord, LibraryRecord
 
 
-INDEX_FORMAT_VERSION = 1
+INDEX_FORMAT_VERSION = 3
 BLOCK_SIZE = 1024
 MAX_CACHED_BLOCKS = 4
 SQL_CACHE_KIB = 4096
-RECORD_ENCODING = "tuples-v1"
+LEGACY_RECORD_ENCODING = "tuples-v1"
+TEMPLATE_RECORD_ENCODING = "fragment-templates-v2"
+RECORD_ENCODING = "fragment-columns-v3"
+
+
+def _compact_unsigned(values):
+    """Use the narrowest exact integer column; widen only at the C ABI."""
+    highest = max(values, default=0)
+    return array("B" if highest <= 255 else "H" if highest <= 65535 else "I", values)
+
+
+def _column_offsets(columns):
+    columns["offsets"] = array("I", accumulate(columns["counts"], initial=0))
+    return columns
 
 
 def _pack_record(record):
@@ -42,29 +56,127 @@ def _unpack_record(value):
     return LibraryRecord(*value[:8], fragments=[FragmentRecord(*f) for f in value[8]], metadata=value[9])
 
 
+def _template_fragment(template, position, columns=None):
+    if columns is None or columns["masses"] is None:
+        return template
+    mass = columns["masses"][position]
+    if columns["mass_kinds"][position]:
+        mass = int(mass)
+    return (mass, *template)
+
+
+def _unpack_template_record(value, templates, occurrences=None, columns=None):
+    # Repeated fragment occurrences must remain distinct objects: scoring uses
+    # fragment identity as well as mass, including repeated-chain evidence.
+    return LibraryRecord(*value[:8], fragments=[FragmentRecord(*_template_fragment(templates[i], i, columns)) for i in
+                         (value[8] if occurrences is None else occurrences)], metadata=value[9])
+
+
+def _encode_block(records):
+    """Store each exact fragment definition once, retaining every occurrence."""
+    templates, template_ids, values = [], {}, []
+    occurrences, offsets = array("I"), array("I", [0])
+    pairs, pair_ids, record_pairs = [], {}, array("I")
+    for record in records:
+        value = _pack_record(record)
+        record_occurrences = []
+        for fragment in value[8]:
+            # Byte keys also distinguish numeric types and signed zero. No
+            # rounding, m/z-only merging or fragment removal is permitted.
+            key = pickle.dumps(fragment, protocol=pickle.HIGHEST_PROTOCOL)
+            position = template_ids.get(key)
+            if position is None:
+                position = len(templates)
+                template_ids[key] = position
+                templates.append(fragment)
+            record_occurrences.append(position)
+        occurrences.extend(record_occurrences)
+        offsets.append(len(occurrences))
+        # The local row number replaces per-record lists; the flat column
+        # retains every occurrence and its exact order without duplicating it.
+        values.append((*value[:8], None, value[9]))
+        pair = (value[1], value[5])
+        pair_key = pickle.dumps(pair, protocol=pickle.HIGHEST_PROTOCOL)
+        if pair_key not in pair_ids:
+            pair_ids[pair_key] = len(pairs)
+            pairs.append(pair)
+        record_pairs.append(pair_ids[pair_key])
+    types, type_ids, fragment_types = [], {}, array("I")
+    for fragment in templates:
+        key = pickle.dumps(fragment[2], protocol=pickle.HIGHEST_PROTOCOL)
+        if key not in type_ids:
+            type_ids[key] = len(types)
+            types.append(fragment[2])
+        fragment_types.append(type_ids[key])
+    # Original tuple masses/types remain authoritative and unchanged. Only
+    # exactly representable built-in numbers receive an optional C ABI view.
+    numeric = all(type(f[0]) in (float, int) and math.isfinite(f[0]) and float(f[0]) == f[0]
+                  for f in templates)
+    columns = dict(masses=array("d", (f[0] for f in templates)) if numeric else None,
+                   mass_kinds=array("B", (int(type(f[0]) is int) for f in templates)) if numeric else None,
+                   type_names=types, type_ids=_compact_unsigned(fragment_types), occurrences=_compact_unsigned(occurrences),
+                   counts=_compact_unsigned([b-a for a,b in zip(offsets, offsets[1:])]),
+                   class_adduct_names=pairs, class_adduct_ids=_compact_unsigned(record_pairs))
+    # Store mass once in the column, with its original float/int type. The
+    # remaining annotations/weights/groups stay in exact template tuples.
+    stored_templates = [f[1:] for f in templates] if numeric else templates
+    return pickle.dumps((stored_templates, values, columns), protocol=pickle.HIGHEST_PROTOCOL)
+
+
 def _decode_block(payload, metadata):
     values = pickle.loads(zlib.decompress(payload))
     if metadata.get("record_encoding") == RECORD_ENCODING:
+        templates, records, columns = values
+        _column_offsets(columns)
+        occurrences = memoryview(columns["occurrences"])
+        offsets = columns["offsets"]
+        return [_unpack_template_record(value, templates, occurrences[offsets[i]:offsets[i+1]], columns)
+                for i, value in enumerate(records)]
+    if metadata.get("record_encoding") == TEMPLATE_RECORD_ENCODING:
+        templates, records = values
+        return [_unpack_template_record(value, templates) for value in records]
+    if metadata.get("record_encoding") == LEGACY_RECORD_ENCODING:
         return [_unpack_record(value) for value in values]
     return values
 
 
 class _RecordBlock:
-    __slots__ = ("values", "records", "packed")
+    __slots__ = ("values", "records", "packed", "templates", "column_buffers", "numeric_view")
 
     def __init__(self, payload, metadata):
         self.values = pickle.loads(zlib.decompress(payload))
-        self.packed = metadata.get("record_encoding") == RECORD_ENCODING
+        encoding = metadata.get("record_encoding")
+        self.templates = None
+        self.column_buffers = None
+        if encoding == RECORD_ENCODING:
+            self.templates, self.values, self.column_buffers = self.values
+            _column_offsets(self.column_buffers)
+        elif encoding == TEMPLATE_RECORD_ENCODING:
+            self.templates, self.values = self.values
+        self.packed = encoding in {RECORD_ENCODING, TEMPLATE_RECORD_ENCODING, LEGACY_RECORD_ENCODING}
         self.records = {}
+        # Optional numeric view shares the same four-block lifetime. It never
+        # retains a LibraryRecord or changes its fields/fragment identities.
+        self.numeric_view = None
 
     def record(self, offset):
         if not self.packed:
             return self.values[offset]
         result = self.records.get(offset)
         if result is None:
-            result = _unpack_record(self.values[offset])
+            result = (_unpack_template_record(self.values[offset], self.templates, self.occurrence_ids(offset), self.column_buffers)
+                      if self.templates is not None else _unpack_record(self.values[offset]))
             self.records[offset] = result
         return result
+
+    def occurrence_ids(self, offset):
+        if self.column_buffers is None:
+            return self.values[offset][8]
+        columns = self.column_buffers
+        return memoryview(columns["occurrences"])[columns["offsets"][offset]:columns["offsets"][offset+1]]
+
+    def fragment_template(self, position):
+        return _template_fragment(self.templates[position], position, self.column_buffers)
 
 
 def _readonly_connection(path: Path) -> sqlite3.Connection:
@@ -79,9 +191,11 @@ def _read_metadata(connection: sqlite3.Connection) -> dict:
     if row is None:
         raise ValueError("Library index is missing metadata")
     metadata = json.loads(row[0])
-    if metadata.get("index_format") != INDEX_FORMAT_VERSION:
+    supported = {1: {None, LEGACY_RECORD_ENCODING}, 2: {TEMPLATE_RECORD_ENCODING},
+                 INDEX_FORMAT_VERSION: {RECORD_ENCODING}}
+    if metadata.get("index_format") not in supported:
         raise ValueError("Library index format is incompatible")
-    if metadata.get("record_encoding") not in {None, RECORD_ENCODING}:
+    if metadata.get("record_encoding") not in supported[metadata["index_format"]]:
         raise ValueError("Library record encoding is incompatible")
     return metadata
 
@@ -131,12 +245,12 @@ def write_library_index(path: Path, records: Sequence[LibraryRecord], identity: 
         )
         for start in range(0, len(ordered), BLOCK_SIZE):
             block = ordered[start:start + BLOCK_SIZE]
-            payload = pickle.dumps([_pack_record(record) for record in block], protocol=pickle.HIGHEST_PROTOCOL)
+            payload = zlib.compress(_encode_block(block), level=6)
             # Every normalized field and stable record order must survive storage.
-            if [_unpack_record(value) for value in pickle.loads(payload)] != block:
+            if _decode_block(payload, metadata) != block:
                 raise ValueError(f"Library block {start // BLOCK_SIZE} changed during serialization")
             connection.execute("INSERT INTO blocks VALUES (?, ?)",
-                               (start // BLOCK_SIZE, zlib.compress(payload, level=6)))
+                               (start // BLOCK_SIZE, payload))
             connection.executemany("INSERT INTO entries VALUES (?, ?, ?, ?)",
                                    ((start + offset, record.precursor_mz, class_ids[record.compound_class], adduct_ids[record.adduct])
                                     for offset, record in enumerate(block)))
@@ -152,6 +266,94 @@ def write_library_index(path: Path, records: Sequence[LibraryRecord], identity: 
         if connection is not None:
             connection.close()
         temporary.unlink(missing_ok=True)
+
+
+def repack_library_index(source: Path, destination: Path, identity: dict, *, expected_identity: dict) -> dict:
+    """Stream a storage-only migration of already normalized records.
+
+    Callers must establish that normalization is unchanged. This is not a
+    replacement for reparsing a library after library-content or rule changes.
+    Pin the input identity explicitly, retain its provenance, verify every
+    record and precursor entry, and keep only one block in working memory.
+    """
+    from .provenance import sha256
+
+    source, destination = Path(source), Path(destination)
+    if not {"version", "source_sha256", "rules_sha256"}.issubset(expected_identity):
+        raise ValueError("Source library identity must include version, source and code fingerprints")
+    if source.resolve() == destination.resolve():
+        raise ValueError("Repacking requires a separate source index")
+    original = _readonly_connection(source)
+    connection = None
+    temporary = None
+    try:
+        prior = _read_metadata(original)
+        if not all(prior.get(key) == value for key, value in expected_identity.items()):
+            raise ValueError("Source library index identity changed")
+        if any(prior.get(key) != identity.get(key) for key in ("version", "source_sha256")):
+            raise ValueError("Repacking cannot change the normalized library version or source")
+        metadata = dict(prior, **identity, index_format=INDEX_FORMAT_VERSION,
+                        record_encoding=RECORD_ENCODING,
+                        normalized_from_index_sha256=sha256(source),
+                        normalized_from_rules_sha256=prior["rules_sha256"])
+        if original.execute("SELECT COUNT(*) FROM entries").fetchone()[0] != metadata["record_count"]:
+            raise ValueError("Source index record count is inconsistent")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=destination.stem, suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+        connection = sqlite3.connect(temporary)
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.execute("PRAGMA temp_store=MEMORY")
+        connection.execute(f"PRAGMA cache_size=-{SQL_CACHE_KIB}")
+        connection.executescript(
+            "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+            "CREATE TABLE entries (ordinal INTEGER PRIMARY KEY, precursor REAL NOT NULL, "
+            "class_id INTEGER NOT NULL, adduct_id INTEGER NOT NULL);"
+            "CREATE TABLE blocks (block_id INTEGER PRIMARY KEY, payload BLOB NOT NULL);"
+        )
+        class_ids = {value: index for index, value in enumerate(metadata["classes"])}
+        adduct_ids = {value: index for index, value in enumerate(metadata["adducts"])}
+        verified, last_precursor = 0, -math.inf
+        for expected_block, (block_id, payload) in enumerate(original.execute("SELECT block_id, payload FROM blocks ORDER BY block_id")):
+            if block_id != expected_block or verified != block_id * metadata["block_size"]:
+                raise ValueError("Source index block sequence is inconsistent")
+            records = _decode_block(payload, prior)
+            if not records or len(records) > metadata["block_size"]:
+                raise ValueError("Source index block length is inconsistent")
+            encoded = zlib.compress(_encode_block(records), level=6)
+            if _decode_block(encoded, metadata) != records:
+                raise ValueError(f"Library block {block_id} changed during repacking")
+            entries = [(verified + offset, r.precursor_mz, class_ids[r.compound_class], adduct_ids[r.adduct])
+                       for offset, r in enumerate(records)]
+            stored = original.execute(
+                "SELECT ordinal, precursor, class_id, adduct_id FROM entries WHERE ordinal>=? AND ordinal<? ORDER BY ordinal",
+                (verified, verified + len(records)),
+            ).fetchall()
+            if entries != stored or any(r.precursor_mz < last_precursor for r in records):
+                raise ValueError("Source records disagree with the precursor index")
+            if any(a.precursor_mz > b.precursor_mz for a, b in zip(records, records[1:])):
+                raise ValueError("Source record order is inconsistent")
+            last_precursor = records[-1].precursor_mz
+            connection.execute("INSERT INTO blocks VALUES (?, ?)", (block_id, encoded))
+            connection.executemany("INSERT INTO entries VALUES (?, ?, ?, ?)", entries)
+            verified += len(records)
+        if verified != metadata["record_count"]:
+            raise ValueError("Source index has missing record blocks")
+        connection.execute("INSERT INTO metadata VALUES ('library', ?)", (json.dumps(metadata),))
+        connection.commit()
+        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise ValueError("Repacked library index failed integrity verification")
+        connection.close()
+        connection = None
+        temporary.replace(destination)
+        return metadata
+    finally:
+        original.close()
+        if connection is not None:
+            connection.close()
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class IndexedLibrary(Sequence):
@@ -204,6 +406,9 @@ class IndexedLibrary(Sequence):
         position = self._positions[operator.index(index)]
         block_size = self.metadata["block_size"]
         block_id, offset = divmod(position, block_size)
+        return self._get_block(block_id).record(offset)
+
+    def _get_block(self, block_id):
         block = self._blocks.get(block_id)
         if block is None:
             if self._connection is None:
@@ -217,7 +422,19 @@ class IndexedLibrary(Sequence):
                 self._blocks.popitem(last=False)
         else:
             self._blocks.move_to_end(block_id)
-        return block.record(offset)
+        return block
+
+    def candidate_record_blocks(self, left, right):
+        """Yield packed blocks and visible/local indexes without decoding records."""
+        block_size = self.metadata["block_size"]
+        while left < right:
+            block_id = self._positions[left] // block_size
+            indexes, offsets = [], []
+            while left < right and self._positions[left] // block_size == block_id:
+                indexes.append(left)
+                offsets.append(self._positions[left] % block_size)
+                left += 1
+            yield self._get_block(block_id), indexes, offsets
 
     def close(self):
         if self._connection is not None:

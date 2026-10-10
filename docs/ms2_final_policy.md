@@ -12,10 +12,30 @@ new benchmark explicitly justifies a change.
 - `ranking_policy.py`: Top1 tie handling and effective fragment counts.
 - `library_fragment_policy.py`: runtime normalization of curated library fragments.
 - `search.py`: spectrum orchestration, shared-peak iteration, and result export.
+- `record_facts.py`: reuse read-only record facts during one candidate score;
+  discard the cache on return or error, without changing gates or scores.
 
 Library parsing must not contain class-specific scoring or ranking decisions.
 Passing a gate must not itself award a high score, and a high score must not
 bypass a required gate.
+
+## Storage and search optimization invariants
+
+The v2 disk index stores each exact fragment definition once within a block,
+with an ordered list of occurrences for each record. Mass, numeric types,
+labels, weights, required groups and provenance remain intact. Decoding creates
+distinct fragment objects for repeated occurrences because scoring also uses
+fragment identity. Equal m/z alone is never a deduplication key.
+
+Class/adduct text caches hold at most 256 entries each; chain/fragment text
+caches hold at most 4096 entries each. Parsed chain lists and counters remain
+independent for callers. The library still decodes at most four 1024-record
+blocks. No additional whole-library object cache is used.
+
+Streaming index repacking requires an explicitly pinned source identity and
+unchanged normalization. It verifies every record and precursor entry, retains
+the source index/code identities, and replaces the output atomically. Library
+content or normalization changes require a fresh parse and regression checks.
 
 ## Positive PE-P supporting evidence
 

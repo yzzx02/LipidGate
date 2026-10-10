@@ -47,6 +47,10 @@ def check(executable: Path) -> dict:
                                   f"current_{item['mode']}.catalog.json").read_text())
             if item["records"] != catalog["record_count"]:
                 raise RuntimeError("Packaged library count does not match the source catalog")
+            if not item.get("numeric_kernel_available") or not item.get("policy_modules") or any(
+                not origin.endswith((".pyd", ".so")) for origin in item["policy_modules"].values()
+            ):
+                raise RuntimeError("Packaged native search/policy extensions did not load")
 
         import numpy as np
         import pyopenms as oms

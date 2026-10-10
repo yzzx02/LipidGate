@@ -50,6 +50,8 @@ python -m lipidgate gui
 
 首次从 MSP 生成索引是开发构建步骤，需要额外时间和内存；后续运行复用索引。GitHub 自动生成的 `Source code (zip/tar.gz)` 可能只有 Git LFS 指针，请使用提供的 Source 包或执行 `git lfs pull`。
 
+开发中的 C++ 版本包含批量碎片匹配内核，并直接编译现有评分、门控和排序等热点源码，保留原规则及 Python/NumPy 数值行为。源码环境可先执行 `python scripts/build_native_search.py` 和 `python scripts/build_native_policy.py`，再生成索引；需要 GCC/Clang C++17 编译器和 Cython 3.3.0，Windows 可使用 Rtools45。缺失或不兼容的扩展会使用 Python 源码。此优化尚未替换已发布的 v1.0.0 程序包。构建和验证步骤见 [Windows 构建说明](docs/windows_exe.md)。
+
 ```powershell
 python -m lipidgate --help
 python -m lipidgate project-run --project "path/to/project"

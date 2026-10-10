@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Sequence
 
 from .chain_utils import (
@@ -149,7 +150,12 @@ CHAIN_EVIDENCE_PROFILES: tuple[ChainEvidenceProfile, ...] = (
 
 
 def normalized_class_key(compound_class: object) -> str:
-    return re.sub(r"[^A-Z0-9]+", "", str(compound_class or "").upper())
+    return _normalized_class_text(str(compound_class or ""))
+
+
+@lru_cache(maxsize=256)
+def _normalized_class_text(text: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "", text.upper())
 
 
 def record_polarity(record: LibraryRecord) -> str:

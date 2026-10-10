@@ -30,3 +30,17 @@ application with compatible dependencies. Other third-party software is
 attributed in its included license notices. Scientific MSP fragment definitions
 are maintained separately from program licensing; curation scripts and the
 MS2 evidence policy record the implemented scientific changes and references.
+
+The optional Windows C++ search kernel is built with GCC 14.3.0 and links the
+GCC/libstdc++ runtime under GPL v3 with the GCC Runtime Library Exception 3.1.
+Copyright belongs to the Free Software Foundation and the respective runtime
+contributors. Texts are supplied in `licenses/GCC/`; upstream sources and
+runtime terms are at [GCC 14.3.0](https://gcc.gnu.org/releases.html) and
+[GCC Runtime Library Exception](https://www.gnu.org/licenses/gcc-exception-3.1.html).
+LipidIN is used only in external research benchmarks; its EQ code is not linked
+into or shipped as part of LipidGate.
+
+Policy extensions are generated with Cython 3.3.0 (Cython Developers, Apache
+License 2.0). The generated support code retains its attribution; the license
+text is supplied in `licenses/Cython/`. Cython is a build tool, not an additional
+end-user runtime. See [Cython](https://cython.org/).

@@ -26,7 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=9"]
-build = ["pyinstaller"]
+build = ["pyinstaller", "Cython==3.3.0"]
 
 [project.urls]
 Repository = "https://github.com/yzzx02/LipidGate"
@@ -41,6 +41,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 lipidbench = ["runners/*.R"]
+"lipidgate.ms2" = ["native_backend/*.cpp", "native_backend/*.dll", "native_backend/*.so", "native_backend/*.dylib", "native_backend/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

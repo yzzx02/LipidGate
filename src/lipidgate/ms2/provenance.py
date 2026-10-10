@@ -17,13 +17,15 @@ def sha256(path: Path) -> str:
 def code_fingerprint(root: Path) -> str:
     """Include uncommitted effective code, not timestamps or unrelated outputs."""
     digest = hashlib.sha256()
-    paths = sorted(root.rglob("*.py"))
-    if not paths and getattr(sys, "frozen", False):
+    python_paths = list(root.rglob("*.py"))
+    if not python_paths and getattr(sys, "frozen", False):
         if root.name == "ms2":
             rules_file = Path(sys._MEIPASS) / "libraries" / "ms2" / "prebuilt" / "cache_rules_sha256.txt"
             if rules_file.is_file():
                 return rules_file.read_text(encoding="ascii").strip()
         return sha256(Path(sys.executable))
+    paths = sorted(path for path in root.rglob("*")
+                   if path.is_file() and path.suffix in {".py", ".cpp", ".h", ".dll", ".pyd", ".so", ".dylib"})
     for path in paths:
         digest.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
         digest.update(path.read_bytes())

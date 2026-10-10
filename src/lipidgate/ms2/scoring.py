@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from functools import lru_cache
 from typing import Callable, Dict, List, Sequence, Tuple
 
 from .esterified_ceramide import is_esterified_ceramide
 from .negative_hexcer import is_negative_hexcer, logical_fragment_types
 from .matching import match_fragments
+from .record_facts import cached_fragment_fact, cached_record_fact, with_record_facts
 from .positive_gm3 import is_positive_gm3
 from .positive_pe_cer import is_positive_pe_cer
 from .positive_pc_sodium import is_positive_pc_sodium, HG_NAMES as PC_SODIUM_HG_NAMES
@@ -176,14 +178,17 @@ PRECURSOR_FRAGMENT_REQUIRED_CLASSES = {"NAASP"}
 POSITIVE_HG_CHAIN_LEVEL_CLASSES = {
     "CL", "MLCL", "NAPE", "LNAPE",
 }
+@lru_cache(maxsize=256, typed=True)
 def _is_positive_adduct(adduct: str) -> bool:
     return str(adduct or "").strip().endswith("+")
 
 
+@lru_cache(maxsize=256, typed=True)
 def _normalized_compound_class(compound_class: str) -> str:
     return str(compound_class or "").strip().upper()
 
 
+@lru_cache(maxsize=256, typed=True)
 def _normalized_class_key(compound_class: str) -> str:
     return _normalized_compound_class(compound_class).replace("-", "")
 
@@ -329,6 +334,7 @@ def _empty_pool_scores() -> Dict[str, PoolScore]:
     }
 
 
+@cached_record_fact
 def _fa_frag_counts_as_effective_loss(record: LibraryRecord) -> bool:
     return (
         _is_positive_adduct(record.adduct)
@@ -336,6 +342,7 @@ def _fa_frag_counts_as_effective_loss(record: LibraryRecord) -> bool:
     )
 
 
+@cached_fragment_fact
 def _fragment_counts_as_effective_loss(record: LibraryRecord, fragment: FragmentRecord) -> bool:
     if _is_positive_ps_record(record):
         return (
@@ -350,6 +357,7 @@ def _fragment_counts_as_effective_loss(record: LibraryRecord, fragment: Fragment
     )
 
 
+@cached_fragment_fact
 def _fragment_counts_as_fa_loss_gate(record: LibraryRecord, fragment: FragmentRecord) -> bool:
     if _is_positive_ps_record(record):
         return (
@@ -371,6 +379,7 @@ def _fragment_counts_as_chain_resolving_loss(record: LibraryRecord, fragment: Fr
     return _fragment_counts_as_effective_loss(record, fragment)
 
 
+@cached_record_fact
 def _record_has_diagnostic_hg(record: LibraryRecord) -> bool:
     return any(
         fragment.fragment_type == "Diagnostic_HG"
@@ -379,10 +388,12 @@ def _record_has_diagnostic_hg(record: LibraryRecord) -> bool:
     )
 
 
+@cached_record_fact
 def _record_has_candidate_hg(record: LibraryRecord) -> bool:
     return any(fragment.fragment_type == CANDIDATE_HG_FRAGMENT_TYPE for fragment in record.fragments)
 
 
+@cached_fragment_fact
 def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> bool:
     if _is_positive_ps_record(record):
         return _is_positive_ps_headgroup_loss(fragment)
@@ -417,6 +428,7 @@ def _is_ahexcer_overlapping_lcb_loss(fragment: FragmentRecord) -> bool:
     )
 
 
+@cached_fragment_fact
 def _scoring_pools_for_fragment(
     record: LibraryRecord,
     fragment: FragmentRecord,
@@ -438,6 +450,7 @@ def _scoring_pools_for_fragment(
     return (primary_pool,)
 
 
+@cached_fragment_fact
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
     if _normalized_class_key(record.compound_class).startswith("OX") and is_oxidized_precursor_water_loss(fragment):
         return "other"
@@ -548,6 +561,7 @@ def _record_expected_fah_tokens(record: LibraryRecord) -> List[str]:
     return tokens
 
 
+@cached_record_fact
 def _record_hg_fragment_count(record: LibraryRecord) -> int:
     return sum(1 for fragment in record.fragments if _fragment_counts_as_hg(record, fragment))
 
@@ -582,16 +596,19 @@ def _matched_hg_fragment_count(
     return len(matched_hg_fragments)
 
 
+@cached_record_fact
 def _record_loss_fragment_count(record: LibraryRecord) -> int:
     return sum(1 for fragment in record.fragments if _fragment_counts_as_effective_loss(record, fragment))
 
 
+@cached_record_fact
 def _record_fa_loss_fragment_count(record: LibraryRecord) -> int:
     if _is_positive_adduct(record.adduct):
         return _chain_evidence_count_for_fragments(record, record.fragments, _fragment_counts_as_fa_loss_gate)
     return sum(1 for fragment in record.fragments if _fragment_counts_as_fa_loss_gate(record, fragment))
 
 
+@cached_record_fact
 def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
     return _chain_evidence_count_for_fragments(
         record,
@@ -634,6 +651,7 @@ def _positive_glyceride_rco_gate_passes(record: LibraryRecord, matches: Sequence
     )
 
 
+@cached_record_fact
 def _record_positive_signature_fragment_count(record: LibraryRecord) -> int:
     return sum(
         1
@@ -1506,6 +1524,7 @@ def _score_fa_precursor_only_candidate(
     fragment_mz_tolerance: float | None,
     fragment_ppm_tolerance: float | None,
     experimental_mz: Sequence[float] | None,
+    precomputed_matches: Sequence[FragmentMatch] | None = None,
 ) -> CandidateScore:
     ppm_error = ((spectrum.precursor_mz - record.precursor_mz) / record.precursor_mz) * 1e6
     mz_error_da = abs(spectrum.precursor_mz - record.precursor_mz)
@@ -1528,7 +1547,7 @@ def _score_fa_precursor_only_candidate(
             downgrade_reason="precursor_out_of_tolerance",
         )
 
-    matches = _match_fragments(
+    matches = precomputed_matches if precomputed_matches is not None else _match_fragments(
         spectrum.peaks,
         precursor_fragments,
         fragment_mz_tolerance,
@@ -1568,6 +1587,7 @@ def _score_fa_precursor_only_candidate(
     )
 
 
+@with_record_facts
 def score_candidate(
     spectrum: ExperimentalSpectrum,
     record: LibraryRecord,
@@ -1577,6 +1597,7 @@ def score_candidate(
     fragment_mz_tolerance: float | None = 0.01,
     fragment_ppm_tolerance: float | None = None,
     experimental_mz: Sequence[float] | None = None,
+    precomputed_matches: Sequence[FragmentMatch] | None = None,
 ) -> CandidateScore:
     fa_precursor_fragments = _record_precursor_ion_fragments(record) if _is_fa_record(record) else []
     if fa_precursor_fragments:
@@ -1590,6 +1611,7 @@ def score_candidate(
             fragment_mz_tolerance=fragment_mz_tolerance,
             fragment_ppm_tolerance=fragment_ppm_tolerance,
             experimental_mz=experimental_mz,
+            precomputed_matches=precomputed_matches,
         )
 
     (
@@ -1643,7 +1665,7 @@ def score_candidate(
             matched_relative_intensity_sum=0.0,
             downgrade_reason="precursor_out_of_tolerance",
         )
-    matches = _match_fragments(
+    matches = precomputed_matches if precomputed_matches is not None else _match_fragments(
         spectrum.peaks,
         record.fragments,
         fragment_mz_tolerance,

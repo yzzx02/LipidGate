@@ -6,12 +6,18 @@ environments. See [user guide](user_guide.md).
 Use Windows x64 and an isolated Python environment. Version 1.0.0 was verified
 on Python 3.13. `requirements-build.txt` records the build package versions.
 Get actual source libraries through Git LFS or the Source release asset.
+Building the optional search kernel requires a C++17 compiler (`g++` or
+`clang++`). Windows builds can use Rtools45; pass `--compiler` or set `CXX` for
+another GCC/Clang installation. Compiled Windows packages include the kernel;
+users downloading the executable do not need a compiler.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-build.txt
 python -m pip install -e .
+python scripts/build_native_search.py
+python scripts/build_native_policy.py
 python -m pytest -q --junitxml=build/verification/tests.xml
 python scripts/build_prebuilt_libraries.py
 python -m PyInstaller --noconfirm LipidGate.spec
@@ -23,6 +29,14 @@ The first index build is a development step requiring additional memory and
 time. Valid indexes are reused without expansion. The spec bundles indexes,
 catalogs, fonts/icons, XCMS bridge, mzML dictionaries and license notices.
 The Qt hook selects separate GUI and pyOpenMS worker DLLs before imports.
+The native build uses strict float64 operations without fast-math or FMA
+contraction. Its manifest records compiler flags and binary/source fingerprints.
+Compile it before building indexes so their effective-code identity agrees.
+Source execution without a kernel retains Python matching.
+Policy extensions are generated directly from the existing Python files with
+Cython 3.3.0. Inference/annotation typing are disabled to retain Python/NumPy
+numeric semantics. Their manifest records the CPython ABI and every source/
+binary hash. Generated C++, objects and local extensions stay out of Git.
 
 Frozen checks use an isolated cache to verify both libraries, GUI and plots,
 MS1 EIC/MS2 rendering from a synthetic mzML, and backend execution. Packaging

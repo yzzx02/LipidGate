@@ -1,5 +1,12 @@
 __pycache__/
 *.py[cod]
+# Locally compiled optional numeric kernel; release builds include it.
+src/lipidgate/ms2/native_backend/search_core.dll
+src/lipidgate/ms2/native_backend/search_core.so
+src/lipidgate/ms2/native_backend/search_core.dylib
+src/lipidgate/ms2/native_backend/search_core.json
+src/lipidgate/ms2/native_backend/policy/
+src/lipidgate/ms2/*.pyd
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

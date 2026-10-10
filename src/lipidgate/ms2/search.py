@@ -127,6 +127,8 @@ class LipidMS2Searcher:
         allowed_classes: Sequence[str] | None = None,
         precursor_mz_min: float | None = None,
         precursor_mz_max: float | None = None,
+        use_native_engine: bool = True,
+        native_min_candidates: int = 128,
     ) -> None:
         self.precursor_mz_min, self.precursor_mz_max = validate_precursor_range(precursor_mz_min, precursor_mz_max)
         # Keep theoretical candidates just outside the boundary when they can
@@ -188,6 +190,8 @@ class LipidMS2Searcher:
         self.min_relative_intensity = min_relative_intensity
         self.min_total_score = max(0.0, float(min_total_score))
         self.use_fragment_index = bool(use_fragment_index)
+        self.use_native_engine = bool(use_native_engine)
+        self.native_min_candidates = max(0, int(native_min_candidates))
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
         self.last_output_path: Path | None = None
 
@@ -266,10 +270,12 @@ class LipidMS2Searcher:
     def _score_sphingo_candidate(
         self, spectrum: ExperimentalSpectrum, record: LibraryRecord,
         experimental_mz: Sequence[float] | None = None,
+        precomputed_matches: Sequence[FragmentMatch] | None = None,
     ) -> CandidateScore:
         return score_sphingolipid_candidate(
             spectrum, record,
-            matches=self._match_fragments_for_record(spectrum, record, experimental_mz),
+            matches=(precomputed_matches if precomputed_matches is not None else
+                     self._match_fragments_for_record(spectrum, record, experimental_mz)),
             rule=SPHINGOLIPID_RULEBOOK[self._sphingo_rule_key(record)], series=self._sphingo_series(record),
             rules=getattr(self, "rules", DEFAULT_RULES),
             precursor_tolerance_da=getattr(self, "precursor_tolerance_da", None),
@@ -910,16 +916,40 @@ class LipidMS2Searcher:
     def score_spectrum(self, spectrum: ExperimentalSpectrum, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> List[Dict[str, object]]:
         from .evidence_export import evidence_json
         left, right = self._find_candidate_index_range(spectrum.precursor_mz)
-        candidate_indexes = self._candidate_indexes_with_fragment_overlap(spectrum, left, right)
+        native_matches = None
+        # Custom searcher overrides retain their Python matching behavior.
+        if (left < right and right-left >= getattr(self, "native_min_candidates", 128)
+                and getattr(self, "use_native_engine", True) and type(self) is LipidMS2Searcher
+                and getattr(self._fragment_window_da, "__func__", None) is LipidMS2Searcher._fragment_window_da
+                and getattr(self._candidate_indexes_with_fragment_overlap, "__func__", None)
+                    is LipidMS2Searcher._candidate_indexes_with_fragment_overlap
+                and getattr(self._match_fragments_for_record, "__func__", None)
+                    is LipidMS2Searcher._match_fragments_for_record
+                and getattr(self._score_sphingo_candidate, "__func__", None) is LipidMS2Searcher._score_sphingo_candidate):
+            from .native_engine import prepare_indexed_matches
+            native_matches = prepare_indexed_matches(
+                self.library, spectrum, left, right,
+                tolerance_da=self.fragment_tolerance_da,
+                tolerance_ppm=getattr(self, "fragment_tolerance_ppm", None),
+                prefilter=self.use_fragment_index and right - left > self.fragment_prefilter_min_candidates,
+                glyceride_classes=POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
+                loss_types=LOSS_FRAGMENT_TYPES, sphingo_keys=SPHINGOLIPID_RULEBOOK,
+            )
+        candidate_indexes = (list(native_matches) if native_matches is not None else
+                             self._candidate_indexes_with_fragment_overlap(spectrum, left, right))
         experimental_mz = [peak.mz for peak in spectrum.peaks]
         scored = []
         for record_index in candidate_indexes:
             record = self.library[record_index]
             if not self._candidate_charge_is_compatible(spectrum, record):
                 continue
+            match_options = {}
+            if native_matches is not None:
+                from .native_engine import materialize_matches
+                match_options["precomputed_matches"] = materialize_matches(spectrum, record, native_matches[record_index])
             sphingo_key = self._sphingo_rule_key(record)
             if sphingo_key in SPHINGOLIPID_RULEBOOK:
-                candidate_score = self._score_sphingo_candidate(spectrum, record, experimental_mz=experimental_mz)
+                candidate_score = self._score_sphingo_candidate(spectrum, record, experimental_mz=experimental_mz, **match_options)
             else:
                 rule = self.rules.get(record.compound_class)
                 candidate_score = score_candidate(
@@ -931,6 +961,7 @@ class LipidMS2Searcher:
                     fragment_mz_tolerance=self.fragment_tolerance_da,
                     fragment_ppm_tolerance=getattr(self, "fragment_tolerance_ppm", None),
                     experimental_mz=experimental_mz,
+                    **match_options,
                 )
 
             scored.append(candidate_score)

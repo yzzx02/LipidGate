@@ -1,6 +1,9 @@
 """Lightweight public API; load search/workflow only when requested."""
 from importlib import import_module
 from .models import ExperimentalPeak, ExperimentalSpectrum, FragmentRecord, LibraryRecord
+from .native_policy import install_native_policies
+
+install_native_policies()
 
 _LAZY = {
     "LipidMS2Searcher": ".search",

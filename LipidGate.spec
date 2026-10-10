@@ -11,11 +11,15 @@ from PyInstaller.utils.hooks import collect_submodules
 root = Path(SPECPATH)
 sys.path.insert(0, str(root / "scripts"))
 from build_prebuilt_libraries import ensure_prebuilt
+from build_native_search import ensure_native
+from build_native_policy import ensure_policy
 
+native = ensure_native(root)
+policies = ensure_policy(root)
 prebuilt = ensure_prebuilt(root)
 pyopenms_dir = Path(next(iter(importlib.util.find_spec("pyopenms").submodule_search_locations)))
 pymzml_dir = Path(next(iter(importlib.util.find_spec("pymzml").submodule_search_locations)))
-hiddenimports = collect_submodules("lipidgate.ms2")
+hiddenimports = collect_submodules("lipidgate.ms2", filter=lambda name: ".native_backend" not in name)
 datas = [
     (str(root / "assets"), "assets"),
     (str(root / "LICENSE"), "."),
@@ -30,12 +34,16 @@ datas = [
     (str(pyopenms_dir / "share"), "pyopenms/share"),
     (str(pymzml_dir / "version.txt"), "pymzml"),
     (str(pymzml_dir / "obo"), "pymzml/obo"),
+    (str(native.with_suffix(".json")), "lipidgate/ms2/native_backend"),
+    (str(policies / "manifest.json"), "lipidgate/ms2/native_backend/policy"),
 ]
 
 analysis = Analysis(
     [str(root / "scripts" / "lipidgate_desktop.py")],
     pathex=[str(root / "src")],
-    binaries=[],
+    binaries=[(str(native), "lipidgate/ms2/native_backend"),
+              *[(str(p), "lipidgate/ms2/native_backend/policy") for p in policies.iterdir()
+                if p.suffix in {".pyd", ".so"}]],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

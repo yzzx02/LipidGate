@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from functools import lru_cache
 
 from .models import FragmentRecord, LibraryRecord
 
@@ -38,12 +39,17 @@ def canonical_chain_token(match: re.Match[str]) -> str:
 
 def extract_chain_tokens(name: object) -> list[str]:
     """Extract every explicit non-zero chain from a lipid name."""
+    # Cache immutable text results; callers still receive independent lists.
+    return list(_chain_tokens_text(str(name or "")))
 
-    return [
+
+@lru_cache(maxsize=4096)
+def _chain_tokens_text(text: str) -> tuple[str, ...]:
+    return tuple(
         match.group(0)
-        for match in CHAIN_TOKEN_RE.finditer(str(name or ""))
+        for match in CHAIN_TOKEN_RE.finditer(text)
         if match.group(0) != "0:0"
-    ]
+    )
 
 
 def extract_fragment_chain_token(fragment_or_name: FragmentRecord | object) -> str | None:
@@ -54,7 +60,12 @@ def extract_fragment_chain_token(fragment_or_name: FragmentRecord | object) -> s
         if isinstance(fragment_or_name, FragmentRecord)
         else fragment_or_name
     )
-    matched = FRAGMENT_CHAIN_TOKEN_RE.search(str(name or ""))
+    return _fragment_chain_token_text(str(name or ""))
+
+
+@lru_cache(maxsize=4096)
+def _fragment_chain_token_text(text: str) -> str | None:
+    matched = FRAGMENT_CHAIN_TOKEN_RE.search(text)
     return canonical_chain_token(matched) if matched is not None else None
 
 
