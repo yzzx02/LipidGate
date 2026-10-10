@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lipidgate"
-version = "1.0.2"
+version = "1.0.3"
 description = "Lipid feature detection, MS2 identification and ordered ECN retention-time filtering."
 readme = "README.md"
 license = {file = "LICENSE"}

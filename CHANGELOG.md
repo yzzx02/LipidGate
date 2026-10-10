@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.3 — 2026-10-10
+
+- Add a strict C++17 batched numerical matcher and compile eleven existing
+  policy modules to C++ extensions while retaining Python/NumPy arithmetic,
+  evidence gates, candidate order, scores, confidence and audit fields. Verify
+  source/binary/ABI identities, keep source fallback, and avoid C ABI overhead
+  below 128 candidates.
+- Store library fragment columns losslessly in compact format 3. Retain every
+  ordered occurrence and annotation; keep the four-block cache and existing
+  class/adduct/mass restrictions. Reduce both runtime indexes by 4.46% from the
+  preceding format-2 development checkpoint without deleting MSP content.
+- Document full-search timing separately from numerical matching and actual
+  upstream LipidIN Rcpp EQ; distinguish the older Python EQ approximation.
+- Integrate all v1.0.2 project, EIC, Windows and result-window fixes. Verify both
+  policy paths, complete real-data result equality and packaged application
+  behavior; record native component hashes with release fingerprints.
+- Keep older release tags/assets and use version-specific local build folders.
+
 ## 1.0.2 — 2026-10-08
 
 - Separate New Project and Open Project. Save named `.lipidgate` files, open

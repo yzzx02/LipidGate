@@ -3,6 +3,8 @@
 
 # Stable provenance bytes across clones
 *.py text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
 *.R text eol=lf
 *.md text eol=lf
 *.json text eol=lf
@@ -11,3 +13,6 @@
 *.toml text eol=lf
 *.spec text eol=lf
 *.txt text eol=lf
+
+# Preserve whitespace in upstream license notices.
+licenses/** -whitespace

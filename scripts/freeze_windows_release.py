@@ -14,7 +14,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
-def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path, tests_log: Path | None = None) -> dict:
+def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
+           tests_log: Path | None = None, dist_dir: Path | None = None) -> dict:
     root = root.resolve()
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a numeric major.minor.patch version")
@@ -29,7 +30,8 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path, tests
     tests = sum(int(s.get("tests",0)) for s in suites)
     if tests == 0:
         raise ValueError("An empty test report cannot verify a release")
-    executable = root / "dist" / "LipidGate.exe"
+    dist = Path(dist_dir).resolve() if dist_dir is not None else root / "dist"
+    executable = dist / "LipidGate.exe"
     frozen = json.loads(frozen_report.read_text(encoding="utf-8"))
     digest = sha256(executable)
     if frozen.get("executable_sha256") != digest or not all(frozen.get(key) for key in ("backend_verified","gui_verified")):
@@ -58,6 +60,14 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path, tests
                     maximum_cached_records=BLOCK_SIZE*MAX_CACHED_BLOCKS,
                     executable=dict(name=executable.name,bytes=executable.stat().st_size,sha256=digest),
                     libraries={},verification=verification)
+    native_dir = root / "src" / "lipidgate" / "ms2" / "native_backend"
+    kernel_manifest = native_dir / "search_core.json"
+    policy_manifest = native_dir / "policy" / "manifest.json"
+    if kernel_manifest.is_file() and policy_manifest.is_file():
+        manifest["native_backends"] = dict(
+            numeric_kernel=json.loads(kernel_manifest.read_text(encoding="utf-8")),
+            policy_extensions=json.loads(policy_manifest.read_text(encoding="utf-8")),
+        )
     for mode in ("positive","negative"):
         prebuilt = root / "build" / "prebuilt_libraries"
         metadata = json.loads((prebuilt / f"current_{mode}.catalog.json").read_text())
@@ -75,7 +85,6 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path, tests
     text = json.dumps(manifest,indent=2,ensure_ascii=False)+"\n"
     (root / "config").mkdir(exist_ok=True)
     (root / "config" / f"release_v{version}.json").write_text(text,encoding="utf-8")
-    dist = root / "dist"
     (dist / "VERSION.json").write_text(text,encoding="utf-8")
     (dist / "使用说明.txt").write_text((root / "docs" / "user_guide.md").read_text(encoding="utf-8"),encoding="utf-8-sig")
     files = [executable,dist/"VERSION.json",dist/"使用说明.txt",root/"LICENSE",root/"THIRD_PARTY_NOTICES.md"]
@@ -130,5 +139,6 @@ if __name__ == "__main__":
     parser.add_argument("--tests-xml",type=Path,required=True)
     parser.add_argument("--tests-log",type=Path)
     parser.add_argument("--frozen-report",type=Path,required=True)
+    parser.add_argument("--dist-dir",type=Path,help="Version-specific output directory containing the verified EXE")
     args = parser.parse_args()
-    print(json.dumps(freeze(args.root,args.version,args.tests_xml,args.frozen_report,args.tests_log),indent=2))
+    print(json.dumps(freeze(args.root,args.version,args.tests_xml,args.frozen_report,args.tests_log,args.dist_dir),indent=2))

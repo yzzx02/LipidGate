@@ -29,8 +29,25 @@ jobs:
         run: |
           python -m pip install -r requirements-build.txt
           python -m pip install --no-deps -e .
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+      - name: Build and verify strict C++ backends
+        shell: msys2 {0}
+        run: |
+          export CXX="$(cygpath -w "$(command -v g++)")"
+          python scripts/build_native_search.py
+          python scripts/build_native_policy.py
+          python -c "from lipidgate.ms2.search import LipidMS2Searcher; from lipidgate.ms2.native_engine import native_available; from lipidgate.ms2.native_policy import policy_backend_status; assert native_available(); assert len(policy_backend_status()) == 11"
       - name: Run regression suite
         run: python -m pytest -q --junitxml=build/verification/tests.xml
+      - name: Verify Python policy fallback
+        env:
+          LIPIDGATE_PYTHON_POLICY: '1'
+        run: python -m pytest -q --junitxml=build/verification/tests_python.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:

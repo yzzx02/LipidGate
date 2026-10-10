@@ -6,7 +6,7 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 下载与运行
 
-从 [v1.0.2 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.2) 下载 **LipidGate-v1.0.2-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
+从 [v1.0.3 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.3) 下载 **LipidGate-v1.0.3-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
 
 1. 点击「新建项目」，在独立文件夹保存 `.lipidgate` 项目文件，再导入同一 LC 方法、同一离子模式的 mzML。已有项目通过「打开项目」选择具体文件恢复，旧版 `lipidgate.project.json` 也可打开。
 2. 设置 MS1 参数；默认使用 pyOpenMS，也可导入 MS-DIAL 特征表。
@@ -32,13 +32,13 @@ MS1 EIC 按需读取，默认显示 RT ±1 min；未关联的注释也能查看�
 
 内置谱库采用只读磁盘索引和有限缓存，只还原当前候选，不将百万条记录全部展开到内存。m/z 范围、加合物和类型限制进一步减少候选。默认 MS2 进程数为 1，多文件最多可设置 4 个；实际内存还取决于原始文件和候选数量。
 
-Windows 包仅携带运行索引。源码保留无损压缩 MSP，供检查和重建。自定义大型 MSP 的首次解析可能需要更多内存。详见 [架构与资源策略](docs/architecture.md)。
+Windows 包携带紧凑运行索引和已编译的检索扩展，索引按需还原记录；源码 MSP 内容没有删减。源码保留无损压缩 MSP，供检查和重建。自定义大型 MSP 的首次解析可能需要更多内存。详见 [架构与资源策略](docs/architecture.md)。
 
 ## 从源码运行
 
 开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。
 
-可下载 Release 中的 **LipidGate-v1.0.2-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
+可下载 Release 中的 **LipidGate-v1.0.3-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
 
 ```powershell
 git lfs install
@@ -54,7 +54,7 @@ python -m lipidgate gui
 
 首次从 MSP 生成索引是开发构建步骤，需要额外时间和内存；后续运行复用索引。GitHub 自动生成的 `Source code (zip/tar.gz)` 可能只有 Git LFS 指针，请使用提供的 Source 包或执行 `git lfs pull`。
 
-开发中的 C++ 版本包含批量碎片匹配内核，并直接编译现有评分、门控和排序等热点源码，保留原规则及 Python/NumPy 数值行为。源码环境可先执行 `python scripts/build_native_search.py` 和 `python scripts/build_native_policy.py`，再生成索引；需要 GCC/Clang C++17 编译器和 Cython 3.3.0，Windows 可使用 Rtools45。缺失或不兼容的扩展会使用 Python 源码。此优化尚未替换已发布的 v1.0.0 程序包。构建和验证步骤见 [Windows 构建说明](docs/windows_exe.md)。
+v1.0.3 Windows 版已内置 C++ 批量匹配内核及直接编译的评分、门控和排序等策略，保留原规则、候选次序和 Python/NumPy 数值行为。源码环境可在生成索引前执行 `python scripts/build_native_search.py` 和 `python scripts/build_native_policy.py`；需要 GCC/Clang C++17 编译器和 Cython 3.3.0，Windows 可使用 Rtools45。未构建或不兼容的扩展使用 Python 源码。详见 [构建说明](docs/windows_exe.md) 与 [完整检索及 LipidIN 原生 EQ 实测](docs/native_search_benchmark.md)。
 
 ```powershell
 python -m lipidgate --help
@@ -62,7 +62,7 @@ python -m lipidgate project-run --project "path/to/project"
 python -m pytest -q
 ```
 
-发布步骤见 [Windows 构建说明](docs/windows_exe.md)。谱库规则见 [MS2 evidence policy](docs/ms2_final_policy.md)，ECN 方法见 [ECN filtering](docs/ecn_filter.md)。
+历史版本可从 [Releases](https://github.com/yzzx02/LipidGate/releases) 下载；v1.0.0、v1.0.1、v1.0.2 的标签和程序包保留，可直接回溯。发布步骤见 [Windows 构建说明](docs/windows_exe.md)。谱库规则见 [MS2 evidence policy](docs/ms2_final_policy.md)，ECN 方法见 [ECN filtering](docs/ecn_filter.md)。
 
 ## 项目目录
 

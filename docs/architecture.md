@@ -75,4 +75,4 @@ tables are not rewritten. See the [association rules](identification_display_and
 - `lipidgate/ms2`: library storage, evidence gates, ranking and association.
 - `lipidgate/ecn_filter`: optional RT models and audited retention decisions.
 
-Release validation and fingerprints are in `config/release_v1.0.0.json`.
+Release validation and fingerprints are in `config/release_v1.0.3.json`.

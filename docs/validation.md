@@ -1,5 +1,35 @@
 # Release validation
 
+## v1.0.3
+
+The integrated source passed **841 tests and 3,118 subtests** with no failures,
+errors or skips in both fresh processes: eleven compiled policy modules enabled
+and `LIPIDGATE_PYTHON_POLICY=1`. Both processes also tested the numerical kernel.
+Windows x64, CPython 3.13.5, GCC 14.3.0 and Cython 3.3.0 were used; installed
+package versions and dependency notices were refreshed for this build.
+
+After integrating the v1.0.2 project/UI/Windows fixes, the same 2,000 real query
+spectra matched the saved complete pre-optimization outputs under all four
+policy/kernel combinations. Candidate order, scores, confidence and evidence
+JSON were compared exactly. All 2,346,939 normalized library records and every
+ordered precursor-index entry were checked during the lossless format-3 repack;
+compressed MSP hashes remain unchanged. See [timing scope and original LipidIN
+measurements](native_search_benchmark.md) for the performance experiments.
+
+The release executable passed the isolated-cache frozen check: both million-row
+libraries loaded, the numeric DLL and all eleven verified policy extensions
+loaded, and the synthetic MS1/MS2 project exported an identification. Additional
+checks passed for Chinese TEMP/TMP, a stale OpenMS resource setting, all 31 MS1
+scans encoded via shared mzML parameters, two parallel MS2 workers with both
+sample audits/eight native features, named-project creation/recovery, isotope
+CSV/Excel export, EIC bounds and gestures in all three plots. Native-library
+array loads took 0.633 / 0.515 seconds, excluding executable extraction.
+
+The final executable, source/library/index fingerprints and individual native
+source/binary hashes are in `config/release_v1.0.3.json`. Output uses a separate
+version folder. The v1.0.0, v1.0.1 and v1.0.2 tags and published assets are
+preserved; no raw data, research snapshots or build caches enter the release.
+
 ## v1.0.1
 
 The second release source passed **778 tests and 3,118 subtests**, with zero
