@@ -41,6 +41,8 @@ jobs:
           export CXX="$(cygpath -w "$(command -v g++)")"
           python scripts/build_native_search.py
           python scripts/build_native_policy.py
+          objdump -p src/lipidgate/ms2/native_backend/search_core.dll | python -c "import sys; print(''.join(line for line in sys.stdin if 'DLL Name' in line))"
+          python -c "import ctypes; from pathlib import Path; core=ctypes.CDLL(str(Path('src/lipidgate/ms2/native_backend/search_core.dll').resolve())); print('Native API:', core.lg_api_version())"
           python -c "from lipidgate.ms2.search import LipidMS2Searcher; from lipidgate.ms2.native_engine import native_available; from lipidgate.ms2.native_policy import policy_backend_status; assert native_available(); assert len(policy_backend_status()) == 11"
       - name: Run regression suite
         run: python -m pytest -q --junitxml=build/verification/tests.xml
