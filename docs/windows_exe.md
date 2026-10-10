@@ -10,6 +10,9 @@ Building the optional search kernel requires a C++17 compiler (`g++` or
 `clang++`). Windows builds can use Rtools45; pass `--compiler` or set `CXX` for
 another GCC/Clang installation. Compiled Windows packages include the kernel;
 users downloading the executable do not need a compiler.
+Windows compilers must target MinGW-w64. The numeric kernel links libstdc++,
+libgcc and winpthreads statically, including with MSYS2 UCRT64 GCC; users do not
+need the toolchain's DLLs on PATH.
 
 ```powershell
 python -m venv .venv

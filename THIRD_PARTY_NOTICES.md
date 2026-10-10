@@ -37,6 +37,8 @@ Copyright belongs to the Free Software Foundation and the respective runtime
 contributors. Texts are supplied in `licenses/GCC/`; upstream sources and
 runtime terms are at [GCC 14.3.0](https://gcc.gnu.org/releases.html) and
 [GCC Runtime Library Exception](https://www.gnu.org/licenses/gcc-exception-3.1.html).
+The statically linked MinGW-w64 winpthreads runtime retains its upstream
+copyright and license terms, supplied in `licenses/winpthreads/`.
 LipidIN is used only in external research benchmarks; its EQ code is not linked
 into or shipped as part of LipidGate.
 

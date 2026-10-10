@@ -25,13 +25,20 @@ def ensure_native(root: Path, compiler: str | None = None, *, force: bool = Fals
     manifest = folder / "search_core.json"
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     flags = ["-std=c++17", "-O3", "-shared", "-ffp-contract=off", "-fno-fast-math"]
+    link_flags = []
     if sys.platform == "win32":
         flags += ["-static-libgcc", "-static-libstdc++"]
+        # MinGW POSIX toolchains may otherwise leave libwinpthread-1.dll as an
+        # external dependency even with static libstdc++. Link the mutually
+        # dependent runtime archives after the source object, in one group.
+        link_flags = ["-Wl,-Bstatic,--start-group", "-lstdc++", "-lwinpthread",
+                      "-Wl,--end-group,-Bdynamic"]
     else:
         flags += ["-fPIC", "-fvisibility=hidden"]
     if not force and not compiler and binary.is_file() and manifest.is_file():
         prior = json.loads(manifest.read_text(encoding="utf-8"))
         if (prior.get("api_version") == 1 and prior.get("flags") == flags
+                and prior.get("link_flags") == link_flags
                 and prior.get("source_sha256") == source_hash and prior.get("machine") == platform.machine()
                 and prior.get("platform") == sys.platform
                 and prior.get("binary_sha256") == hashlib.sha256(binary.read_bytes()).hexdigest()):
@@ -49,14 +56,14 @@ def ensure_native(root: Path, compiler: str | None = None, *, force: bool = Fals
     build_env["PATH"] = str(Path(compiler_path).resolve().parent) + os.pathsep + build_env.get("PATH", "")
     with tempfile.TemporaryDirectory(prefix="lipidgate_native_") as temporary:
         target = Path(temporary) / native_filename()
-        subprocess.run([compiler, *flags, str(source), "-o", str(target)], check=True, env=build_env)
+        subprocess.run([compiler, *flags, str(source), *link_flags, "-o", str(target)], check=True, env=build_env)
         # A build never alters the source library or normalization rules.
         shutil.copy2(target, binary)
     manifest.write_text(json.dumps({
         "api_version": 1, "source_sha256": source_hash,
         "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "platform": sys.platform, "machine": platform.machine(),
-        "compiler": compiler_version, "flags": flags,
+        "compiler": compiler_version, "flags": flags, "link_flags": link_flags,
     }, indent=2) + "\n", encoding="utf-8")
     print(f"Native search: {binary} ({binary.stat().st_size:,} bytes)", flush=True)
     return binary
