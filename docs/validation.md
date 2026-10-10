@@ -23,7 +23,12 @@ checks passed for Chinese TEMP/TMP, a stale OpenMS resource setting, all 31 MS1
 scans encoded via shared mzML parameters, two parallel MS2 workers with both
 sample audits/eight native features, named-project creation/recovery, isotope
 CSV/Excel export, EIC bounds and gestures in all three plots. Native-library
-array loads took 0.633 / 0.515 seconds, excluding executable extraction.
+array loads took 0.612 / 0.492 seconds, excluding executable extraction.
+
+A fresh GitHub Windows runner also built and tested both policy paths with
+MSYS2 UCRT64 GCC. The kernel's thread runtime is statically linked, avoiding
+an external `libwinpthread-1.dll` requirement. The local final executable was
+rebuilt and the entire frozen check repeated after this portability fix.
 
 The final executable, source/library/index fingerprints and individual native
 source/binary hashes are in `config/release_v1.0.3.json`. Output uses a separate
