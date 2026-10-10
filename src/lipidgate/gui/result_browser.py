@@ -25,6 +25,7 @@ from .result_data import (
     confidence_description,
 )
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
+from lipidgate.ms2.chromatographic_membership import result_sources
 from .qt_navigation import NavigationPlot
 from .qt_eic import EICPlot
 from .result_plots import FRAGMENT_COLORS, FRAGMENT_LABELS
@@ -159,12 +160,38 @@ def label(value, style=None):
     return result
 
 
+class _ElidedNotice(QtWidgets.QLabel):
+    """Keep status text to one row with the complete message on hover."""
+
+    def __init__(self, value):
+        super().__init__(value)
+        self.setObjectName("resultMuted")
+        self.setMinimumWidth(0)
+        self.setFixedHeight(22)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                           QtWidgets.QSizePolicy.Policy.Fixed)
+        self.setToolTip(value)
+
+    def setText(self, value):
+        super().setText(value)
+        self.setToolTip(value)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(QtGui.QPalette.ColorRole.WindowText))
+        shown = self.fontMetrics().elidedText(self.text(), QtCore.Qt.TextElideMode.ElideRight,
+                                             max(0, self.width() - 2))
+        painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
+                         shown)
+
+
 def card(title):
     widget = QtWidgets.QFrame()
     widget.setObjectName("resultCard")
     layout = QtWidgets.QVBoxLayout(widget)
-    layout.setContentsMargins(12, 10, 12, 10)
-    layout.setSpacing(8)
+    layout.setContentsMargins(6, 5, 6, 5)
+    layout.setSpacing(4)
     if title:
         layout.addWidget(label(title, "resultSection"))
     return widget, layout
@@ -211,24 +238,25 @@ class ResultsPage(QtWidgets.QWidget):
         self.filter_timer.timeout.connect(self.apply_filters)
 
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(3, 3, 3, 3)
+        root.setSpacing(4)
         top = QtWidgets.QHBoxLayout()
         heading = QtWidgets.QVBoxLayout()
-        heading.setSpacing(4)
+        heading.setSpacing(0)
         heading.addWidget(label("鉴定结果浏览", "resultTitle"))
-        heading.addWidget(
-            label("浏览脂质鉴定结果、特征分布、候选注释及碎片证据。", "resultMuted")
-        )
         top.addLayout(heading, 1)
         self.stats = {}
         for title in ("可用特征", "已鉴定", "High", "ECN通过"):
-            box, layout = card("")
-            layout.setSpacing(2)
-            box.setMinimumWidth(82)
+            box = QtWidgets.QWidget()
+            layout = QtWidgets.QHBoxLayout(box)
+            layout.setContentsMargins(6, 0, 6, 0)
+            layout.setSpacing(5)
             value = label("—", "resultNumber")
+            value.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
+            caption = label(title, "resultMuted")
+            caption.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
             layout.addWidget(value)
-            layout.addWidget(label(title, "resultMuted"))
+            layout.addWidget(caption)
             self.stats[title] = value
             top.addWidget(box)
         root.addLayout(top)
@@ -246,7 +274,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.export_btn.clicked.connect(self.open_export_dialog)
         self.export_btn.setEnabled(False)
         back = QtWidgets.QPushButton("返回参数页")
-        back.clicked.connect(lambda: window.nav.setCurrentRow(4) if window else None)
+        back.clicked.connect(lambda: window.show_parameters() if window else None)
         self.dim = QtWidgets.QComboBox()
         self.dim.addItems(["淡化未选结果", "隐藏未选结果"])
         self.dim.setCurrentIndex(1)
@@ -257,17 +285,14 @@ class ResultsPage(QtWidgets.QWidget):
         actions.addWidget(self.export_btn)
         actions.addWidget(back)
         root.addLayout(actions)
-        self.notice = label(
-            "打开项目结果或 CSV / Excel 鉴定表开始浏览。", "resultMuted"
-        )
-        self.notice.setWordWrap(True)
+        self.notice = _ElidedNotice("打开项目结果或 CSV / Excel 鉴定表开始浏览。")
         root.addWidget(self.notice)
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
         left, left_layout = card("结果筛选")
-        left.setMinimumWidth(165)
-        left.setMaximumWidth(240)
+        left.setMinimumWidth(155)
+        left.setMaximumWidth(210)
         self.display_group = QtWidgets.QButtonGroup(self)
         self.display_buttons = []
         left_layout.addWidget(label("显示内容", "resultMuted"))
@@ -303,16 +328,18 @@ class ResultsPage(QtWidgets.QWidget):
         left_scroll = QtWidgets.QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        left_scroll.setMinimumWidth(175)
-        left_scroll.setMaximumWidth(250)
+        left_scroll.setMinimumWidth(160)
+        left_scroll.setMaximumWidth(220)
         left_scroll.setWidget(left)
+        self.filter_panel = left_scroll
         self.splitter.addWidget(left_scroll)
 
         middle = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.middle_splitter = middle
         middle.setChildrenCollapsible(False)
         middle.setMinimumWidth(330)
         nav, nav_layout = card("")
-        nav_layout.setContentsMargins(6, 4, 6, 4)
+        nav_layout.setContentsMargins(2, 2, 2, 2)
         nav_layout.setSpacing(0)
         self.navigation = NavigationPlot()
         nav_layout.addWidget(self.navigation, 1)
@@ -337,7 +364,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.table.verticalHeader().setDefaultSectionSize(29)
         self.table.horizontalHeader().setDefaultSectionSize(98)
         self.table.setColumnWidth(3, 185)
-        self.table.setMinimumHeight(150)
+        self.table.setMinimumHeight(96)
         self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSortIndicator(
             1, QtCore.Qt.SortOrder.AscendingOrder
@@ -363,12 +390,16 @@ class ResultsPage(QtWidgets.QWidget):
         paging.addWidget(self.page_size)
         table_layout.addLayout(paging)
         middle.addWidget(table_card)
-        middle.setSizes([350, 340])
+        self.result_table_panel = table_card
+        middle.setStretchFactor(0, 7)
+        middle.setStretchFactor(1, 3)
+        middle.setSizes([470, 190])
         self.splitter.addWidget(middle)
 
         right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         right.setChildrenCollapsible(False)
-        right.setMinimumWidth(310)
+        right.setMinimumWidth(360)
+        self.right_splitter = right
         detail, detail_layout = card("注释详情")
         self.detail = DetailPanel()
         detail_layout.addWidget(self.detail, 1)
@@ -391,8 +422,8 @@ class ResultsPage(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
         )
         self.candidates.verticalHeader().hide()
-        self.candidates.verticalHeader().setDefaultSectionSize(30)
-        self.candidates.setMaximumHeight(135)
+        self.candidates.verticalHeader().setDefaultSectionSize(25)
+        self.candidates.setMaximumHeight(102)
         self.candidates.setMinimumHeight(65)
         self.candidates.setColumnWidth(0, 42)
         self.candidates.setColumnWidth(1, 180)
@@ -401,6 +432,8 @@ class ResultsPage(QtWidgets.QWidget):
         right.addWidget(detail)
         spectrum, spectrum_layout = card("")
         self.plot_tabs = QtWidgets.QTabWidget()
+        self.plot_tabs.setObjectName("spectrumTabs")
+        self.plot_tabs.tabBar().setExpanding(False)
         ms2_tab = QtWidgets.QWidget()
         ms2_layout = QtWidgets.QVBoxLayout(ms2_tab)
         ms2_layout.setContentsMargins(0, 0, 0, 0)
@@ -419,6 +452,9 @@ class ResultsPage(QtWidgets.QWidget):
         legend.setToolTip(" · ".join(FRAGMENT_LABELS.values()))
         ms2_layout.addWidget(legend)
         self.spectrum = SpectrumPlot()
+        # Allow the result window to fit a 1366x768 display at 125% scaling.
+        # Larger windows still give the plot its normal splitter allocation.
+        self.spectrum.canvas.setMinimumHeight(150)
         ms2_layout.addWidget(self.spectrum, 1)
         self.ms2_tab = ms2_tab
         eic_tab = QtWidgets.QWidget()
@@ -428,7 +464,20 @@ class ResultsPage(QtWidgets.QWidget):
         self.eic_source = QtWidgets.QComboBox()
         self.eic_source.setToolTip("选择 MS1 EIC 样本；窗口为 RT ±1 min。未关联到检测峰的注释点也可查看原始信号。")
         self.eic_source.currentIndexChanged.connect(self._request_eic)
-        eic_layout.addWidget(self.eic_source)
+        eic_actions = QtWidgets.QHBoxLayout()
+        eic_actions.setSpacing(3)
+        eic_actions.addWidget(self.eic_source, 1)
+        self.eic_retry = QtWidgets.QToolButton()
+        self.eic_retry.setText("重试")
+        self.eic_retry.setToolTip("重新读取当前样本的 EIC")
+        self.eic_retry.clicked.connect(self._request_eic)
+        self.eic_error = QtWidgets.QToolButton()
+        self.eic_error.setText("错误详情")
+        self.eic_error.hide()
+        self.eic_error.clicked.connect(self._show_eic_error)
+        eic_actions.addWidget(self.eic_retry)
+        eic_actions.addWidget(self.eic_error)
+        eic_layout.addLayout(eic_actions)
         self.eic_plot = EICPlot()
         eic_layout.addWidget(self.eic_plot, 1)
         self.ms1_tab = eic_tab
@@ -439,21 +488,24 @@ class ResultsPage(QtWidgets.QWidget):
         self.plot_tabs.currentChanged.connect(self._request_eic)
         spectrum_layout.addWidget(self.plot_tabs, 1)
         right.addWidget(spectrum)
-        right.setSizes([350, 340])
+        right.setStretchFactor(0, 1)
+        right.setStretchFactor(1, 1)
+        right.setSizes([340, 320])
         self.splitter.addWidget(right)
+        self.detail_panel = right
         self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 3)
-        self.splitter.setStretchFactor(2, 2)
-        self.splitter.setSizes([180, 650, 440])
+        self.splitter.setStretchFactor(1, 5)
+        self.splitter.setStretchFactor(2, 3)
+        self.splitter.setSizes([165, 740, 430])
         root.addWidget(self.splitter, 1)
         self.setStyleSheet("""
             QWidget#resultsWorkbench { background:#f5f7fb; }
-            QFrame#resultCard { background:white; border:1px solid #dce3ec; border-radius:7px; }
-            QLabel#resultTitle { font-size:21px; font-weight:600; color:#172438; }
-            QLabel#resultSection { font-size:16px; font-weight:600; color:#27374b; }
-            QLabel#resultNumber { font-size:20px; font-weight:600; color:#2e4969; }
+            QFrame#resultCard { background:white; border:1px solid #dce3ec; border-radius:3px; }
+            QLabel#resultTitle { font-size:18px; font-weight:600; color:#172438; }
+            QLabel#resultSection { font-size:15px; font-weight:600; color:#27374b; }
+            QLabel#resultNumber { font-size:17px; font-weight:600; color:#2e4969; }
             QLabel#resultMuted { font-size:14px; color:#66788f; }
-            QLineEdit,QComboBox { min-height:30px; border:1px solid #d3dce8; border-radius:6px; background:white; }
+            QLineEdit,QComboBox { min-height:26px; border:1px solid #d3dce8; border-radius:4px; background:white; }
             QComboBox { padding:0 34px 0 10px; }
             QComboBox::drop-down {
                 subcontrol-origin:padding; subcontrol-position:top right;
@@ -463,7 +515,14 @@ class ResultsPage(QtWidgets.QWidget):
             QComboBox::drop-down:hover { background:#f3f6fa; }
             QComboBox::down-arrow { image:url("__COMBO_DOWN__"); width:18px; height:18px; }
             QComboBox::down-arrow:hover { image:url("__COMBO_DOWN_HOVER__"); }
-            QPushButton,QToolButton { min-height:28px; border-radius:6px; padding:0 9px; }
+            QPushButton,QToolButton { min-height:24px; border-radius:4px; padding:0 7px; }
+            QTabWidget#spectrumTabs::pane { border:0; }
+            QTabWidget#spectrumTabs QTabBar::tab {
+                min-width:42px; min-height:20px; max-height:24px;
+                padding:2px 12px; margin:0 2px 0 0; font-size:14px;
+                border:1px solid #dce3ec; border-radius:3px; background:#f7f9fc;
+            }
+            QTabWidget#spectrumTabs QTabBar::tab:selected { background:#e4edf6; color:#172438; }
             QTreeWidget,QTextBrowser { border:none; background:white; }
             QTreeWidget#lipidClassTree::branch:closed:has-children {
                 image:url("__TREE_RIGHT__"); width:18px; height:18px;
@@ -478,8 +537,8 @@ class ResultsPage(QtWidgets.QWidget):
                 image:url("__COMBO_DOWN_HOVER__");
             }
             QTableView { background:white; border:1px solid #e4e9f0; border-radius:4px; gridline-color:#edf0f5; selection-background-color:#e4edf6; selection-color:#172438; font-size:14px; }
-            QHeaderView::section { background:#f7f9fc; border:none; border-bottom:1px solid #e4e9f0; padding:6px; font-size:14px; color:#42556b; }
-            QSplitter::handle { background:#f5f7fb; width:8px; height:8px; }
+            QHeaderView::section { background:#f7f9fc; border:none; border-bottom:1px solid #e4e9f0; padding:3px; font-size:14px; color:#42556b; }
+            QSplitter::handle { background:#f5f7fb; width:4px; height:4px; }
         """.replace("__COMBO_DOWN__", icon_path("combo_down.svg").as_posix())
            .replace("__COMBO_DOWN_HOVER__", icon_path("combo_down_hover.svg").as_posix())
            .replace("__TREE_RIGHT__", icon_path("tree_right.svg").as_posix())
@@ -577,7 +636,12 @@ class ResultsPage(QtWidgets.QWidget):
             ("High", int(f._confidence.eq("高").sum())),
             ("ECN通过", int(f._ecn.eq("通过").sum())),
         ]:
-            self.stats[name].setText(f"{value:,}")
+            statistic = self.stats[name]
+            statistic.setText(f"{value:,}")
+            statistic.setMinimumWidth(statistic.fontMetrics().horizontalAdvance(statistic.text()) + 4)
+            box = statistic.parentWidget()
+            box.layout().invalidate()
+            box.setMinimumWidth(box.layout().minimumSize().width())
         self.class_tree.blockSignals(True)
         self.class_tree.clear()
         for family, title in FAMILIES.items():
@@ -611,21 +675,8 @@ class ResultsPage(QtWidgets.QWidget):
         self.eic_source.clear()
         self._eic_ppm = 10.0
         if bundle.path:
-            for directory in Path(bundle.path).resolve().parents:
-                manifest = directory / "lipidgate.project.json"
-                if not manifest.is_file():
-                    continue
-                try:
-                    files = json.loads(manifest.read_text(encoding="utf-8")).get("files", [])
-                except (OSError, ValueError):
-                    files = []
-                for value in files:
-                    source = Path(value)
-                    if not source.is_absolute():
-                        source = (directory / source).resolve()
-                    if source.is_file():
-                        self.eic_source.addItem(source.name, str(source))
-                break
+            for source in result_sources(bundle.path):
+                self.eic_source.addItem(source.name, str(source))
             for directory in Path(bundle.path).resolve().parents:
                 settings = directory / "run_settings.json"
                 if settings.is_file():
@@ -657,6 +708,7 @@ class ResultsPage(QtWidgets.QWidget):
             self.eic_source.blockSignals(False)
 
     def _request_eic(self, *args):
+        self.eic_error.hide()
         if self.plot_tabs.currentWidget() is not self.ms1_tab:
             self._cancel_eic_request()
             return
@@ -752,8 +804,17 @@ class ResultsPage(QtWidgets.QWidget):
     @QtCore.Slot(str)
     def _eic_failed(self, message):
         if self._eic_active_key == self._eic_current_key:
-            self.eic_plot.set_status("EIC 读取失败")
+            self.eic_plot.set_status("EIC 读取失败：" + message.splitlines()[-1][:140])
             self.eic_plot.setToolTip(message)
+            self.eic_error.show()
+
+    def _show_eic_error(self):
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setWindowTitle("EIC 读取失败")
+        dialog.setText("无法读取所选 mzML 的 EIC。")
+        dialog.setInformativeText(self.eic_plot.toolTip().splitlines()[-1])
+        dialog.setDetailedText(str(self.eic_source.currentData()) + "\n" + self.eic_plot.toolTip())
+        dialog.exec()
 
     @QtCore.Slot()
     def _eic_job_finished(self):
@@ -912,6 +973,8 @@ class ResultsPage(QtWidgets.QWidget):
             key = "_score"
         self.filtered = self.filtered.sort_values(
             key,
+            key=(lambda values: values.map(lambda value: (0, int(value)) if str(value).isdigit()
+                                           else (1, str(value)))) if key == "_display_feature" else None,
             ascending=self.sort_order == QtCore.Qt.SortOrder.AscendingOrder,
             kind="stable",
             na_position="last",
@@ -1063,7 +1126,7 @@ class ResultsPage(QtWidgets.QWidget):
             return f"{value:.{digits}f}" if math.isfinite(value) else "—"
 
         values = [
-            ("Feature ID", feature["_feature"]),
+            ("Feature ID", feature["_display_feature"]),
             ("Annotation", row.get("matched_name")),
             ("Lipid Class", row.get("compound_class")),
             ("Adduct", row.get("adduct")),

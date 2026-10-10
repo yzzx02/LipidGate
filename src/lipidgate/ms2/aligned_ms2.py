@@ -24,6 +24,7 @@ def associate_ms2_with_alignment(
     native_features: pd.DataFrame,
     mz_tol_ppm: float = 10.0,
     rt_slack_sec: float = 6.0,
+    *, mz_tol_da: float | None = None,
 ) -> pd.DataFrame:
     """Group a spectrum with one unique existing cohort peak.
 
@@ -65,6 +66,8 @@ def associate_ms2_with_alignment(
     slack = float(rt_slack_sec) / 60.0
     if not (0 < tolerance < 1 and np.isfinite(slack) and slack >= 0):
         raise ValueError("Cross-sample m/z tolerance and RT slack must be finite and valid")
+    if mz_tol_da is not None and not (np.isfinite(mz_tol_da) and mz_tol_da > 0):
+        raise ValueError("Cross-sample Da tolerance must be positive and finite")
 
     out = candidates.copy()
     if not out.index.is_unique:
@@ -88,8 +91,8 @@ def associate_ms2_with_alignment(
         encoded = _text(row.get("chromatographic_peak_apices_json", ""))
         key = source, mz, rt, peak_id, encoded
         if key not in cache:
-            start = np.searchsorted(masses, mz / (1 + tolerance), side="left")
-            end = np.searchsorted(masses, mz / (1 - tolerance), side="right")
+            start = np.searchsorted(masses, mz - mz_tol_da if mz_tol_da is not None else mz / (1 + tolerance), side="left")
+            end = np.searchsorted(masses, mz + mz_tol_da if mz_tol_da is not None else mz / (1 - tolerance), side="right")
             options = np.arange(start, end)
             options = options[(left[options] - slack <= rt) & (rt <= right[options] + slack)]
             if peak_id and len(options):

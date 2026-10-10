@@ -156,7 +156,7 @@ def _project_run(args: argparse.Namespace) -> int:
     project = Project.open(args.project)
     if not project.settings:
         raise ValueError('请先在 GUI 中保存项目参数')
-    _, _, result = run_project(project.root, project.settings, progress=print)
+    _, _, result = run_project(project.path, project.settings, progress=print)
     print(result.xlsx_path or result.csv_path)
     return 0
 
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_gui)
 
     p = sub.add_parser('project-run', help='Run a saved GUI project with identical parameters')
-    p.add_argument('--project', type=Path, required=True)
+    p.add_argument('--project', type=Path, required=True, help='Saved .lipidgate file or legacy project directory')
     p.set_defaults(func=_project_run)
 
     p = sub.add_parser('filter-results', help='Production score/ordered ECN filtering of raw audit candidates (one LC mode)')

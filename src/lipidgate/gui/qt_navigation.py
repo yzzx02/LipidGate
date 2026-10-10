@@ -174,8 +174,7 @@ class _Canvas(QtWidgets.QWidget):
             return
         x, y = self._to_data(event.position())
         factor = 0.8 if event.angleDelta().y() > 0 else 1.25
-        self.owner.zoom_axis("x", x, factor)
-        self.owner.zoom_axis("y", y, factor)
+        self.owner.zoom_at(x, y, factor)
         event.accept()
 
     def _axis_at(self, position):
@@ -280,7 +279,7 @@ class _Canvas(QtWidgets.QWidget):
             return
         self._hover_key = key
         if row:
-            tooltip = f"<b>{html.escape(text(row['_feature']))}</b><br>{html.escape(text(row['matched_name']))}<br>m/z {number(row['_mz']):.4f} · RT {number(row['_rt']):.3f} min<br>Score {number(row['final_score']):.2f}"
+            tooltip = f"<b>{html.escape(text(row.get('_display_feature', row['_feature'])))}</b><br>{html.escape(text(row['matched_name']))}<br>m/z {number(row['_mz']):.4f} · RT {number(row['_rt']):.3f} min<br>Score {number(row['final_score']):.2f}"
             QtWidgets.QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
         else:
             QtWidgets.QToolTip.hideText()
@@ -414,6 +413,14 @@ class NavigationPlot(QtWidgets.QWidget):
         elif axis == "y":
             y0, y1 = scaled_from_minimum(y0, y1, factor, by0, by1)
         self._set_limits((x0, x1, y0, y1), record=record)
+
+    def zoom_at(self, x, y, factor):
+        """Keep the data under the pointer at the same pixel on both axes."""
+        x0, x1, y0, y1 = self.limits
+        bx0, bx1, by0, by1 = self.home_limits
+        x0, x1 = scaled_window(x0, x1, x, factor, bx0, bx1)
+        y0, y1 = scaled_window(y0, y1, y, factor, by0, by1)
+        self._set_limits((x0, x1, y0, y1))
 
     def _back(self):
         if self._history_position:

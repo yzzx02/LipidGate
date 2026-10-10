@@ -324,6 +324,7 @@ def run_ms2_feature_annotation_result(
             feature_df=feature_df,
             ms2_df=combined,
             mz_tol_ppm=float(precursor_tolerance_ppm),
+            mz_tol_da=precursor_tolerance_da,
             rt_window_sec=float(rt_window_sec),
         )
         linked_df = deduplicate_fa_results(linked_df)
@@ -331,9 +332,9 @@ def run_ms2_feature_annotation_result(
         if progress is not None:
             progress("MS2 正在按原始 EIC 峰顶整理跨样本注释…")
         linked_df = annotate_chromatographic_membership(linked_df, mzml_paths,
-                                                        mz_ppm=float(precursor_tolerance_ppm))
+                                                        mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da)
         linked_df = associate_ms2_with_alignment(linked_df, feature_df,
-                                                mz_tol_ppm=float(precursor_tolerance_ppm))
+                                                mz_tol_ppm=float(precursor_tolerance_ppm), mz_tol_da=precursor_tolerance_da)
         ms2_df = prepare_ms2_result_export_df(linked_df)
         matched = summarize_feature_annotations(linked_df, include_details=True)
         orphan_df = linked_df[linked_df["Feature_ID"].isna()
@@ -342,6 +343,7 @@ def run_ms2_feature_annotation_result(
             orphan_df=orphan_df,
             mzml_paths=mzml_paths,
             mz_tol_ppm=float(precursor_tolerance_ppm),
+            mz_tol_da=precursor_tolerance_da,
             rt_window_sec=float(rt_window_sec),
             include_details=True,
         )
@@ -358,7 +360,7 @@ def run_ms2_feature_annotation_result(
     else:
         combined = deduplicate_fa_results(combined)
         combined = annotate_chromatographic_membership(combined, mzml_paths,
-                                                      mz_ppm=float(precursor_tolerance_ppm))
+                                                      mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da)
         ms2_df = prepare_ms2_result_export_df(combined)
 
     if export_csv:

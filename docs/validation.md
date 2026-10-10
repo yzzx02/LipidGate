@@ -1,4 +1,31 @@
-# v1.0.0 validation
+# Release validation
+
+## v1.0.1
+
+The second release source passed **778 tests and 3,118 subtests**, with zero
+failures, errors or skips, on Windows x64 with Python 3.13.2. Added cases cover
+ASCII/Unicode OpenMS resource paths, stale environment variables, writable-path
+fallbacks, shared mzML parameters and actual scan polarity, short Asari RTs and
+consistent boundary units, and reopening complete XCMS/Asari/MS-DIAL tables.
+Both native and cohort tables are checked with and without new path metadata;
+unidentified features, measured areas, scores and per-spectrum evidence remain
+available in exported results.
+
+The final executable passed both library loads, a complete synthetic project,
+and an analysis under Chinese TEMP/TMP with an invalid inherited OpenMS path.
+Two MS2 subprocesses retained evidence from both samples and eight native MS1
+features. The shared-parameter file retained all 31 MS1 scans; identical samples
+correctly shared one final cohort row. The frozen GUI displayed all 31 EIC
+points, actual peak bounds and successful interactions in all three plots under
+the same Unicode environment. These are synthetic regression checks rather
+than a new benchmark of every instrument format or external detector.
+
+The MS2 rule fingerprint and both MSP/index payloads match v1.0.0. Runtime
+dependency versions and notices are recorded for this Windows build. Old
+projects can be reopened; runs that skipped MS1 detection or saved incorrect
+Asari RT values require reanalysis to recover those results.
+
+## v1.0.0
 
 The cleaned release source passed **754 tests and 3,118 subtests** on Windows
 x64 with Python 3.13.5. Two tests dedicated to the retired 2D experiment runner

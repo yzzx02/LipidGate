@@ -9,6 +9,10 @@ import sys
 if sys.platform == "win32" and getattr(sys, "frozen", False):
     backend = any(arg in {"--worker", "--multiprocessing-fork", "-c"} for arg in sys.argv[1:])
     bundle = Path(sys._MEIPASS)
+    # Do this before either GUI or backend imports can initialize OpenMS.
+    from lipidgate.openms_runtime import configure_openms_data
+
+    configure_openms_data(bundle)
     package = bundle / ("pyopenms" if backend else "PySide6")
     if not backend:
         # The bootloader searches the bundle root first. That directory holds

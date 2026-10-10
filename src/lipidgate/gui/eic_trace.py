@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import numpy as np
 
@@ -101,6 +102,8 @@ class _MzMLSource:
 
         # Also build offsets for unindexed mzMLs, without copying peak arrays.
         self.reader = pymzml.run.Reader(str(path), build_index_from_scratch=True)
+        self.path = Path(path)
+        self._binary = None
         self.scans = []
         self._read_count = 0
         self._count = self.reader.get_spectrum_count()
@@ -139,7 +142,23 @@ class _MzMLSource:
         return [self.scans[i] for i in indices[left:right]]
 
     def peaks(self, scan):
-        spectrum = self.reader[scan.identifier]
+        # pymzML's StandardMzml random access measures the fragment in bytes,
+        # then reads that many text characters. CRLF translation and UTF-8
+        # characters can consume following XML and fail with "junk after
+        # document element". Keep indexed reads entirely in binary mode.
+        pymzml = prepare_pymzml()
+        from pymzml.file_classes.standardMzml import StandardMzml
+        file_object = self.reader.info.get("file_object")
+        handler = getattr(file_object, "file_handler", None)
+        offsets = self.reader.info["offset_dict"]
+        if isinstance(handler, StandardMzml) and scan.identifier in offsets:
+            if self._binary is None:
+                self._binary = self.path.open("rb")
+            element = _read_spectrum_element(self._binary, int(offsets[scan.identifier][0]))
+            spectrum = pymzml.spec.Spectrum(element)
+            spectrum.obo_translator = self.reader.OT
+        else:
+            spectrum = self.reader[scan.identifier]
         groups = self.reader.info.get("referenceable_param_group_list_element")
         if groups is not None:
             spectrum._set_params_from_reference_group(groups)
@@ -149,6 +168,32 @@ class _MzMLSource:
 
     def close(self):
         self.reader.close()
+        if self._binary is not None:
+            self._binary.close()
+
+
+def _read_spectrum_element(stream, offset):
+    """Read one indexed XML fragment without translating newlines or encoding."""
+    stream.seek(offset)
+    fragment = bytearray()
+    closing = b"</spectrum>"
+    while True:
+        previous = len(fragment)
+        chunk = stream.read(65536)
+        if not chunk:
+            raise ValueError("mzML 谱图索引指向未完整结束的 spectrum")
+        fragment.extend(chunk)
+        end = fragment.find(closing, max(0, previous - len(closing)))
+        if end >= 0:
+            fragment = fragment[:end + len(closing)]
+            break
+    # Preserve the namespace inherited from the mzML root for cvParams and
+    # referenceable parameter groups in the standalone spectrum fragment.
+    wrapped = b'<mzML xmlns="http://psi.hupo.org/ms/mzml">' + fragment + b'</mzML>'
+    root = ET.fromstring(wrapped)
+    if len(root) != 1 or root[0].tag.rsplit("}", 1)[-1] != "spectrum":
+        raise ValueError("mzML 谱图索引未指向 spectrum")
+    return root[0]
 
 
 class EICReader:

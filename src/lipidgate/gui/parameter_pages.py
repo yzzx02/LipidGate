@@ -459,7 +459,9 @@ class MS2Page(QtWidgets.QWidget):
 
     def _update_mode_hint(self):
         self.mode_hint.setText(
-            f"母离子与碎片误差使用 {self.tolerance_unit.currentData()}。Top N、分数和 ECN 过滤在下一步设置。"
+            f"母离子与碎片误差使用 {self.tolerance_unit.currentData()}。"
+            "0.01 Da 在 m/z 500 = 20 ppm，在 m/z 1000 = 10 ppm；m/z 越高，对应 ppm 越小。"
+            "Top N、分数和 ECN 过滤在下一步设置。"
         )
 
     @staticmethod

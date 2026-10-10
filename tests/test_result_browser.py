@@ -93,8 +93,9 @@ def test_undetected_pe_sample_joins_f163_but_keeps_its_own_low_evidence(tmp_path
     assert pd.isna(scan.get("ms1_feature_area"))
     export_browser_results(bundle, tmp_path, xlsx=False)
     evidence = pd.read_csv(tmp_path / "spectrum_evidence.csv")
-    assert evidence["归并特征 ID"].tolist() == ["F163", "F163"]
-    assert evidence.loc[evidence.scan_id.eq("scan_3113"), "MS1 检测特征状态"].tolist() == ["Not detected"]
+    assert evidence["归并特征 ID"].tolist() == [163, 163]
+    assert evidence["原始归并特征 ID"].tolist() == ["F163", "F163"]
+    assert evidence.loc[evidence.source_file.eq("d.mzML"), "MS1 检测特征状态"].tolist() == ["Not detected"]
 
 
 def rows():
@@ -241,7 +242,8 @@ def test_feature_export_keeps_per_sample_peak_areas_without_fabricating_orphans(
     bundle = ResultBundle.from_frames(candidates, aligned_features=aligned)
     export_browser_results(bundle, tmp_path, xlsx=False)
     exported = pd.read_csv(tmp_path / "feature_results.csv")
-    linked = exported[exported["Feature ID"].eq("F11")].iloc[0]
+    linked = exported[exported["Feature ID"].eq("11")].iloc[0]
+    assert linked["原始特征 ID"] == "F11"
     assert linked["a.mzML"] == 49621.84 and linked["b.mzML"] == 39175.34
     assert linked["c.mzML"] == 0.
     orphan = exported[exported.Annotation.eq("CE 18:2")].iloc[0]
@@ -278,7 +280,8 @@ def test_export_module_writes_feature_and_spectrum_provenance(tmp_path):
     features = pd.read_csv(tmp_path / "feature_results.csv")
     evidence = pd.read_csv(tmp_path / "spectrum_evidence.csv")
     assert len(features) == 3 and len(evidence) == 4
-    assert "原始扫描号" in features and "归并特征 ID" in evidence
+    assert "原始扫描号" not in features and "scan_id" not in evidence
+    assert "归并特征 ID" in evidence
 
 
 def test_unidentified_comes_only_from_real_feature_table():

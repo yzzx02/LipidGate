@@ -6,13 +6,13 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 下载与运行
 
-从 [v1.0.0 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.0) 下载 **LipidGate-v1.0.0-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
+从 [v1.0.2 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.2) 下载 **LipidGate-v1.0.2-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
 
-1. 创建项目，导入同一 LC 方法、同一离子模式的 mzML 文件。
+1. 点击「新建项目」，在独立文件夹保存 `.lipidgate` 项目文件，再导入同一 LC 方法、同一离子模式的 mzML。已有项目通过「打开项目」选择具体文件恢复，旧版 `lipidgate.project.json` 也可打开。
 2. 设置 MS1 参数；默认使用 pyOpenMS，也可导入 MS-DIAL 特征表。
 3. 选择 MS2 模式、质量容差和分数门槛。需要时限制前体 m/z 范围，并在搜索窗口勾选加合物和脂质类型。
 4. 选择是否使用 ECN 筛选，保存参数并开始分析。
-5. 在结果页复核 MS1 EIC、逐次 MS2 谱图、匹配碎片和置信度，导出 CSV、Excel 或图像。
+5. 在自动打开的独立结果窗口复核 MS1 EIC、逐次 MS2 谱图、匹配碎片和置信度，导出 CSV、Excel 或图像。默认布局优先展示散点分布，模块之间可拖动调整。
 
 仪器 RAW 数据需先转换为 mzML。可选 XCMS 需要另外安装 R 及相应 R 包；Asari 需要独立环境。详见 [使用说明](docs/user_guide.md)。
 
@@ -24,6 +24,10 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 MS1 EIC 按需读取，默认显示 RT ±1 min；未关联的注释也能查看原始 MS1 信号。MS2 以 m/z 为横轴显示质谱。右拖 / 上拖放大，左拖 / 下拖缩小，强度轴从 0 开始缩放。
 
+散点图滚轮围绕鼠标位置缩放 RT / m/z。显示用 Feature ID 为数字，未关联 MS1 的保留 `MS2-` 前缀；导出仍保留原始 ID。0.01 Da 在 m/z 500 等于 20 ppm，在 m/z 1000 等于 10 ppm，不能在整个质量范围内视为同一容差。
+
+结果导出区分 MS1 前体证据和检测峰关联状态，并保留实际峰面积。确认前体并不等于存在可积分的检测峰。每个 Feature 的「同位素」只保存代表 MS2 前一张 MS1 中的一组实测 m/z 与相对强度，附 RT、来源文件和提取状态。最终 CSV / Excel 不导出扫描号，逐谱证据不重复同位素；项目审计仍保留扫描记录。旧项目可直接从原始 mzML 补充，无需重新鉴定。
+
 ## 资源使用
 
 内置谱库采用只读磁盘索引和有限缓存，只还原当前候选，不将百万条记录全部展开到内存。m/z 范围、加合物和类型限制进一步减少候选。默认 MS2 进程数为 1，多文件最多可设置 4 个；实际内存还取决于原始文件和候选数量。
@@ -34,7 +38,7 @@ Windows 包仅携带运行索引。源码保留无损压缩 MSP，供检查和�
 
 开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。
 
-可下载 Release 中的 **LipidGate-v1.0.0-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
+可下载 Release 中的 **LipidGate-v1.0.2-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
 
 ```powershell
 git lfs install

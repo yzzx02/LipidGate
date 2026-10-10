@@ -226,6 +226,7 @@ def link_ms2_to_features(
     ms2_df: pd.DataFrame,
     mz_tol_ppm: float = 10.0,
     rt_window_sec: float = 30.0,
+    *, mz_tol_da: float | None = None,
 ) -> pd.DataFrame:
     """Associate each spectrum with its precursor's real, same-file MS1 peak.
 
@@ -235,6 +236,8 @@ def link_ms2_to_features(
     DDA fragments are acquired later and can fall just beyond an edge/valley.
     Otherwise use the original MS2 acquisition time. Neither path widens peaks.
     """
+    if mz_tol_da is not None and not (math.isfinite(mz_tol_da) and mz_tol_da > 0):
+        raise ValueError("Feature Da tolerance must be positive and finite")
     out = ms2_df.copy().reset_index(drop=True)
     # A supplied feature table is authoritative. Do not carry a previous EIC
     # heuristic's veto into feature association.
@@ -294,7 +297,8 @@ def link_ms2_to_features(
         link_rt = float(row["precursor_ms1_rt_raw_min"]) if use_precursor_scan else float(ms2_rt)
 
         ppm_errors = ((float(ms2_mz) - feature_mz) / feature_mz) * 1e6
-        mz_ok = ppm_errors.abs() <= mz_tol_ppm
+        mz_ok = ((float(ms2_mz) - feature_mz).abs() <= mz_tol_da
+                 if mz_tol_da is not None else ppm_errors.abs() <= mz_tol_ppm)
         if feature_sources is not None:
             source_name = Path(str(row.get("source_file", ""))).name.casefold()
             same_source = feature_sources.eq(source_name)
@@ -323,7 +327,9 @@ def link_ms2_to_features(
         rt_deltas = rt_deltas.fillna(0.0)
         candidates["_mz_error_abs_ppm"] = candidate_ppm_errors.abs()
         candidates["_rt_delta_sec"] = rt_deltas
-        candidates["_distance"] = (candidates["_mz_error_abs_ppm"] / mz_tol_ppm) + (rt_deltas / rt_window_sec)
+        mass_distance = ((float(ms2_mz) - feature_mz.loc[candidates.index]).abs() / mz_tol_da
+                         if mz_tol_da is not None else candidates["_mz_error_abs_ppm"] / mz_tol_ppm)
+        candidates["_distance"] = mass_distance + (rt_deltas / rt_window_sec)
         candidates.sort_values(["_distance", "_mz_error_abs_ppm", "_rt_delta_sec"], inplace=True)
         best = candidates.iloc[0]
         best_error = float(candidate_ppm_errors.loc[best.name])
@@ -626,14 +632,15 @@ def _orphan_key(row: pd.Series) -> tuple[str, str, str]:
     )
 
 
-def _cluster_orphan_rows(orphan_df: pd.DataFrame, mz_tol_ppm: float, rt_window_sec: float) -> list[pd.DataFrame]:
+def _cluster_orphan_rows(orphan_df: pd.DataFrame, mz_tol_ppm: float, rt_window_sec: float,
+                         mz_tol_da: float | None = None) -> list[pd.DataFrame]:
     if orphan_df.empty:
         return []
 
     if "chromatographic_apex_rt_raw_min" in orphan_df:
         from .cohort_groups import cluster_unlinked_spectra
         work = orphan_df.copy().reset_index(drop=True)
-        work["_cohort"] = cluster_unlinked_spectra(work, mz_ppm=mz_tol_ppm,
+        work["_cohort"] = cluster_unlinked_spectra(work, mz_ppm=mz_tol_ppm, mz_da=mz_tol_da,
                                                  rt_minutes=min(.1, rt_window_sec / 60.))
         # Different annotations can remain separate rows for the same peak.
         group_cols = ["_cohort", "matched_name", "adduct", "compound_class"]
@@ -665,7 +672,8 @@ def _cluster_orphan_rows(orphan_df: pd.DataFrame, mz_tol_ppm: float, rt_window_s
             group_rt = float(median(stat["rts"]))
             mz_error = abs(_ppm_error(row_mz, group_mz))
             rt_delta = abs(row_rt - group_rt)
-            if mz_error <= mz_tol_ppm and rt_delta <= rt_window_min:
+            mass_ok = abs(row_mz - group_mz) <= mz_tol_da if mz_tol_da is not None else mz_error <= mz_tol_ppm
+            if mass_ok and rt_delta <= rt_window_min:
                 groups[group_index].append(index)
                 stat["mzs"].append(row_mz)
                 stat["rts"].append(row_rt)
@@ -684,9 +692,11 @@ def summarize_orphan_annotations(
     mz_tol_ppm: float = 10.0,
     rt_window_sec: float = 30.0,
     include_details: bool = False,
+    *, mz_tol_da: float | None = None,
 ) -> pd.DataFrame:
     columns = DETAIL_ANNOTATION_COLUMNS if include_details else ANNOTATION_COLUMNS
-    groups = _cluster_orphan_rows(orphan_df, mz_tol_ppm=mz_tol_ppm, rt_window_sec=rt_window_sec)
+    groups = _cluster_orphan_rows(orphan_df, mz_tol_ppm=mz_tol_ppm, rt_window_sec=rt_window_sec,
+                                  mz_tol_da=mz_tol_da)
     if not groups:
         return pd.DataFrame(columns=columns)
 

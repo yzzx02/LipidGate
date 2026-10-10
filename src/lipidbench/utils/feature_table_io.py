@@ -84,7 +84,7 @@ def find_feature_table(results_dir: Path, algorithm: str) -> Path:
     raise ValueError(f"Unknown algorithm: {algorithm}")
 
 
-def standardize_rt_columns_for_display(df: pd.DataFrame, algorithm: str) -> pd.DataFrame:
+def standardize_rt_columns_for_display(df: pd.DataFrame, algorithm: str, *, asari_raw_seconds=False) -> pd.DataFrame:
     out = df.copy()
     if algorithm.strip().lower() == "asari":
         aliases = {
@@ -97,17 +97,25 @@ def standardize_rt_columns_for_display(df: pd.DataFrame, algorithm: str) -> pd.D
             "rtime_right_base": "RTmax",
             "rt_right_base": "RTmax",
         }
+        raw_aliases = any(column in out for column in aliases)
         for src, dst in aliases.items():
             if src in out.columns and dst not in out.columns:
                 out[dst] = out[src]
 
+        if "RT_unit" in out:
+            units = out.RT_unit.astype(str).str.strip().str.lower()
+            if not units.isin(["seconds", "second", "s", "minutes", "minute", "min"]).all():
+                raise ValueError("Asari RT_unit must be seconds or minutes")
+            seconds = units.isin(["seconds", "second", "s"])
+        else:
+            # Raw Asari tables use seconds; normalized legacy RT columns use minutes.
+            seconds = pd.Series(asari_raw_seconds or raw_aliases, index=out.index)
         for col in ["RT", "RTmin", "RTmax"]:
             if col in out.columns:
                 s = pd.to_numeric(out[col], errors="coerce")
-                vmax = s.max(skipna=True)
-                if pd.notna(vmax) and float(vmax) > 200:
-                    s = s / 60.0
+                s = s.where(~seconds, s / 60.0)
                 out[col] = s.round(3)
+        out["RT_unit"] = "minutes"
 
         out = out.drop(
             columns=[

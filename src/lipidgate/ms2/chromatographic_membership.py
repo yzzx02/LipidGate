@@ -17,6 +17,7 @@ import pandas as pd
 
 from lipidbench.utils.chromatographic_peaks import resolve_eic_peaks
 from lipidgate.pymzml_compat import prepare_pymzml
+from lipidgate.project import project_input_paths
 from .ms1_evidence import confirmed_ms1_precursor
 
 
@@ -33,18 +34,8 @@ def _text(value):
 
 def result_sources(path):
     """Resolve the project's real inputs when opening an older result table."""
-    if path is None:
-        return []
-    for directory in Path(path).resolve().parents:
-        manifest = directory / "lipidgate.project.json"
-        if manifest.is_file():
-            try:
-                entries = json.loads(manifest.read_text(encoding="utf-8")).get("files", [])
-            except (OSError, ValueError):
-                return []
-            files = [Path(value) if Path(value).is_absolute() else directory / value for value in entries]
-            return [file.resolve() for file in files if file.is_file() and file.suffix.casefold() == ".mzml"]
-    return []
+    return [file for file in project_input_paths(path)
+            if file.is_file() and file.suffix.casefold() == ".mzml"]
 
 
 def _seed(row):
@@ -65,11 +56,12 @@ def _seed(row):
     return np.nan
 
 
-def _queries(rows, ppm):
+def _queries(rows, ppm, da=None):
     """Share an EIC between near-identical masses and neighboring scan times."""
     groups = []
     for row in sorted(rows, key=lambda item: (item["mz"], item["seed"], item["scan"])):
-        if not groups or row["mz"] - groups[-1][0]["mz"] > row["mz"] * ppm * 1e-6:
+        window = da if da is not None else row["mz"] * ppm * 1e-6
+        if not groups or row["mz"] - groups[-1][0]["mz"] > window:
             groups.append([])
         groups[-1].append(row)
     queries = []
@@ -87,7 +79,7 @@ def _queries(rows, ppm):
     return sorted(queries, key=lambda query: (query["lower"], query["mz"]))
 
 
-def _stream_traces(path, queries, ppm):
+def _stream_traces(path, queries, ppm, da=None):
     pymzml = prepare_pymzml()
     reader = pymzml.run.Reader(str(path))
     masses = np.array([query["mz"] for query in queries])
@@ -109,7 +101,7 @@ def _stream_traces(path, queries, ppm):
                         lo = np.clip(after - 1, 0, len(peaks) - 1)
                         hi = np.clip(after, 0, len(peaks) - 1)
                         indices = np.where(np.abs(peaks[lo, 0] - target) <= np.abs(peaks[hi, 0] - target), lo, hi)
-                        matches = np.abs(peaks[indices, 0] - target) <= target * ppm * 1e-6
+                        matches = np.abs(peaks[indices, 0] - target) <= (da if da is not None else target * ppm * 1e-6)
                         values[matches] = peaks[indices[matches], 1]
                     for index, value in zip(active, values):
                         queries[index]["times"].append(rt)
@@ -120,9 +112,9 @@ def _stream_traces(path, queries, ppm):
         reader.close()
 
 
-def _profile_memberships(path, rows, ppm):
-    queries = _queries(rows, ppm)
-    _stream_traces(path, queries, ppm)
+def _profile_memberships(path, rows, ppm, da=None):
+    queries = _queries(rows, ppm, da)
+    _stream_traces(path, queries, ppm, da)
     records = {}
     for query in queries:
         times = np.asarray(query["times"])
@@ -144,7 +136,7 @@ def _profile_memberships(path, rows, ppm):
     return records
 
 
-def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cache=True):
+def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cache=True, mz_da=None):
     """Locate each spectrum's real peak without affecting local feature links.
 
     A small cache is replaced per input dataset, with scan coordinates, input
@@ -156,6 +148,8 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
         return data
     if not np.isfinite(mz_ppm) or mz_ppm <= 0:
         raise ValueError("Chromatographic m/z tolerance must be positive and finite")
+    if mz_da is not None and not (np.isfinite(mz_da) and mz_da > 0):
+        raise ValueError("Chromatographic Da tolerance must be positive and finite")
     paths = {path.name.casefold(): path.resolve() for value in mzml_paths
              if (path := Path(value)).is_file()}
     scans = data.drop_duplicates(["source_file", "scan_id"])
@@ -169,7 +163,7 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
             request.setdefault(name, []).append(dict(scan=_text(row["scan_id"]), mz=float(mz), seed=seed))
     if not request:
         return data
-    identity = {"version": MEMBERSHIP_VERSION, "ppm": mz_ppm, "requests": request,
+    identity = {"version": MEMBERSHIP_VERSION, "ppm": mz_ppm, "da": mz_da, "requests": request,
                 "inputs": {name: [str(paths[name]), paths[name].stat().st_size, paths[name].stat().st_mtime_ns]
                            for name in request}}
     signature = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -188,7 +182,8 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
     if not memberships:
         for name, rows in request.items():
             try:
-                memberships[name] = _profile_memberships(paths[name], rows, mz_ppm)
+                memberships[name] = (_profile_memberships(paths[name], rows, mz_ppm, mz_da)
+                                     if mz_da is not None else _profile_memberships(paths[name], rows, mz_ppm))
             except (OSError, ValueError, KeyError, TypeError, ET.ParseError):
                 # A missing/invalid raw input does not invalidate saved results.
                 memberships[name] = {}

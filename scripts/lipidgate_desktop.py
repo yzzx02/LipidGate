@@ -90,10 +90,10 @@ def _eic_self_test(app, window, arguments):
     page.eic_source.setEnabled(True)
     page.eic_source.blockSignals(False)
     page._eic_ppm = args.eic_ppm
-    window.stack.setCurrentWidget(page)
-    window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen, True)
-    window.resize(1600, 950)
-    window.show()
+    workbench = window.results_window
+    workbench.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+    workbench.resize(1600, 950)
+    workbench.show()
     page.plot_tabs.setCurrentWidget(page.ms1_tab)
     deadline = time.monotonic() + 30
     while page._eic_thread is not None or page.eic_timer.isActive():
@@ -201,6 +201,75 @@ def _plot_interaction_self_test(app, page):
         reset(plot)
 
 
+def _project_self_test(app, window, arguments):
+    """Verify named project creation/recovery and real exports in the bundle."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    import pandas as pd
+    from lipidgate.gui.app import QtCore, QtWidgets
+    from lipidgate.gui.result_export_data import export_browser_results
+    from lipidgate.project import Project
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project-file", type=Path, required=True)
+    parser.add_argument("--project-check-dir", type=Path, required=True)
+    args = parser.parse_args(arguments)
+    project = Project.open_file(args.project_file)
+    expected = project.latest_result()
+    if expected is None:
+        raise ValueError("The project probe needs a saved result")
+    window.settings = QtCore.QSettings(str(args.project_check_dir / "gui.ini"),
+                                      QtCore.QSettings.Format.IniFormat)
+    window.results_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+    created = (args.project_check_dir / "created" / "GUI.lipidgate").resolve()
+    save_dialog = QtWidgets.QFileDialog.getSaveFileName
+    open_dialog = QtWidgets.QFileDialog.getOpenFileName
+    try:
+        QtWidgets.QFileDialog.getSaveFileName = lambda *a, **k: (str(created), "")
+        window.project_page.new_button.click()
+        assert window.project is not None and window.project.path == created, (window.project, created)
+        assert created.is_file() and not window.project.files
+        QtWidgets.QFileDialog.getOpenFileName = lambda *a, **k: (str(project.path), "")
+        window.project_page.open_button.click()
+    finally:
+        QtWidgets.QFileDialog.getSaveFileName = save_dialog
+        QtWidgets.QFileDialog.getOpenFileName = open_dialog
+    assert window.project.path == project.path
+    assert window.project_page.path.text() == str(project.path)
+    assert window.import_page.files.count() == len(project.files)
+    assert window.results_page.path.text() == str(expected)
+    assert window.results_window.isVisible()
+    saved = project.settings.get("ms2", {})
+    assert window.analysis_settings()["ms2"]["mode"] == saved.get("mode", "negative")
+    assert window.ms2_page.workers.value() == saved.get("workers", 1)
+    page = window.results_page
+    deadline = time.monotonic() + 60
+    while page._jobs or page._eic_thread is not None or page.eic_timer.isActive():
+        app.processEvents()
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Named project restoration timed out")
+        time.sleep(.002)
+    assert not page.bundle.features.empty and not page.bundle.candidates.empty
+    assert page.eic_source.count() == len(project.mzml_files())
+    before = page.bundle.candidates.copy(deep=True)
+    exports = args.project_check_dir / "exports"
+    export_browser_results(page.bundle, exports)
+    features = pd.read_csv(exports / "feature_results.csv")
+    evidence = pd.read_csv(exports / "spectrum_evidence.csv")
+    for table in (features, evidence, *pd.read_excel(exports / "LipidGate_results.xlsx", sheet_name=None).values()):
+        assert not any("扫描" in str(column) or "scan" in str(column).lower() for column in table)
+        assert "同位素详情 JSON" not in table
+    assert features["同位素"].notna().any()
+    assert not any("同位素" in column for column in evidence)
+    pd.testing.assert_frame_equal(page.bundle.candidates, before)
+    print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
+                          latest_result_restored=True, isotope_export_verified=True,
+                          feature_rows=len(features), isotope_rows=int(features["同位素"].notna().sum()),
+                          evidence_rows=len(evidence)), ensure_ascii=False), flush=True)
+
+
 def main() -> int:
     multiprocessing.freeze_support()
     if len(sys.argv) >= 3 and sys.argv[1] == "--worker":
@@ -226,15 +295,21 @@ def main() -> int:
             for library in (default_positive_msp(), default_negative_msp()):
                 catalog = _prebuilt_catalog(library)
                 assert catalog and catalog["classes"] and catalog["adducts"]
-        if "--eic-mzml" in sys.argv[2:]:
+        if "--eic-mzml" in sys.argv[2:] or "--project-file" in sys.argv[2:]:
             try:
-                _eic_self_test(app, window, sys.argv[2:])
+                if "--project-file" in sys.argv[2:]:
+                    _project_self_test(app, window, sys.argv[2:])
+                else:
+                    _eic_self_test(app, window, sys.argv[2:])
             except Exception:
                 import traceback
 
                 traceback.print_exc()
                 window.results_page._cancel_eic_request()
                 while window.results_page._eic_thread is not None:
+                    app.processEvents()
+                    time.sleep(0.002)
+                while window.results_page._jobs:
                     app.processEvents()
                     time.sleep(0.002)
                 window.close()
