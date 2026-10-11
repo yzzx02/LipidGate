@@ -1,5 +1,39 @@
 # Release validation
 
+## PE sodium source/library revision, 2026-10-11
+
+This revision adds 3,907 formula-derived diacyl PE `[M+Na]+` records and their
+chain-loss evidence labels. HG/FAH/Other weights remain 60/20/20; existing
+gates, scoring and ranking functions are unchanged. PE-P sodium is researched
+separately and is not added. See [fragment definitions](pe_sodium_fragments.md).
+
+The final source passed **849 tests and 3,118 subtests**, with no failures,
+errors or skips, using the compiled policy path. A fresh Python-policy process
+passed 848 tests and the same 3,118 subtests before the final build-memory
+regression test was added. No Windows executable is published by this revision;
+the immutable v1.0.3 executable and manifest identify the prior library.
+
+Freshly parsed indexes were checked against all 2,346,939 prior normalized
+records: fields, numeric types and stable existing precursor order were
+preserved. The 12,420 generated hydroxy-FA record IDs move by 3,907 to remain
+after the newly extended source bank; original source-record IDs and MS1 native
+feature IDs are unchanged. All new sodium records were checked against their
+formula definitions, and all negative-library records remain identical.
+
+The archived 325-query external-standard baseline replayed exactly with its
+old index. With the new index and product defaults, 13 of 14 PE sodium scans
+returned the correct Top1 sum composition and sodium adduct; one remained
+unannotated. Seven also returned the correct chain composition. Results with
+insufficient chain evidence retain their existing downgrade, so this does not
+mean 13 high-confidence chain identifications. These are standard-associated
+spectra from MTBLS394, not a calibrated FDR estimate. Suspected mixed spectra,
+including the previously flagged PC scan, remain in the fixed paired queue
+and are not treated as definite pure-standard algorithm errors.
+
+Source/library/index identities and regression report hashes are in
+[`config/library_revision_pe_sodium_20261011.json`](../config/library_revision_pe_sodium_20261011.json).
+Raw files, baseline snapshots, reports and generated indexes stay outside Git.
+
 ## v1.0.3
 
 The integrated source passed **841 tests and 3,118 subtests** with no failures,

@@ -1,6 +1,8 @@
 # Maintenance tools
 
 - `build_prebuilt_libraries.py`: runtime mass indexes and catalogs.
+- `curate_positive_pe_sodium.py`: explicitly add diacyl PE sodium fragments on
+  the existing protonated PE grid; verify untouched blocks and reproducible gzip.
 - `build_native_search.py`, `build_native_policy.py`: strict C++ numerical
   matching and direct compilation of existing policy source; optional for
   source execution and included in Windows release builds.

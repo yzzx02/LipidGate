@@ -44,6 +44,17 @@ Common support ion (P-18:0: 294.3155). RCO acylium support is excluded. Chain
 and headgroup pools keep their existing gates and intensity-aware weights;
 missing headgroup rescue stays Low regardless of feature-group membership.
 
+## Positive diacyl PE sodium
+
+PE `[M+Na]+` adds the existing diacyl PE chain grid. HG retains NL141;
+Other contains NL43, NL163, the 164.0083 sodium phosphoethanolamine ion and
+precursor. FAH contains direct fatty-acid losses and their additional NL43
+channels, annotated with each distinct acyl composition. HG/FAH/Other remain
+60/20/20, with the existing PE gates, resolution and ranking. Sodium acyl-loss
+labels count as chain evidence only for this class/adduct. Equal chains do not
+create duplicate physical ions. PE-P sodium is not inferred from this diacyl
+template; see [references and limitations](pe_sodium_fragments.md).
+
 ## Locked glyceride rules
 
 ### TG

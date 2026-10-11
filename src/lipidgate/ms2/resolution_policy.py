@@ -68,6 +68,13 @@ _POSITIVE_PC_CHAIN_LOSS_RULE = FragmentEvidenceRule(
 _POSITIVE_PC_SODIUM_LOSS_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA_Loss"}), r"^\[M\+NA-(?:59-)?(?:NA)?FA\]\+\(",
 )
+_POSITIVE_PE_SODIUM_LOSS_RULE = FragmentEvidenceRule(
+    frozenset({"Diagnostic_FA_Loss"}), r"^\[M\+NA-(?:43-)?R(?:[12])?COOH\]\+\(",
+)
+_POSITIVE_PE_SODIUM_PROFILE = ChainEvidenceProfile(
+    name="positive_pe_sodium", class_keys=frozenset({"PE"}), polarity="+",
+    evidence_rules=(_POSITIVE_PE_SODIUM_LOSS_RULE,), required_coverage="infer_remaining_chain",
+)
 _POSITIVE_PC_P_VINYL_LOSS_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA_Loss"}), r"^\[M-\(RCH2=CH-OH\)\+H\]\+\(P-",
 )
@@ -169,6 +176,8 @@ def record_polarity(record: LibraryRecord) -> str:
 
 def get_chain_evidence_profile(record: LibraryRecord) -> ChainEvidenceProfile | None:
     class_key = normalized_class_key(record.compound_class)
+    if class_key == "PE" and str(record.adduct).strip() == "[M+Na]+":
+        return _POSITIVE_PE_SODIUM_PROFILE
     polarity = record_polarity(record)
     return next(
         (
