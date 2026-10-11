@@ -47,8 +47,11 @@ missing headgroup rescue stays Low regardless of feature-group membership.
 ## Positive diacyl PE sodium
 
 PE `[M+Na]+` adds the existing diacyl PE chain grid. HG retains NL141;
-Other contains NL43, NL163, the 164.0083 sodium phosphoethanolamine ion and
-precursor. FAH contains direct fatty-acid losses and their additional NL43
+Other contains NL43, NL163, the 164.0083 sodium phosphoethanolamine ion,
+precursor and each distinct chain's RCO+ as Common support. RCO+ is not
+`FA_Frag` and does not replace chain-loss gates. Other retains its existing
+three-observation saturation and 20-point cap. FAH contains direct fatty-acid
+losses and their additional NL43
 channels, annotated with each distinct acyl composition. HG/FAH/Other remain
 60/20/20, with the existing PE gates, resolution and ranking. Sodium acyl-loss
 labels count as chain evidence only for this class/adduct. Equal chains do not

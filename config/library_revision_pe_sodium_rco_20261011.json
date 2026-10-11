@@ -1,0 +1,411 @@
+{
+  "revision": "pe_sodium_rco_20261011",
+  "revision_kind": "source_and_library",
+  "created_at_utc": "2026-10-11T09:19:58.536397+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "6cb0dfa2d5733aa094045700c6f691bb58a8485a",
+  "base_release_manifest_sha256": "112bcef26fa93036bbc85e224b19e28f1b7f63f97a03d2f85b3ac2a48a0c0e3a",
+  "executable_status": "No executable built or published for this revision; prior v1.0.3 release and fingerprints remain immutable",
+  "platform": "Windows x64",
+  "python": "3.13.5",
+  "product_code_sha256": "32a96dfed10b7c2f65a2dddb291521c44c5c45be6e5a2237c74ca0b51ee80f6a",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "37fbdc2aad850171a8a9903f0e1d630caa18b213fdeed744818166b40098adb3",
+  "library_cache_version": 39,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "fingerprint_scope": "Effective local verified code, including native DLL/PYD artifacts; rebuilds on another toolchain may have different binary fingerprints",
+  "change_scope": {
+    "updated_class": "PE",
+    "updated_adduct": "[M+Na]+",
+    "updated_raw_records": 3907,
+    "added_raw_records": 0,
+    "added_common_acylium_fragments": 7735,
+    "acylium_fragment_type": "Common",
+    "acylium_pool": "Other",
+    "acylium_composition": "C_n H_(2n-2DB-1) O+; distinct chains only; no sn-position inference",
+    "pool_weights": {
+      "HG": 60,
+      "FAH": 20,
+      "Other": 20
+    },
+    "other_support_saturation": 3,
+    "other_score_cap": 20,
+    "existing_gates_and_scoring_functions": "unchanged",
+    "pe_p_sodium_records_added": 0,
+    "positive_pe_p_protonated_other": "precursor and P-chain Common, without RCO; unchanged"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1253644,
+      "normalized_records": 1266064,
+      "classes": 110,
+      "adducts": 4,
+      "source_gzip_sha256": "a290b8158785402a7624dbd6b43acdf5490f61b244d99ca7bc5fe09a39bec5a7",
+      "source_gzip_bytes": 23965605,
+      "decompressed_source_sha256": "5081c58e42ce643946292e9c32914016d77c135542bb30f56897555365ba7f2b",
+      "index_sha256": "91327a3ee4b46d250635489c5281420d71606afe5f4ba8f1c61ad25a63d656eb",
+      "index_bytes": 60735488,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "53c1da00bbe2bf0635e79aeb1b35af97d24de3e28da4f45a3b92b162dec3fbf8"
+    },
+    "negative": {
+      "raw_source_records": 1084782,
+      "normalized_records": 1084782,
+      "classes": 117,
+      "adducts": 4,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "f5c9b32e647029f422e53a3827709dc1a2a28fa9a9b6eda19de09e91514607d2",
+      "index_bytes": 60211200,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61"
+    }
+  },
+  "verification": {
+    "compiled policy": {
+      "tests_passed": 850,
+      "subtests_passed": 3118,
+      "junit_test_cases": 3968,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "report_sha256": "0beeaad630a86cdc4b250c5788e816b47d4cd880fcd38dc1e99e60f5f9ba8ece"
+    },
+    "Python policy": {
+      "tests_passed": 850,
+      "subtests_passed": 3118,
+      "junit_test_cases": 3968,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "report_sha256": "e3de146dbc998fb8c15c10b8195641e2fc01b11c01e27970b603a726aff31e41"
+    },
+    "complete_normalized_library_delta": {
+      "libraries": [
+        {
+          "mode": "positive",
+          "unchanged_records": 1262157,
+          "updated_pe_sodium_records": 3907,
+          "added_common_acylium_fragments": 7735,
+          "record_ids": "all unchanged",
+          "precursor_order": "identical",
+          "all_other_fields": "identical, including numeric types"
+        },
+        {
+          "mode": "negative",
+          "unchanged_records": 1084782,
+          "updated_pe_sodium_records": 0,
+          "added_common_acylium_fragments": 0,
+          "record_ids": "all unchanged",
+          "precursor_order": "identical",
+          "all_other_fields": "identical, including numeric types"
+        }
+      ],
+      "seconds": 79.71892479999951,
+      "report_sha256": "03192f3e90025d6048c6ce15f258e7b3579ca37f2d56317c1c7919cd36eb2eb6"
+    },
+    "paired_standard_regression": {
+      "status": "verified",
+      "archived_baseline_replayed": 325,
+      "summary": [
+        {
+          "version": "Before",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 184,
+          "correct_chain_rows": 145,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        },
+        {
+          "version": "After",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 184,
+          "correct_chain_rows": 145,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        }
+      ],
+      "seconds": 10.443545400001312,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "old_index_sha256": "371836606f3d561ee1bbc6b184b3c3da288ffe9e25b67e8b3087f2a7b0ddf0db",
+      "new_index_sha256": "91327a3ee4b46d250635489c5281420d71606afe5f4ba8f1c61ad25a63d656eb",
+      "code_sha256": "37fbdc2aad850171a8a9903f0e1d630caa18b213fdeed744818166b40098adb3",
+      "metric_scope": "candidate rows; conditional on known-standard association, with previously flagged mixed spectra retained for paired comparison",
+      "candidate_fields_compared": [
+        "matched_name",
+        "compound_class",
+        "adduct",
+        "result_rank",
+        "score",
+        "passed_required_gates",
+        "resolution_level",
+        "downgrade_reason"
+      ],
+      "candidate_order_score_or_resolution_changed_scans": [],
+      "top1_changed_scans": [],
+      "report_sha256": "94772d2e4e42dae423d15f15ff6444ac82e3d644069742cde07b906d66a34918",
+      "query_results_sha256": "1dbe464dc7147d203a4a435ef1c5a5b8d18e01cab34822303bdcbf5e20a2f3c1"
+    },
+    "product_default_pe_sodium": {
+      "input_scans": 14,
+      "correct_top1_sum_composition_and_adduct": 13,
+      "unannotated": 1,
+      "correct_chain_composition": 7,
+      "defaults": {
+        "precursor_ppm": 5,
+        "fragment_ppm": 15,
+        "min_relative_intensity": 0.002,
+        "min_score": 50
+      },
+      "report_sha256": "8c8e01607f0e10a9d359460a8d465e815c32fa89f46c7f592d8fb8bba60c95d3",
+      "interpretation": "Existing downgrade reasons retained; correct sum/adduct is not automatically High chain confidence"
+    },
+    "external_truth_scope": {
+      "dataset": "MetaboLights MTBLS394 / LDAControl experiment 1",
+      "sample": "20150709_LipidMix_5um-pos-01.mzML",
+      "truth": "Known standards from Supplementary Table 2; conditional spectrum association",
+      "limitation": "Suspected mixed scans retained for fixed paired regression; not definite pure-standard errors. This is not calibrated FDR."
+    },
+    "fresh_streaming_index_build": {
+      "seconds": 448.09936220000236,
+      "peak_rss_mib": 306.41796875,
+      "memory_strategy": "fresh streaming MSP normalization; exact hydroxy expansion; disk sort; verified 1024-record blocks",
+      "scope": "Single fresh two-library builder process RSS; not a GUI memory ceiling",
+      "report_sha256": "cbbfdfd562f5c05f5eb92e0f136049c219d460372262634121d487a2a690b95e"
+    },
+    "source_curation": {
+      "preserved_records": 1249737,
+      "replaced_sodium_pe_records": 3907,
+      "added_sodium_pe_records": 3907,
+      "source_sha256": "53c1da00bbe2bf0635e79aeb1b35af97d24de3e28da4f45a3b92b162dec3fbf8",
+      "output_sha256": "a290b8158785402a7624dbd6b43acdf5490f61b244d99ca7bc5fe09a39bec5a7",
+      "scope": "Only diacyl PE sodium; PE-P and all existing non-sodium PE blocks preserved",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/18803343/"
+    },
+    "pe_p_sodium_raw_mass_audit": {
+      "input_mzml_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "spectra": 6,
+      "standards": 3,
+      "raw_peak_count": 301,
+      "mass_tolerance_ppm": 15,
+      "summary": [
+        {
+          "label": "[M+Na]+",
+          "matched_scans_15ppm": 5,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 61.69273394176275,
+          "relative_intensity_pct_max": 100.0,
+          "matched_scans_0p01_Da": 5
+        },
+        {
+          "label": "NL43",
+          "matched_scans_15ppm": 6,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 2.185585619381977,
+          "relative_intensity_pct_max": 100.0,
+          "matched_scans_0p01_Da": 6
+        },
+        {
+          "label": "NL141",
+          "matched_scans_15ppm": 6,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 1.4056768291506145,
+          "relative_intensity_pct_max": 61.77664864558605,
+          "matched_scans_0p01_Da": 6
+        },
+        {
+          "label": "HG164",
+          "matched_scans_15ppm": 4,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 1.5063463871556109,
+          "relative_intensity_pct_max": 100.0,
+          "matched_scans_0p01_Da": 4
+        },
+        {
+          "label": "NL163",
+          "matched_scans_15ppm": 5,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 3.105131793255417,
+          "relative_intensity_pct_max": 30.48862949576076,
+          "matched_scans_0p01_Da": 5
+        },
+        {
+          "label": "Na-phosphate121",
+          "matched_scans_15ppm": 4,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 1.07389132395451,
+          "relative_intensity_pct_max": 64.52966242121131,
+          "matched_scans_0p01_Da": 4
+        },
+        {
+          "label": "sn2 RCO+",
+          "matched_scans_15ppm": 1,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 3.4436101916522945,
+          "relative_intensity_pct_max": 3.4436101916522945,
+          "matched_scans_0p01_Da": 1
+        },
+        {
+          "label": "sn2 FA loss",
+          "matched_scans_15ppm": 0,
+          "total_scans": 6,
+          "relative_intensity_pct_min": null,
+          "relative_intensity_pct_max": null,
+          "matched_scans_0p01_Da": 0
+        },
+        {
+          "label": "NL43 + sn2 FA loss",
+          "matched_scans_15ppm": 3,
+          "total_scans": 6,
+          "relative_intensity_pct_min": 0.35986094442580413,
+          "relative_intensity_pct_max": 1.6683597698215202,
+          "matched_scans_0p01_Da": 3
+        }
+      ],
+      "mixed_spectrum_flag": "scan_8932: 184.0739 base peak, possible choline contribution; origin not proven",
+      "audit_sha256": "f133f465d7a6d356c6f0841c1a1dcc99f2c825748b47b7741c7096536b2bf7b4",
+      "fragment_checks_sha256": "a86fabe4d2291ef92d855e4b23e34566ce1c4b8c68b45bdcf77ef4b32331c473",
+      "graph_report_sha256": "ba77fe2afaed5fad6268a9945cc6e6bf28cdcc83865ed2f35371ce2896eddf85",
+      "scope": "Measured standard-associated spectra; headgroup-supported and exploratory mass targets distinguished; no new PE-P library or gates"
+    }
+  },
+  "maintenance_scripts_sha256": {
+    "scripts/build_prebuilt_libraries.py": "225ff241826adf2781b8441e84b6c8726510bede44474f5d7ceaa8389d27f709",
+    "scripts/curate_positive_pe_sodium.py": "d46161b39b150b298c08d2630cd24254cb1d71ac57ce978573379915ef819963"
+  },
+  "native_backends": {
+    "search_core.json": {
+      "api_version": 1,
+      "source_sha256": "c573300226cb6d6bf6ff60f1d865c2ee9269fc235f89e07d66c34480523a2af5",
+      "binary_sha256": "b2bc2aad804a0b7277ae66a1cab7e8d79192af0845fb29edf4e6d506a3d0777f",
+      "platform": "win32",
+      "machine": "AMD64",
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "link_flags": [
+        "-Wl,-Bstatic,--start-group",
+        "-lstdc++",
+        "-lwinpthread",
+        "-Wl,--end-group,-Bdynamic"
+      ]
+    },
+    "policy/manifest.json": {
+      "python_abi": [
+        3,
+        13
+      ],
+      "platform": "win32",
+      "machine": "AMD64",
+      "cython": "3.3.0",
+      "directives": {
+        "language_level": 3,
+        "annotation_typing": false,
+        "infer_types": false,
+        "cdivision": false,
+        "boundscheck": true,
+        "wraparound": true,
+        "initializedcheck": true,
+        "nonecheck": true,
+        "overflowcheck": true,
+        "binding": true
+      },
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-fno-strict-aliasing",
+        "-fwrapv",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "modules": {
+        "scoring": {
+          "source_sha256": "8d7c535e277d5d32ecbe4928e09e4f67b6a9ba1be798e59d76948feadd336cc0",
+          "binary_name": "scoring.cp313-win_amd64.pyd",
+          "binary_sha256": "b75b330d581872b8f9f4e99033e99f346177db69e5f7576ba9ac83ee0009c999",
+          "bytes": 1051074
+        },
+        "gate_policy": {
+          "source_sha256": "c23216d2c89280a4d45a9543f583b273177896130943eec64aefaf6444f3254c",
+          "binary_name": "gate_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "ffab94ae64a1d5c3671eac0e9e06cb6fdd76a0b4956e7bac9f46be939f44ce34",
+          "bytes": 263828
+        },
+        "oxidized_fragment_policy": {
+          "source_sha256": "24d77a9303c0e628671496dba5f74aa2186313a3665358251c9454d276546a78",
+          "binary_name": "oxidized_fragment_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "f90055ae1f5f5317d71897f95d5bd73230035b65b24072c195ce82e39f3bf5f1",
+          "bytes": 271485
+        },
+        "chain_utils": {
+          "source_sha256": "a17d6e4f3d511590a61202fd4e8b123ab2808f757b9ea08819a312f384e0ca58",
+          "binary_name": "chain_utils.cp313-win_amd64.pyd",
+          "binary_sha256": "b31edb591eef12baa09f617cfe80e282257745b870c717796ea73349bf9d21c4",
+          "bytes": 227164
+        },
+        "matching": {
+          "source_sha256": "1f8867fd7430a1a1a20567bdf0c317a0e8e550722fb0fb2c96d30fc0528ef74a",
+          "binary_name": "matching.cp313-win_amd64.pyd",
+          "binary_sha256": "f50c3f26e3a6be1ab8371038c35d1fbc76ecb950609d1e2ac181ec3b23452548",
+          "bytes": 194205
+        },
+        "record_facts": {
+          "source_sha256": "5e2d5aba58654a7cc744b0280d8606614e4f34937b5d4446eb6ca46b6211ee32",
+          "binary_name": "record_facts.cp313-win_amd64.pyd",
+          "binary_sha256": "b3fc7d0b48c01543419ed66c6aec3e0694b38dd89c2bad18d2698304ab0d719a",
+          "bytes": 217827
+        },
+        "ranking_policy": {
+          "source_sha256": "06dbf517649d197bfa216852c168cf54d5a12bee096830e59cb8ab9ef0cd645f",
+          "binary_name": "ranking_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "a55fe8bac32e5d9bb59a33ba8d8edbbbdd033d673da0cc3a66027336e7142daa",
+          "bytes": 214000
+        },
+        "scoring_policy": {
+          "source_sha256": "19335c1d24c68b3d3deba6daabf3391de5f39107ed75726ccfca0c756fdd1e3a",
+          "binary_name": "scoring_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "679857ec3e5a78e899dd139ccf1d281547c39aef2cc666a1120f207ecf59f0c9",
+          "bytes": 128506
+        },
+        "search": {
+          "source_sha256": "ddc63580b6282906f240dc06fa8eb16003ba42f643f2244dd0ad4336f3cb4ce1",
+          "binary_name": "search.cp313-win_amd64.pyd",
+          "binary_sha256": "6ca9e7f65f72aed47a1fe1b79ea86c915a4f02268c07506340050d771bf30625",
+          "bytes": 919342
+        },
+        "resolution_policy": {
+          "source_sha256": "abe2edb079bf2bf21ebce691cad9c2a58eeb4377ec4fb6c2cd2cbe2295fe7e59",
+          "binary_name": "resolution_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "58d3252414df726828c5b6d95854aa67bc96dde9595e15b0824d61676e80c565",
+          "bytes": 342377
+        },
+        "indexed_library": {
+          "source_sha256": "b58901243b9cf0c176d64e9c544be46fa0bf5e35312afb3827e703dcaa4f2d92",
+          "binary_name": "indexed_library.cp313-win_amd64.pyd",
+          "binary_sha256": "a13c5d413620775aadba436d12c0626a9537a0b46eab015f3b8e984ce76b71fb",
+          "bytes": 678677
+        }
+      }
+    }
+  },
+  "previous_library_revision": "pe_sodium_20261011",
+  "previous_library_revision_sha256": "688e85509a6ebc3726ce3eac14a151cef1e930ba9204f80c5dc67e9c38b80232"
+}

@@ -1,5 +1,43 @@
 # Release validation
 
+## PE sodium RCO source/library revision, 2026-10-11
+
+The subsequent revision updates the same 3,907 PE `[M+Na]+` records with
+7,735 Common acylium supports, one per distinct acyl composition. Unequal
+chains have eleven library ions; equal chains have eight. RCO+ contributes
+only to Other, which retains three-observation saturation and a 20-point cap.
+It introduces no chain gate, headgroup rescue, weight change or confidence
+promotion. PE-P `[M+H]+` and its locked Other policy remain unchanged.
+
+The final source passed **850 tests and 3,118 subtests** in both fresh policy
+processes (compiled and Python), with no failures, errors or skips. Fresh MSP
+parsing rebuilt both indexed libraries. Full comparison of all 2,350,846
+normalized records verified exactly the requested Common additions in the
+3,907 sodium PE records: every other record/field, numeric type, record ID and
+precursor ordering is unchanged. The original source blocks outside PE sodium
+were verified by the curator.
+
+The same 325-query standard queue replayed its archived pre-RCO baseline.
+Candidate names, adducts, order, scores, gates, resolution and downgrade fields
+remain identical in this queue after RCO addition; matched evidence can gain
+the optional ions. Default-settings PE sodium validation remains 13 correct
+Top1 sum/adducts out of 14 scans, one unannotated, and seven correct chain
+compositions. Existing sum-level and single-chain warnings remain. No broader
+FDR claim follows from this particular associated-standard check.
+
+The monitored fresh two-library build peaked at **306.4 MiB RSS** in the single
+builder process and took 448.1 seconds on the local machine. This is an index
+build measurement, not a GUI/raw-file memory ceiling. The final build retains
+only eligible protonated hydroxy-sphingolipid seeds and bounded record blocks.
+
+Six PE-P sodium raw spectra were extracted and plotted separately, including
+the scan with a 184.0739 base peak. The chemical scope and uncertain mass
+assignments are documented in [PE-P sodium fragmentation](pe_plasmalogen_sodium_fragmentation.md).
+Their raw files and plots stay outside Git; no PE-P sodium chain library is
+added. Current fingerprints are in
+[`config/library_revision_pe_sodium_rco_20261011.json`](../config/library_revision_pe_sodium_rco_20261011.json).
+Prior manifests, source commits and release executables remain intact.
+
 ## PE sodium source/library revision, 2026-10-11
 
 This revision adds 3,907 formula-derived diacyl PE `[M+Na]+` records and their

@@ -12,12 +12,14 @@ blocks, including PE-P `[M+H]+`, are preserved verbatim.
 | Other | `[M+Na-163]+` | C2H7NO4PNa, 163.001038 |
 | Other | `[C2H8NO4PNa]+` | 164.008315 |
 | Other | `[M+Na]+` | precursor |
+| Other | `(R=O)+(chain)` | C_n H_(2n-2DB-1) O+, one per distinct acyl composition |
 | FAH | `[M+Na-RCOOH]+(chain)` | fatty acid at each distinct acyl composition |
 | FAH | `[M+Na-43-RCOOH]+(chain)` | C2H5N plus that fatty acid |
 
-Two different acyl chains therefore have four chain-loss peaks and nine
-total library peaks. Equal chains share their masses: two chain-loss peaks
-and seven total peaks, without fabricated duplicate observations.
+Two different acyl chains therefore have four chain-loss peaks, two Common
+acylium supports and eleven total library peaks. Equal chains share their
+masses: two chain-loss peaks, one acylium support and eight total peaks,
+without fabricated duplicate observations.
 The 164 ion is stored as **164.0083**, not an observed approximation 164.0089.
 Masses are calculated from elemental formulas, then rounded once when writing MSP.
 
@@ -26,6 +28,15 @@ intensity quality, tentative fallbacks, two-physical-chain-peak resolution,
 single-chain coverage warning, tie handling and shared-peak policy remain.
 The new sodium acyl-loss labels are registered as chain evidence only for
 diacyl PE `[M+Na]+`; protonated PE and other subclasses retain their profiles.
+RCO+ is explicitly Common/Other, not `FA_Frag` or a chain-loss gate. Other
+already saturates at three physical observations; extra support cannot exceed
+its existing 20-point cap. Absence of RCO+ introduces no required gate or new
+confidence downgrade. Thus matching more ions does not always increase score.
+
+In the fixed 14 PE sodium scans, 13 target-chain acylium mass signals occurred
+across 10 scans within 15 ppm, at 0.87-5.46% of the base peak. These measured
+mass matches motivate optional support, not an assertion that every sodium
+spectrum must produce RCO+. Fatty-acid loss channels remain the chain-resolution evidence.
 
 Reference: [Simoes et al. (2008), DOI 10.1002/rcm.3727](https://pubmed.ncbi.nlm.nih.gov/18803343/).
 The paper studies POPE/PLPE across three ESI instruments and MALDI and reports
@@ -52,7 +63,9 @@ with an sn-1 `RCOOH` loss as if both chains were esters. The diacyl PE chain
 channels above are not automatically extended to PE-P. Adding a PE-P sodium
 library requires separately verified chain channels and an evidence gate
 that does not claim plasmenyl structure from shared headgroup peaks alone.
-No PE-P sodium records are introduced by this update.
+No PE-P sodium records are introduced by this update. See the
+[PE-P sodium fragmentation note](pe_plasmalogen_sodium_fragmentation.md)
+for the headgroup pathways, exact masses, measured six-scan audit and limits.
 
 In six standard-associated PE-P sodium scans from the small MTBLS394 positive
 file, matching within 0.01 Da found NL43 in all six and NL163 in five. The direct

@@ -16,6 +16,7 @@ from lipidgate.ms2.resolution_policy import (
 )
 from lipidgate.ms2.rules import DEFAULT_RULES
 from lipidgate.ms2.scoring import _pool_weights_for_record, score_candidate
+from lipidgate.ms2.scoring_policy import FAH_ONLY_FALLBACK_REASON, HG_ONLY_FALLBACK_REASON
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from curate_positive_pe_sodium import curate, sodium_block
@@ -42,13 +43,15 @@ def test_sodium_pe_exact_masses_and_requested_roles():
     r = record()
     assert r.precursor_mz == pytest.approx(740.52008, abs=.00001)
     assert r.formula == 'C39H76NO8P'
-    assert len(r.fragments) == 9
+    assert len(r.fragments) == 11
     expected = {
         '[M+Na-141]+': (599.5010, 'Diagnostic_HG'),
         '[M+Na-43]+': (697.4779, 'Common'),
         '[M+Na-163]+': (577.5190, 'Common'),
         '[C2H8NO4PNa]+': (164.0083, 'Common'),
         '[M+Na]+': (740.5201, 'Precursor Ion'),
+        '(R=O)+(16:0)': (239.2369, 'Common'),
+        '(R=O)+(18:1)': (265.2526, 'Common'),
         '[M+Na-RCOOH]+(16:0)': (484.2799, 'Diagnostic_FA_Loss'),
         '[M+Na-RCOOH]+(18:1)': (458.2642, 'Diagnostic_FA_Loss'),
         '[M+Na-43-RCOOH]+(16:0)': (441.2377, 'Diagnostic_FA_Loss'),
@@ -88,7 +91,7 @@ def test_equal_chains_do_not_invent_duplicate_masses_or_sn_positions():
     r = record('PE(18:0_18:0)')
     losses = [f for f in r.fragments if f.fragment_type == 'Diagnostic_FA_Loss']
     assert len(losses) == 2 and len({f.mz for f in losses}) == 2
-    assert len(r.fragments) == 7
+    assert len(r.fragments) == 8
     assert score(r, r.fragments).downgrade_reason == SINGLE_CHAIN_COVERAGE_REASON
     with pytest.raises(ValueError):
         sodium_pe_fragments('PE(P-18:0/20:4)')
@@ -121,6 +124,33 @@ def test_curation_preserves_existing_blocks_and_is_idempotent(tmp_path):
     assert second.read_bytes() == destination.read_bytes()
     loaded = load_standard_msp(destination)
     na = next(r for r in loaded if r.compound_class == 'PE' and r.adduct == '[M+Na]+')
-    assert len(na.fragments) == 9 and score(na, na.fragments).resolution_level == 'chain_level'
+    assert len(na.fragments) == 11 and score(na, na.fragments).resolution_level == 'chain_level'
     with pytest.raises(ValueError):
         curate(source, source)
+
+
+def test_sodium_pe_rco_support_is_optional_other_and_does_not_resolve_chains():
+    r = record()
+    rco = [f for f in r.fragments if f.name.startswith('(R=O)+')]
+    assert len(rco) == 2 and all(f.fragment_type == 'Common' for f in rco)
+    assert not any(fragment_is_chain_evidence(r, f) for f in rco)
+    complete = score(r, r.fragments)
+    absent = score(r, [f for f in r.fragments if f not in rco])
+    assert complete.passed_required_gates and absent.passed_required_gates
+    assert complete.resolution_level == absent.resolution_level == 'chain_level'
+    assert complete.downgrade_reason == absent.downgrade_reason == ''
+    assert complete.pool_scores['hg'] == absent.pool_scores['hg']
+    assert complete.pool_scores['fah'] == absent.pool_scores['fah']
+    assert complete.pool_scores['other'].matched_count == absent.pool_scores['other'].matched_count + 2
+    # Other already saturates at three observations; adding optional ions cannot
+    # exceed its existing 20-point cap, and missing them is not a new gate.
+    minimal = [f for f in r.fragments if f.fragment_type in
+               {'Diagnostic_HG', 'Diagnostic_FA_Loss', 'Precursor Ion'}]
+    supported, unsupported = score(r, minimal + rco), score(r, minimal)
+    assert supported.pool_scores['other'].pool_score > unsupported.pool_scores['other'].pool_score
+    no_losses = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_FA_Loss'])
+    assert no_losses.downgrade_reason == HG_ONLY_FALLBACK_REASON
+    assert no_losses.resolution_level != 'chain_level'
+    missing_head = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_HG'])
+    assert missing_head.downgrade_reason == FAH_ONLY_FALLBACK_REASON
+    assert missing_head.pool_scores['hg'].pool_score == 0

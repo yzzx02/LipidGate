@@ -35,8 +35,11 @@ def sodium_pe_fragments(chain_name: str) -> tuple[float, str, list[FragmentRecor
     # Equal chains give two physical loss ions, not four duplicate peaks.
     for carbon_count, db_count in sorted({(c1, db1), (c2, db2)}):
         acid = carbon_count * C + (2 * carbon_count - 2 * db_count) * H + 2 * O
+        acylium = carbon_count * C + (2 * carbon_count - 2 * db_count - 1) * H + O - ELECTRON
         token = f"{carbon_count}:{db_count}"
         fragments.extend([
+            # Observed weak RCO+ supports Other; it never replaces acyl-loss gates.
+            FragmentRecord(acylium, f"(R=O)+({token})", "Common"),
             FragmentRecord(precursor - acid, f"[M+Na-RCOOH]+({token})", "Diagnostic_FA_Loss"),
             FragmentRecord(precursor - VINYLAMINE - acid,
                            f"[M+Na-43-RCOOH]+({token})", "Diagnostic_FA_Loss"),
