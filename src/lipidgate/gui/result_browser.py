@@ -1145,6 +1145,11 @@ class ResultsPage(QtWidgets.QWidget):
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
+        from lipidgate.ion_relationships import relationship_lines
+        relations = relationship_lines(self.bundle.ion_relationships, text(feature.get("_key")),
+                                       text(row.get("adduct")))
+        if relations:
+            values.append(("加合物关系（推断）", "；".join(relations[:3])))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))
         if math.isfinite(number(feature.get("_aligned_rt"))):
@@ -1178,6 +1183,9 @@ class ResultsPage(QtWidgets.QWidget):
             + "</p><p>鉴定置信度：" + html.escape(confidence_description(row))
             + "</p><p><b>鉴定证据</b></p>"
         )
+        if relations:
+            content += "<p>加合物关系仅作独立提示；库候选、分数、置信度和积分面积沿用原始结果。</p>"
+            content += "".join("<p>" + html.escape(line) + "</p>" for line in relations)
         area = number(row.get("ms1_feature_area"))
         if math.isfinite(area):
             units = " intensity·s" if text(row.get("ms1_area_unit")) == "intensity*seconds" else ""

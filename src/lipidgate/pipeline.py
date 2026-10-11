@@ -218,5 +218,14 @@ def run_project(project_path, settings, progress=lambda message: None):
                        if key in {"use_ecn", "use_score", "min_score", "rt_tolerance", "retain_unmodeled"}}
     final = export_final_results(audit, out / "results", export_xlsx=False,
                                  export_plots=False, **filter_settings)
+    # Relationship evidence is calculated only after search and final export.
+    # The helper receives MS1 tables, never the MS2 candidate DataFrame.
+    if feature is not None:
+        from lipidgate.gui.result_data import _load_ms1_tables
+        from lipidgate.ion_relationships import export_ion_relationships
+        native, aligned, _ = _load_ms1_tables(out)
+        progress("推断 MS1 加合物关系…")
+        export_ion_relationships(native, aligned, out / "results", sources=ms1_files,
+                                 mode=mode, progress=progress)
     progress("完成")
     return feature, result, final

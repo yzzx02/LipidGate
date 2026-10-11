@@ -94,15 +94,25 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
             candidates.get("ms1_feature_area", pd.Series(float("nan"), index=candidates.index)), errors="coerce").to_numpy()
         evidence_table["MS1 面积单位"] = candidates.get("ms1_area_unit", pd.Series("", index=candidates.index)).to_numpy()
     paths = []
+    relations = bundle.ion_relationships
+    if not relations.empty:
+        relations = relations.loc[relations.feature_a.isin(features._key) | relations.feature_b.isin(features._key)]
     if csv:
         feature_path = output_dir / "feature_results.csv"
         evidence_path = output_dir / "spectrum_evidence.csv"
         feature_table.to_csv(feature_path, index=False, encoding="utf-8-sig")
         evidence_table.to_csv(evidence_path, index=False, encoding="utf-8-sig")
         paths.extend([feature_path, evidence_path])
+        if not relations.empty:
+            relation_path = output_dir / "ion_relationships.csv"
+            relations.to_csv(relation_path, index=False, encoding="utf-8-sig")
+            paths.append(relation_path)
     if xlsx:
+        sheets = {"特征结果": feature_table, "逐谱证据": evidence_table}
+        if not relations.empty:
+            sheets["加合物关系（推断）"] = relations
         paths.append(write_workbook(output_dir / "LipidGate_results.xlsx",
-                                    {"特征结果": feature_table, "逐谱证据": evidence_table}))
+                                    sheets))
     if plots:
         from lipidgate.ecn_filter.plots import plot_ecn_class
 

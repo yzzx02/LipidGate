@@ -388,6 +388,7 @@ class ResultBundle:
     path: Path | None = None
     plot_paths: list[Path] = field(default_factory=list)
     notice: str = ""
+    ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -687,6 +688,9 @@ def load_result_bundle(path):
     data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
+    relations_path = base / "ion_relationships.csv"
+    if relations_path.is_file():
+        bundle.ion_relationships = pd.read_csv(relations_path, low_memory=False)
     if legacy_mapping:
         bundle.notice += " 旧运行没有保存精确对齐成员表，仅将唯一匹配的原始峰归入对齐行；重新分析可获得完整映射。"
     if audit.exists():
