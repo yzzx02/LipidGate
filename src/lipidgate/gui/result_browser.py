@@ -407,7 +407,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.spectrum_choice.setToolTip("查看归入当前特征的每一张 MS2 谱图")
         self.spectrum_choice.currentIndexChanged.connect(self._spectrum_selected)
         detail_layout.addWidget(self.spectrum_choice)
-        detail_layout.addWidget(label("Top N 候选注释", "resultSection"))
+        detail_layout.addWidget(label("Top3 候选注释", "resultSection"))
         self.candidates = QtWidgets.QTableWidget(0, 7)
         self.candidates.setHorizontalHeaderLabels(
             ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm", "ECN"]
@@ -1089,7 +1089,7 @@ class ResultsPage(QtWidgets.QWidget):
                 if column in {"final_score", "ppm_error"}:
                     value = f"{number(value):.2f}"
                 if column == "_rank":
-                    value = str(int(row["_rank"]))
+                    value = str(int(row.get("_display_rank", row["_rank"])))
                 if column == "_ecn":
                     value = ecn_display(value)
                 item = QtWidgets.QTableWidgetItem(text(value))
@@ -1147,9 +1147,16 @@ class ResultsPage(QtWidgets.QWidget):
         ]
         from lipidgate.ion_relationships import relationship_lines
         relations = relationship_lines(self.bundle.ion_relationships, text(feature.get("_key")),
-                                       text(row.get("adduct")))
+                                       text(row.get("adduct")),
+                                       dict(zip(self.bundle.features._key, self.bundle.features._display_feature)))
         if relations:
-            values.append(("加合物关系（推断）", "；".join(relations[:3])))
+            values.append(("加合物联系", "；".join(relations)))
+        differences = self.bundle.annotations.loc[
+            self.bundle.annotations._key.eq(feature.get("_key"))
+            & self.bundle.annotations.feature_result_role.eq("sample_difference")]
+        if not differences.empty:
+            values.append(("样本差异注释", "；".join(
+                f"{item.matched_name}（{item.feature_result_samples}）" for item in differences.itertuples())))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))
         if math.isfinite(number(feature.get("_aligned_rt"))):
@@ -1183,9 +1190,6 @@ class ResultsPage(QtWidgets.QWidget):
             + "</p><p>鉴定置信度：" + html.escape(confidence_description(row))
             + "</p><p><b>鉴定证据</b></p>"
         )
-        if relations:
-            content += "<p>加合物关系仅作独立提示；库候选、分数、置信度和积分面积沿用原始结果。</p>"
-            content += "".join("<p>" + html.escape(line) + "</p>" for line in relations)
         area = number(row.get("ms1_feature_area"))
         if math.isfinite(area):
             units = " intensity·s" if text(row.get("ms1_area_unit")) == "intensity*seconds" else ""

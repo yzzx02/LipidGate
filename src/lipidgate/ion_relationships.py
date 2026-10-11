@@ -28,6 +28,7 @@ RELATION_COLUMNS = [
     "rejected_samples", "shape_pearson_median", "shape_cosine_median",
     "abundance_correlation", "abundance_samples", "status", "evidence_json",
 ]
+LINK_COLUMNS = ["feature_a", "feature_b", "ion_a", "ion_b", "neutral_mass"]
 
 
 @dataclass(frozen=True)
@@ -275,7 +276,11 @@ def export_ion_relationships(native, aligned, output_dir, *, sources, mode, prog
         reader.close()
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    result.to_csv(out/'ion_relationships.csv', index=False, encoding='utf-8-sig')
+    links = confirmed_ion_relationships(result)
+    audit = out / 'audit'
+    audit.mkdir(exist_ok=True)
+    result.to_csv(audit/'ion_relationships.csv', index=False, encoding='utf-8-sig')
+    links.to_csv(out/'ion_relationships.csv', index=False, encoding='utf-8-sig')
     source_metadata = []
     for path in sources:
         item = dict(path=str(Path(path).resolve()))
@@ -285,28 +290,88 @@ def export_ion_relationships(native, aligned, output_dir, *, sources, mode, prog
         except OSError as exc:
             item['error'] = str(exc)
         source_metadata.append(item)
-    metadata = dict(schema=1, method='IIN-inspired independent pair hypotheses v1', mode=mode,
-        config=asdict(config), relation_count=len(result), status_counts=result.status.value_counts().to_dict(),
+    metadata = dict(schema=2, method='IIN-inspired unambiguous adduct links v2', mode=mode,
+        config=asdict(config), relation_count=len(links), hypothesis_count=len(result),
+        status_counts=result.status.value_counts().to_dict(),
+        public_link_policy='All shared samples verified; no contradictory sample; unique ion assignments and one feature per ion form in a consistent neutral-mass component',
         scope='Advisory only; no library filtering, rescoring, confidence propagation, area combination or feature merging',
         ion_masses=ION_MASSES[mode], single_charge_monomers_only=True,
         sources=source_metadata)
     (out/'ion_relationships.json').write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding='utf-8')
-    return result
+    return links
 
 
-def relationship_lines(relations, feature_key, library_adduct=''):
-    """Human-readable hints, keeping inferred and library ion types distinct."""
+def confirmed_ion_relationships(relations):
+    """Only write complete and unambiguous links; hypotheses stay in audit."""
+    if relations is None or relations.empty:
+        return pd.DataFrame(columns=LINK_COLUMNS)
+    if 'status' not in relations:
+        # Schema 2 public tables already passed the evidence checks.
+        return relations.reindex(columns=LINK_COLUMNS).copy()
+    shared = pd.to_numeric(relations.shared_samples, errors='coerce')
+    supported = pd.to_numeric(relations.supported_samples, errors='coerce')
+    rejected = pd.to_numeric(relations.rejected_samples, errors='coerce')
+    eligible = relations.loc[relations.status.eq('EIC_supported') & shared.gt(0)
+                             & supported.eq(shared) & rejected.eq(0)].copy()
+    adjacency, assignments, node_masses = {}, {}, {}
+    for row in eligible.itertuples():
+        for own, partner, ion in ((row.feature_a,row.feature_b,row.ion_a),
+                                  (row.feature_b,row.feature_a,row.ion_b)):
+            adjacency.setdefault(own,set()).add(partner)
+            assignments.setdefault(own,set()).add(ion)
+            node_masses.setdefault(own,[]).append(_number(row.neutral_mass))
+    invalid, visited = set(), set()
+    for start in adjacency:
+        if start in visited:
+            continue
+        pending, component = [start], set()
+        while pending:
+            node = pending.pop()
+            if node in component:
+                continue
+            component.add(node)
+            pending.extend(adjacency[node]-component)
+        visited.update(component)
+        ions = [next(iter(assignments[node])) for node in component if len(assignments[node])==1]
+        masses = np.asarray([mass for node in component for mass in node_masses[node]], dtype=float)
+        if (len(ions)!=len(component) or len(ions)!=len(set(ions))
+                or not np.isfinite(masses).all() or masses.min()<=0
+                or masses.max()-masses.min()>masses.min()*RelationshipConfig().mass_ppm*1e-6):
+            invalid.update(component)
+    return eligible.loc[~eligible.feature_a.isin(invalid) & ~eligible.feature_b.isin(invalid), LINK_COLUMNS].reset_index(drop=True)
+
+
+def relationship_index(relations, display_ids=None):
+    """Build export labels once, rather than scanning every link per feature."""
+    display_ids = display_ids or {}
+    index = {}
+    links = confirmed_ion_relationships(relations)
+    for row in links.itertuples():
+        for own_key, partner, own, other in ((row.feature_a,row.feature_b,row.ion_a,row.ion_b),
+                                              (row.feature_b,row.feature_a,row.ion_b,row.ion_a)):
+            partner_id = display_ids.get(partner, partner.split('|',1)[-1])
+            index.setdefault(own_key,[]).append((own,f'{own} ↔ Feature {partner_id} {other}'))
+    return index
+
+
+def relationship_lines(relations, feature_key, library_adduct='', display_ids=None, *, link_index=None):
+    """Plain feature links; internal shape/uncertainty states are not displayed."""
+    library_adduct = _text(library_adduct)
+    if link_index is not None:
+        return [line for own,line in link_index.get(feature_key,[])
+                if not library_adduct or own==library_adduct]
     if relations is None or relations.empty:
         return []
-    related = relations.loc[(relations.feature_a.eq(feature_key) | relations.feature_b.eq(feature_key))
-                            & relations.status.ne('rejected')]
+    links = confirmed_ion_relationships(relations) if 'status' in relations else relations
+    related = links.loc[links.feature_a.eq(feature_key) | links.feature_b.eq(feature_key)]
     lines = []
-    labels = {'EIC_supported':'EIC 支持', 'mass_RT_only':'质量/RT 候选，待核验', 'mixed_evidence':'样本间证据不一致'}
+    display_ids = display_ids or {}
     for row in related.itertuples():
         own_a = row.feature_a == feature_key
         own, other = (row.ion_a, row.ion_b) if own_a else (row.ion_b, row.ion_a)
         partner = row.feature_b if own_a else row.feature_a
-        label = labels.get(row.status, row.status)
-        conflict = '；与当前库加合物不同' if library_adduct and own != library_adduct else ''
-        lines.append(f'{own} ↔ {partner} {other} · {label} · {row.supported_samples}/{row.shared_samples} 样本支持{conflict}')
+        if library_adduct and own != library_adduct:
+            continue
+        partner_id = display_ids.get(partner, partner.split('|',1)[-1])
+        lines.append(f'{own} ↔ Feature {partner_id} {other}')
     return lines

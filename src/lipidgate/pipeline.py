@@ -224,7 +224,7 @@ def run_project(project_path, settings, progress=lambda message: None):
         from lipidgate.gui.result_data import _load_ms1_tables
         from lipidgate.ion_relationships import export_ion_relationships
         native, aligned, _ = _load_ms1_tables(out)
-        progress("推断 MS1 加合物关系…")
+        progress("建立 MS1 加合物联系…")
         export_ion_relationships(native, aligned, out / "results", sources=ms1_files,
                                  mode=mode, progress=progress)
     progress("完成")

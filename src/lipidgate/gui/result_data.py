@@ -13,6 +13,7 @@ from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
 from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
+from lipidgate.feature_annotations import select_feature_annotations, spectrum_candidates
 
 
 COLUMNS = [
@@ -389,6 +390,7 @@ class ResultBundle:
     plot_paths: list[Path] = field(default_factory=list)
     notice: str = ""
     ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
+    annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -406,13 +408,8 @@ class ResultBundle:
                 native_features.loc[seconds, "RT"] = pd.to_numeric(
                     native_features.loc[seconds, "RT"], errors="coerce"
                 ) / 60
-        representatives = (
-            candidates.sort_values(
-                ["_rank", "_score"], ascending=[True, False], kind="stable"
-            )
-            .drop_duplicates("_key")
-            .copy()
-        )
+        annotations = select_feature_annotations(candidates)
+        representatives = annotations.loc[annotations.feature_result_role.eq("representative")].drop_duplicates("_key").copy()
         notice = "当前仅有鉴定记录；未提供完整 MS1 特征表，无法统计未鉴定特征。"
         if aligned_features is not None:
             aligned = aligned_features.copy()
@@ -514,23 +511,34 @@ class ResultBundle:
         display_ids = display_feature_ids(representatives)
         representatives["_display_feature"] = representatives._key.map(display_ids)
         candidates["_display_feature"] = candidates._key.map(display_ids)
+        annotations["_display_feature"] = annotations._key.map(display_ids)
         return cls(
-            candidates, representatives, Path(path) if path else None, notice=notice
+            candidates, representatives, Path(path) if path else None, notice=notice,
+            annotations=annotations,
         )
 
     def spectra(self, key):
-        return (self.candidates.loc[self.candidates._key.eq(key)]
-                .sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
-                .drop_duplicates("_spectrum"))
+        rows = self.candidates.loc[self.candidates._key.eq(key)].copy()
+        feature = self.features.loc[self.features._key.eq(key)]
+        chosen = feature.iloc[0]._spectrum if not feature.empty else ""
+        rows["_representative_first"] = rows._spectrum.eq(chosen)
+        return (rows.sort_values(["_representative_first", "_rank", "_score"],
+                                 ascending=[False, True, False], kind="stable")
+                .drop_duplicates("_spectrum").drop(columns="_representative_first"))
 
     def candidate_rows(self, key, spectrum=None):
         feature = self.features.loc[self.features._key.eq(key)]
         if feature.empty:
             return self.candidates.iloc[:0]
         spectrum = spectrum or feature.iloc[0]["_spectrum"]
-        return self.candidates.loc[
+        rows = self.candidates.loc[
             self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)
-        ].sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
+        ]
+        if self.path is not None and self.path.parent.name == "audit":
+            return rows.sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
+        selected = spectrum_candidates(rows)
+        selected["_display_rank"] = range(1, len(selected) + 1)
+        return selected
 
     def filter(
         self,
@@ -650,6 +658,21 @@ def load_result_bundle(path):
             data = pd.read_excel(book, sheet_name=sheet)
     else:
         data = pd.read_csv(path, low_memory=False)
+    bundle = result_bundle_from_data(data, path)
+    if audit.exists():
+        prefix = (
+            "当前直接打开审计表，包含未通过分数或 ECN 筛选的候选；这些记录不是最终鉴定。"
+            if explicit_audit else
+            "主结果使用代表谱 Top3；其他样本的明确 High Top1 差异单独保留。完整逐谱候选保存在 audit/evaluated.csv。"
+        )
+        bundle.notice = prefix + bundle.notice
+    return bundle
+
+
+def result_bundle_from_data(data, path, *, refresh_membership=True):
+    """Shared native membership and feature output for export and browsing."""
+    path = Path(path)
+    base = path.parent.parent if path.parent.name == "audit" else path.parent
     features, aligned_features, _ = _load_ms1_tables(base.parent)
     legacy_mapping = False
     if features is not None and aligned_features is not None:
@@ -685,21 +708,16 @@ def load_result_bundle(path):
             mz_da = float(mz_da) if mz_da is not None else None
         except (OSError, ValueError, KeyError, TypeError):
             pass
-    data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
+    if refresh_membership:
+        data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
     relations_path = base / "ion_relationships.csv"
     if relations_path.is_file():
-        bundle.ion_relationships = pd.read_csv(relations_path, low_memory=False)
+        from lipidgate.ion_relationships import confirmed_ion_relationships
+        bundle.ion_relationships = confirmed_ion_relationships(pd.read_csv(relations_path, low_memory=False))
     if legacy_mapping:
         bundle.notice += " 旧运行没有保存精确对齐成员表，仅将唯一匹配的原始峰归入对齐行；重新分析可获得完整映射。"
-    if audit.exists():
-        prefix = (
-            "当前直接打开审计表，包含未通过分数或 ECN 筛选的候选；这些记录不是最终鉴定。"
-            if explicit_audit else
-            "仅显示通过本次分数与 ECN 筛选的逐谱候选；完整审计记录保存在 audit/evaluated.csv。"
-        )
-        bundle.notice = prefix + bundle.notice
     bundle.plot_paths = sorted((base / "plots").glob("*_ECN.png"))
     return bundle
 

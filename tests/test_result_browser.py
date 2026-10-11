@@ -276,7 +276,7 @@ def test_export_module_writes_feature_and_spectrum_provenance(tmp_path):
 
     bundle = ResultBundle.from_frames(rows())
     paths = export_browser_results(bundle, tmp_path, csv=True, xlsx=False)
-    assert len(paths) == 2
+    assert len(paths) == 3
     features = pd.read_csv(tmp_path / "feature_results.csv")
     evidence = pd.read_csv(tmp_path / "spectrum_evidence.csv")
     assert len(features) == 3 and len(evidence) == 4

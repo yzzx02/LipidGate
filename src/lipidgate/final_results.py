@@ -114,18 +114,12 @@ def export_final_results(
     )
     passed = evaluated.loc[evaluated.RT_consistency_pass.fillna(False)].copy()
     evidence = prepare_ms2_result_export_df(passed)
-    final = evidence.copy()
-    if not final.empty:
-        final["_high"] = final["置信度"].eq("高")
-        final = (
-            final.sort_values(
-                ["_high", "result_rank", "final_score"],
-                ascending=[False, True, False],
-                kind="stable",
-            )
-            .drop_duplicates(["compound_class", "matched_name"])
-            .drop(columns="_high")
-        )
+    from lipidgate.gui.result_data import result_bundle_from_data
+    from lipidgate.feature_annotations import annotation_export_table
+    # Production search already records measured EIC membership. Final output
+    # uses that evidence without reopening every raw file a second time.
+    bundle = result_bundle_from_data(passed, out / "final_identifications.csv", refresh_membership=False)
+    final = annotation_export_table(bundle.annotations)
     pending = prepare_ms2_result_export_df(
         evaluated.loc[
             evaluated.RT_filter_action.isin(
@@ -138,6 +132,7 @@ def export_final_results(
     audit = out / "audit"
     audit.mkdir(exist_ok=True)
     evaluated.to_csv(audit / "evaluated.csv", index=False, encoding="utf-8-sig")
+    bundle.annotations.to_csv(audit / "feature_annotations.csv", index=False, encoding="utf-8-sig")
     models.to_csv(audit / "models.csv", index=False, encoding="utf-8-sig")
     anchors.to_csv(audit / "anchors.csv", index=False, encoding="utf-8-sig")
     xlsx = (

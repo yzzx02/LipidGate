@@ -411,8 +411,8 @@ def test_real_project_detection_search_and_export(tmp_path):
     # A detected Na/H MS1 pair adds advisory evidence without changing the
     # single H library candidate, its confidence, or the quantitation rows.
     relations = pd.read_csv(result.csv_path.parent / "ion_relationships.csv")
-    supported = relations.loc[relations.status.eq('EIC_supported')]
-    assert len(supported) == 1
-    assert supported.iloc[0].ion_a == '[M+H]+'
-    assert supported.iloc[0].ion_b == '[M+Na]+'
-    assert supported.iloc[0].supported_samples == 1
+    assert len(relations) == 1 and 'status' not in relations
+    assert relations.iloc[0].ion_a == '[M+H]+'
+    assert relations.iloc[0].ion_b == '[M+Na]+'
+    audit = pd.read_csv(result.csv_path.parent / "audit/ion_relationships.csv")
+    assert audit.iloc[0].supported_samples == 1

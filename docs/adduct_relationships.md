@@ -1,6 +1,6 @@
-# Independent MS1 adduct relationships
+# Independent MS1 adduct links
 
-The source development branch adds advisory relationships after project MS2
+The source development branch establishes adduct links after project MS2
 search and final identification export. The published v1.0.3 executable has not
 been rebuilt for this addition.
 
@@ -13,9 +13,9 @@ Coeluting isobars can still produce misleading relationships.
 
 `src/lipidgate/ion_relationships.py` implements independent pair hypotheses
 inspired by MZmine Ion Identity Networking (IIN). It is an original, smaller
-implementation, not MZmine, full IIMN, or CliqueMS. It retains alternative
-explanations rather than assigning the first matching adduct or forcing a
-single compound group.
+implementation, not MZmine, full IIMN, or CliqueMS. Alternative explanations are
+retained in the audit. Only complete and unambiguous relationships are written
+to the normal results, rather than assigning the first matching adduct.
 
 | Evidence | Current default |
 | --- | --- |
@@ -47,10 +47,11 @@ The relationship helper receives MS1 feature tables and raw file paths, not MS2
 candidate results. It runs after search and final identification export. It does
 not filter library adducts, rescore/reorder candidates, change evidence gates,
 propagate High confidence, transfer an annotation between samples, merge rows or
-combine areas. An inferred ion form differing from the current library adduct is
-shown as a review hint rather than replacing the library result.
+combine areas. An ion form differing from the current library adduct is retained
+in the relationship audit and does not replace the library result or appear as
+a confirmed contact for that selected candidate.
 
-Four aggregate states are exported:
+Four aggregate states are retained in the audit:
 
 - `EIC_supported`: at least one native sample supports the pair and none rejects
   it. This does not mean every shared sample was verified; inspect the counts.
@@ -58,17 +59,24 @@ Four aggregate states are exported:
 - `rejected`: there is contradictory native evidence and no supporting sample.
 - `mass_RT_only`: shape evidence is unavailable or insufficient.
 
-`ion_relationships.csv` preserves both feature keys, ion hypotheses, neutral
-mass/error, supporting/shared/rejected sample counts, shape statistics and
-per-sample evidence JSON. `ion_relationships.json` records the method, thresholds,
-scope and source file identities/read failures. Project provenance separately
-retains input SHA-256 hashes and the product code fingerprint.
+`audit/ion_relationships.csv` preserves both feature keys, ion hypotheses,
+neutral mass/error, sample counts, shape statistics and per-sample evidence JSON.
+Public `ion_relationships.csv` contains only both feature keys, both ion forms
+and neutral mass for accepted links. Every shared native sample must have
+verified EIC support. A connected component is omitted if ion assignments
+conflict, multiple features compete for the same ion form, or its neutral masses
+are inconsistent. A missing/read-failed trace cannot establish a public link.
+`ion_relationships.json` records the method, thresholds, scope and source file
+identities/read failures. Project provenance separately retains input SHA-256
+hashes and the product code fingerprint.
 
-The result detail panel displays non-rejected relationships under
-“加合物关系（推断）”. Browser CSV export adds a separate relationship file; Excel
-adds a separate relationship worksheet. Identification and per-spectrum evidence
-tables retain their existing values. Existing runs without this sidecar still
-open normally; new project analyses generate it when MS1 detection is enabled.
+The result detail and feature export display accepted links under “加合物联系”,
+for example `[M+H]+ ↔ Feature 163 [M+Na]+`. Internal EIC/uncertainty/conflict
+states are not shown there. A relation contradicting the selected library adduct
+does not replace it or appear as a confirmed link for that candidate. Browser
+CSV export adds the accepted link table; Excel adds “加合物联系”. Existing runs
+without this sidecar still open normally. Older sidecars with hypothesis states
+are filtered using the same strict public-link rules on load.
 
 ## Resources and validation
 

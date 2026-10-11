@@ -7,6 +7,8 @@ import pandas as pd
 from lipidgate.ms2.result_export import prepare_ms2_result_export_df
 from lipidgate.ms2.workbook_export import write_workbook
 from lipidgate.ms2.isotope_export import ISOTOPE_RESULT_COLUMNS, isotope_export_fields
+from lipidgate.feature_annotations import annotation_export_table
+from lipidgate.ion_relationships import relationship_lines, relationship_index
 
 from .result_data import COLUMNS, ms1_feature_display, ms1_feature_description, ms1_evidence_display
 
@@ -38,6 +40,22 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     for title, key in (("关联 MS2 谱图", "_linked_ms2_scans"),
                        ("支持文件", "_supporting_files")):
         feature_table[title] = features[key].values
+    annotations = bundle.annotations.loc[bundle.annotations._key.isin(features._key)]
+    main = annotations.loc[annotations.feature_result_role.eq("representative")]
+    for rank in (2, 3):
+        selected = main.loc[main.feature_result_rank.eq(rank)].set_index("_key")
+        for title, column in (("Annotation", "matched_name"), ("Adduct", "adduct"),
+                              ("Score", "final_score"), ("Confidence", "_confidence")):
+            feature_table[f"Top{rank} {title}"] = features._key.map(selected[column]).to_numpy()
+    differences = annotations.loc[annotations.feature_result_role.eq("sample_difference")]
+    summaries = {key: "; ".join(f"{row.matched_name} ({row.feature_result_samples})" for row in group.itertuples())
+                 for key, group in differences.groupby("_key", sort=False)}
+    feature_table["样本差异注释"] = features._key.map(summaries).fillna("").to_numpy()
+    display_ids = dict(zip(bundle.features._key, bundle.features._display_feature))
+    link_index = relationship_index(bundle.ion_relationships, display_ids)
+    feature_table["加合物联系"] = ["; ".join(relationship_lines(bundle.ion_relationships, row["_key"],
+                                                        row.adduct, display_ids, link_index=link_index))
+                                  for _, row in features.iterrows()]
     # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
     # detected peak area; leave those cells empty rather than assigning signal.
     area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
@@ -103,14 +121,22 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
         feature_table.to_csv(feature_path, index=False, encoding="utf-8-sig")
         evidence_table.to_csv(evidence_path, index=False, encoding="utf-8-sig")
         paths.extend([feature_path, evidence_path])
+        annotation_path = output_dir / "feature_candidates.csv"
+        annotation_export_table(annotations).drop(columns="scan_id").to_csv(
+            annotation_path, index=False, encoding="utf-8-sig")
+        paths.append(annotation_path)
         if not relations.empty:
             relation_path = output_dir / "ion_relationships.csv"
             relations.to_csv(relation_path, index=False, encoding="utf-8-sig")
             paths.append(relation_path)
+        elif (output_dir / "ion_relationships.csv").is_file():
+            # Re-exporting into the same folder must not leave obsolete hints.
+            relations.to_csv(output_dir / "ion_relationships.csv", index=False, encoding="utf-8-sig")
     if xlsx:
-        sheets = {"特征结果": feature_table, "逐谱证据": evidence_table}
+        sheets = {"特征结果": feature_table, "特征候选": annotation_export_table(annotations).drop(columns="scan_id"),
+                  "逐谱证据": evidence_table}
         if not relations.empty:
-            sheets["加合物关系（推断）"] = relations
+            sheets["加合物联系"] = relations
         paths.append(write_workbook(output_dir / "LipidGate_results.xlsx",
                                     sheets))
     if plots:

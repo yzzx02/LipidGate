@@ -6,7 +6,7 @@ import pytest
 
 from lipidgate.gui.eic_trace import EICTrace
 from lipidgate.ion_relationships import (
-    ION_MASSES, compare_peak_shapes, export_ion_relationships,
+    ION_MASSES, compare_peak_shapes, confirmed_ion_relationships, export_ion_relationships,
     infer_ion_relationships, relationship_lines,
 )
 
@@ -35,6 +35,9 @@ class Reader:
         center=rt+.03 if self.shifted and mz>520 else rt
         signal=np.exp(-.5*((times-center)/.02)**2)*(1+mz)
         return EICTrace(times,signal,rt,mz,ppm,window)
+
+    def close(self):
+        pass
 
 
 @pytest.mark.parametrize('mode',['positive','negative'])
@@ -121,19 +124,22 @@ def test_aligned_only_table_is_never_called_eic_supported():
                           dict(Feature_ID='F2',mz=522.989220702,RT=2.,**{'a.mzML':50})])
     result=infer_ion_relationships(None,aligned,trace_reader=Reader(),sources=['a.mzML'])
     assert len(result)==1 and result.iloc[0].status=='mass_RT_only'
-    assert relationship_lines(result,'ALIGN|F1','[M+Na]+')[0].endswith('与当前库加合物不同')
+    assert relationship_lines(result,'ALIGN|F1','[M+Na]+') == []
+    assert confirmed_ion_relationships(result).empty
 
 
 def test_missing_raw_file_is_recorded_without_invalidating_export(tmp_path):
     result=export_ion_relationships(features(),None,tmp_path/'results',
                                     sources=[tmp_path/'a.mzML'],mode='positive')
-    assert result.status.eq('mass_RT_only').all()
-    assert 'eic_read_failure' in result.iloc[0].evidence_json
+    assert result.empty
+    audit=pd.read_csv(tmp_path/'results/audit/ion_relationships.csv')
+    assert audit.status.eq('mass_RT_only').all()
+    assert 'eic_read_failure' in audit.iloc[0].evidence_json
     metadata=json.loads((tmp_path/'results/ion_relationships.json').read_text(encoding='utf-8'))
     assert metadata['sources'][0]['error']
 
 
-def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path):
+def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path,monkeypatch):
     from lipidgate.final_results import export_final_results
     from lipidgate.gui.result_data import load_result_bundle
     candidate=pd.DataFrame([dict(Feature_ID='F1',Aligned_Feature_ID='F1',source_file='a.mzML',
@@ -144,7 +150,9 @@ def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path):
     final=export_final_results(candidate,tmp_path/'results',use_ecn=False,export_xlsx=False,export_plots=False)
     csv_before=final.csv_path.read_bytes()
     audit_before=(tmp_path/'results/audit/evaluated.csv').read_bytes()
-    result=export_ion_relationships(features(),None,tmp_path/'results',sources=[],mode='positive')
+    monkeypatch.setattr('lipidgate.gui.eic_trace.EICReader',lambda **kwargs:Reader())
+    source=tmp_path/'a.mzML';source.write_text('fixture')
+    result=export_ion_relationships(features(),None,tmp_path/'results',sources=[source],mode='positive')
     assert len(result)==3
     bundle=load_result_bundle(final.csv_path)
     assert len(bundle.ion_relationships)==3
@@ -158,5 +166,19 @@ def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path):
     paths=export_browser_results(bundle,tmp_path/'export',csv=True,xlsx=True,plots=False)
     assert tmp_path/'export/ion_relationships.csv' in paths
     book=load_workbook(tmp_path/'export/LipidGate_results.xlsx')
-    assert '加合物关系（推断）' in book.sheetnames
+    assert '加合物联系' in book.sheetnames
     book.close()
+
+
+def test_only_complete_unambiguous_links_are_public():
+    relations=infer_ion_relationships(features(),trace_reader=Reader(),sources=['a.mzML'])
+    assert len(confirmed_ion_relationships(relations))==3
+    assert relationship_lines(relations,'ALIGN|F0','[M+H]+',{'ALIGN|F2':'2'})[-1]=='[M+H]+ ↔ Feature 2 [M+Na]+'
+    assert not any(word in line for line in relationship_lines(relations,'ALIGN|F0')
+                   for word in ('EIC','待核验','不一致'))
+    incomplete=relations.copy();incomplete['shared_samples']=2
+    assert confirmed_ion_relationships(incomplete).empty
+    conflict=relations.copy();conflict.loc[0,'ion_a']='[M+K]+'
+    assert confirmed_ion_relationships(conflict).empty
+    duplicate=relations.iloc[[0]].copy();duplicate['feature_a']='ALIGN|duplicate'
+    assert confirmed_ion_relationships(pd.concat([relations,duplicate])).empty
