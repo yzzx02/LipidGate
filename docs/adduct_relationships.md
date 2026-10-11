@@ -70,13 +70,22 @@ are inconsistent. A missing/read-failed trace cannot establish a public link.
 identities/read failures. Project provenance separately retains input SHA-256
 hashes and the product code fingerprint.
 
-The result detail and feature export display accepted links under “加合物联系”,
-for example `[M+H]+ ↔ Feature 163 [M+Na]+`. Internal EIC/uncertainty/conflict
-states are not shown there. A relation contradicting the selected library adduct
-does not replace it or appear as a confirmed link for that candidate. Browser
-CSV export adds the accepted link table; Excel adds “加合物联系”. Existing runs
-without this sidecar still open normally. Older sidecars with hypothesis states
-are filtered using the same strict public-link rules on load.
+The feature navigator draws thin grey connections only for the selected feature
+and accepted partners currently visible in the plot. Hidden/dimmed partners do
+not acquire connectors. Both endpoints' library adducts must agree with the
+relationship when present; selecting a different candidate checks its own
+adduct, too. Point tooltips include the original library Adduct. The links are
+indexed once on project load and only the selected feature's neighbors are
+checked during selection or filtering; painting does not verify EICs or load raw
+spectra. A selected feature without accepted compatible partners has no lines.
+
+Normal result details and CSV/Excel exports keep Adduct without a relationship
+column, contact CSV, or extra contact worksheet. Different adduct features retain
+their own rows, scores, annotations and areas. The project relationship sidecar
+and complete audit remain available for provenance and reopening. Existing runs
+without a sidecar still open normally; older sidecars with hypothesis states are
+filtered using the same strict public-link rules on load. Internal
+EIC/uncertainty/conflict states are not shown in the navigator.
 
 ## Resources and validation
 

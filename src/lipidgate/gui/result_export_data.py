@@ -8,7 +8,6 @@ from lipidgate.ms2.result_export import prepare_ms2_result_export_df
 from lipidgate.ms2.workbook_export import write_workbook
 from lipidgate.ms2.isotope_export import ISOTOPE_RESULT_COLUMNS, isotope_export_fields
 from lipidgate.feature_annotations import annotation_export_table
-from lipidgate.ion_relationships import relationship_lines, relationship_index
 
 from .result_data import COLUMNS, ms1_feature_display, ms1_feature_description, ms1_evidence_display
 
@@ -51,11 +50,6 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     summaries = {key: "; ".join(f"{row.matched_name} ({row.feature_result_samples})" for row in group.itertuples())
                  for key, group in differences.groupby("_key", sort=False)}
     feature_table["样本差异注释"] = features._key.map(summaries).fillna("").to_numpy()
-    display_ids = dict(zip(bundle.features._key, bundle.features._display_feature))
-    link_index = relationship_index(bundle.ion_relationships, display_ids)
-    feature_table["加合物联系"] = ["; ".join(relationship_lines(bundle.ion_relationships, row["_key"],
-                                                        row.adduct, display_ids, link_index=link_index))
-                                  for _, row in features.iterrows()]
     # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
     # detected peak area; leave those cells empty rather than assigning signal.
     area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
@@ -112,9 +106,6 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
             candidates.get("ms1_feature_area", pd.Series(float("nan"), index=candidates.index)), errors="coerce").to_numpy()
         evidence_table["MS1 面积单位"] = candidates.get("ms1_area_unit", pd.Series("", index=candidates.index)).to_numpy()
     paths = []
-    relations = bundle.ion_relationships
-    if not relations.empty:
-        relations = relations.loc[relations.feature_a.isin(features._key) | relations.feature_b.isin(features._key)]
     if csv:
         feature_path = output_dir / "feature_results.csv"
         evidence_path = output_dir / "spectrum_evidence.csv"
@@ -125,18 +116,9 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
         annotation_export_table(annotations).drop(columns="scan_id").to_csv(
             annotation_path, index=False, encoding="utf-8-sig")
         paths.append(annotation_path)
-        if not relations.empty:
-            relation_path = output_dir / "ion_relationships.csv"
-            relations.to_csv(relation_path, index=False, encoding="utf-8-sig")
-            paths.append(relation_path)
-        elif (output_dir / "ion_relationships.csv").is_file():
-            # Re-exporting into the same folder must not leave obsolete hints.
-            relations.to_csv(output_dir / "ion_relationships.csv", index=False, encoding="utf-8-sig")
     if xlsx:
         sheets = {"特征结果": feature_table, "特征候选": annotation_export_table(annotations).drop(columns="scan_id"),
                   "逐谱证据": evidence_table}
-        if not relations.empty:
-            sheets["加合物联系"] = relations
         paths.append(write_workbook(output_dir / "LipidGate_results.xlsx",
                                     sheets))
     if plots:

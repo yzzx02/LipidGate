@@ -164,10 +164,120 @@ def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path,mo
     from lipidgate.gui.result_export_data import export_browser_results
     from openpyxl import load_workbook
     paths=export_browser_results(bundle,tmp_path/'export',csv=True,xlsx=True,plots=False)
-    assert tmp_path/'export/ion_relationships.csv' in paths
+    assert not (tmp_path/'export/ion_relationships.csv').exists()
     book=load_workbook(tmp_path/'export/LipidGate_results.xlsx')
-    assert '加合物联系' in book.sheetnames
+    assert book.sheetnames == ['特征结果', '特征候选', '逐谱证据']
+    assert '加合物联系' not in next(book['特征结果'].values)
+    exported = pd.read_csv(tmp_path/'export/feature_results.csv')
+    assert '加合物联系' not in exported
+    assert exported.Adduct.tolist() == ['[M+Na]+']
+    assert exported.Score.tolist() == [80.0]
     book.close()
+    assert final.csv_path.read_bytes()==csv_before
+    assert (tmp_path/'results/audit/evaluated.csv').read_bytes()==audit_before
+    assert len(pd.read_csv(tmp_path/'results/ion_relationships.csv'))==3
+
+
+def exercise_navigation_relationships(output):
+    from PySide6 import QtCore, QtWidgets
+    from lipidgate.gui.qt_navigation import NavigationPlot
+    from lipidgate.gui.result_browser import ResultsPage
+    from lipidgate.gui.result_data import ResultBundle
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ions = [('F100', 501.007276466621, '[M+H]+'),
+            ('F163', 522.989220702, '[M+Na]+'),
+            ('F200', 700.0, '[M+H]+')]
+    rows = [dict(Feature_ID=key, Aligned_Feature_ID=key, source_file='a.mzML',
+                 scan_id=key, precursor_mz=mz, rt_minutes=10.0,
+                 matched_name='PE(34:1)', compound_class='PE', adduct=ion,
+                 final_score=90.0, result_rank=1, passed_required_gates=True,
+                 ms1_support_status='MS1-supported') for key,mz,ion in ions]
+    rows.append(dict(rows[0], matched_name='PC(35:2)', compound_class='PC',
+                     adduct='[M+Na]+', final_score=80.0, result_rank=2))
+    aligned = pd.DataFrame([dict(Feature_ID=key, mz=mz, RT=10.0,
+                                **{'a.mzML': (index+1)*100.0})
+                            for index,(key,mz,ion) in enumerate(ions)])
+    bundle = ResultBundle.from_frames(pd.DataFrame(rows), aligned_features=aligned)
+    bundle.ion_relationships = pd.DataFrame([dict(feature_a='ALIGN|F100', feature_b='ALIGN|F163',
+        ion_a='[M+H]+', ion_b='[M+Na]+', neutral_mass=500.0)])
+    original = bundle.candidates.copy(deep=True)
+    original_features = bundle.features.copy(deep=True)
+    nav = NavigationPlot()
+    page = ResultsPage()
+    try:
+        nav.resize(700,400)
+        nav.set_data(bundle.features, bundle.features)
+        nav.show()
+        nav.select_key('ALIGN|F100')
+        nav._set_limits((9.9,10.1,490.0,535.0))
+        app.processEvents()
+        baseline = nav.canvas.grab().toImage()
+        nav.set_relationships(bundle.ion_relationships)
+        assert len(nav.selected_links)==1
+        linked = nav.canvas.grab().toImage()
+        x,y = nav.canvas._to_pixel(10.0,(ions[0][1]+ions[1][1])/2)
+        ratio = linked.devicePixelRatio()
+        point = QtCore.QPoint(round(x*ratio),round(y*ratio))
+        assert linked.pixelColor(point)!=baseline.pixelColor(point)
+        linked.save(str(output/'navigation_links.png'))
+        nav.select_key('ALIGN|F163')
+        assert len(nav.selected_links)==1
+        nav.select_key('ALIGN|F200')
+        assert not nav.selected_links
+        nav.select_key(None)
+        assert not nav.selected_links
+        nav.select_key('ALIGN|F100',adduct='[M+Na]+')
+        assert not nav.selected_links
+        nav.select_key('ALIGN|F100')
+        nav.set_data(bundle.features,bundle.features.iloc[[0]],dim=True)
+        assert not nav.selected_links  # A dimmed/hidden partner is not linked.
+        incompatible = bundle.features.copy()
+        incompatible.loc[incompatible._key.eq('ALIGN|F163'),'adduct']='[M+H]+'
+        nav.set_data(incompatible,incompatible)
+        assert not nav.selected_links  # Check the partner's library adduct too.
+        nav.set_data(bundle.features,bundle.features)
+        assert len(nav.selected_links)==1
+        incomplete = bundle.ion_relationships.assign(status='EIC_supported',shared_samples=2,
+                                                     supported_samples=1,rejected_samples=0)
+        nav.set_relationships(incomplete)
+        assert not nav.selected_links
+        assert linked!=nav.canvas.grab().toImage()  # No stale connector remains.
+
+        page.resize(1400,900)
+        page.show()
+        page.set_bundle(bundle)
+        page.select_from_plot('ALIGN|F100')
+        assert len(page.navigation.selected_links)==1
+        assert ('Adduct','[M+H]+') in page.detail.rows
+        assert all(title!='加合物联系' for title,value in page.detail.rows)
+        page.candidates.setCurrentCell(1,0)
+        assert ('Adduct','[M+Na]+') in page.detail.rows
+        assert not page.navigation.selected_links
+        page.candidates.setCurrentCell(0,0)
+        assert len(page.navigation.selected_links)==1
+        page.set_bundle(ResultBundle.from_frames(pd.DataFrame(rows[-1:])))
+        assert not page.navigation.selected_links
+        pd.testing.assert_frame_equal(bundle.candidates,original)
+        pd.testing.assert_frame_equal(bundle.features,original_features)
+    finally:
+        nav.close()
+        page.close()
+        app.processEvents()
+
+
+def test_navigation_links_selection_filtering_and_candidate_adducts(tmp_path):
+    # Isolate Qt from pytest's pyOpenMS imports and DLL search paths.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = "import runpy,sys; from pathlib import Path; runpy.run_path(sys.argv[1])['exercise_navigation_relationships'](Path(sys.argv[2]))"
+    completed = subprocess.run([sys.executable,'-X','utf8','-c',script,str(Path(__file__).resolve()),str(tmp_path)],
+                               env=dict(os.environ,QT_QPA_PLATFORM='offscreen'),
+                               capture_output=True,text=True,encoding='utf-8',timeout=30)
+    assert completed.returncode==0,completed.stdout+completed.stderr
 
 
 def test_only_complete_unambiguous_links_are_public():

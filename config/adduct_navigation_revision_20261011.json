@@ -1,0 +1,28 @@
+{
+  "revision": "selected_feature_adduct_connections_20261011",
+  "revision_kind": "navigator_and_normal_export_presentation",
+  "created_at_utc": "2026-10-11T15:54:41.187498+00:00",
+  "baseline_commit": "3081c92c83f649cd6bb7e41ffd9edc8460704234",
+  "baseline_revision_sha256": "a1737732babbe28955ecffc14fd198a2224fdfdf0866f6a868d039a3c1402206",
+  "base_release": "v1.0.3",
+  "executable_status": "Source branch only; no executable rebuilt or published",
+  "product_code_sha256": "dd2ab2ccfc5abc415fa13a1797af97c473e429e46b21f0e443d94cd209ee54bf",
+  "ms2_rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+  "identification_effect": "None: preserve gates, scores, candidate order, library adducts, feature membership, and areas",
+  "library_content_changed": false,
+  "normal_exports": "Feature results, selected feature candidates, and per-spectrum evidence; no contact column, CSV, or worksheet",
+  "navigator": "Thin grey links for the selected feature and visible accepted partners; reject incompatible adducts at both endpoints",
+  "resources": "Index links once on load; check selected neighbors only; no new raw reads while drawing links",
+  "project_provenance": "Confirmed project sidecar and full relationship audit retained",
+  "verification": {
+    "full_pytest_command": "python -X utf8 -m pytest -q --junitxml=build/verification/adduct_navigation_tests.xml",
+    "tests_passed": 889,
+    "subtests_passed": 3118,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 79.482,
+    "junit_sha256": "8288675d010b928a601450845252016e8c62b64e4c4468a7f1b5332148f9aa6c",
+    "qt_checks": "Actual connection pixels, reciprocal selection, no stale links, filtered partners, both endpoint adducts, candidate switching, and old-project loading",
+    "raw_data_and_visual_checks": "Outside Git; core_results/25_adduct_navigation_20261011"
+  }
+}

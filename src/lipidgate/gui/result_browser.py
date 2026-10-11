@@ -623,6 +623,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_candidate = None
         self.region = None
         self.navigation.rows = []
+        self.navigation.set_relationships(bundle.ion_relationships)
         self.search.clear()
         self.class_search.clear()
         self.notice.setText(bundle.notice)
@@ -1145,12 +1146,7 @@ class ResultsPage(QtWidgets.QWidget):
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
-        from lipidgate.ion_relationships import relationship_lines
-        relations = relationship_lines(self.bundle.ion_relationships, text(feature.get("_key")),
-                                       text(row.get("adduct")),
-                                       dict(zip(self.bundle.features._key, self.bundle.features._display_feature)))
-        if relations:
-            values.append(("加合物联系", "；".join(relations)))
+        self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
         differences = self.bundle.annotations.loc[
             self.bundle.annotations._key.eq(feature.get("_key"))
             & self.bundle.annotations.feature_result_role.eq("sample_difference")]
