@@ -1,0 +1,238 @@
+{
+  "revision": "pep_sodium_weights_20261011",
+  "revision_kind": "scoring_policy_only",
+  "created_at_utc": "2026-10-11T10:22:52.461391+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "b0ec06e4479080d8d47bad9e540d22c9ae62d632",
+  "previous_library_revision_sha256": "aec68c9095a8910999750f1cc672ffc21fcc434644b28bf27cb88119b0632c06",
+  "executable_status": "Source branch only; no executable built or published; previous release/library fingerprints retained",
+  "platform": "Windows x64",
+  "python": "3.13.5",
+  "product_code_sha256": "a29db3bc75e933ae4cde49c702784d52d43667ef24f1dcfe2a4828666445e2b0",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "a772988791020938a37bd83b25337a2814fb7ca4afe1a4e235736c6d5cbfa95b",
+  "library_cache_version": 39,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "fingerprint_scope": "Effective local code and native binaries; toolchain rebuilds can have different binary fingerprints",
+  "change_scope": {
+    "class_name": "PE-P",
+    "adduct": "[M+Na]+",
+    "previous_pool_weights": {
+      "HG": 20,
+      "FAH": 60,
+      "Other": 20
+    },
+    "pool_weights": {
+      "HG": 60,
+      "FAH": 20,
+      "Other": 20
+    },
+    "fragment_count": 9,
+    "library_content": "unchanged, both source SHA256 identities verified",
+    "other_adduct_weights": "unchanged",
+    "gates_fallback_thresholds_ranking_policy": "definitions unchanged; score changes can alter eligibility and ranking",
+    "note": "PE-P chain-only fallback still requires 40 FAH points and cannot be met by the 20-point sodium chain pool"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1255534,
+      "normalized_records": 1267954,
+      "source_gzip_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "source_gzip_bytes": 24064253,
+      "decompressed_source_sha256": "1f5e1cb5ac66d3b6b6d9b3c81d8680c7f1fcfa99527388c9ff15e3520f84661b",
+      "index_sha256": "73b4e295befbd1022d176dd981fc436bf8b79c60e740e0e7640682ac1a42a017",
+      "index_bytes": 60899328,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "previous_index_sha256": "d02d25f111795af49dc86ce191f60574c7262422e585200d9d1c82832525077a"
+    },
+    "negative": {
+      "raw_source_records": 1084782,
+      "normalized_records": 1084782,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "9c5f9139ce399e2e3af61d4fdf343efddea319b85b63a6c4e5fa530b41da8bcf",
+      "index_bytes": 60211200,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "previous_index_sha256": "6c8722e2bd9d9a8a67312bfa7652d1e2bbd52b71825104beb1075800711026bc"
+    }
+  },
+  "verification": {
+    "tests_native": {
+      "passed": 855,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "report_sha256": "554f527579430cc426425acb8f198bdd220322c5a922d8deaa93bc78ea6a1a2f",
+      "passed_including_subtests": 3973
+    },
+    "tests_python": {
+      "passed": 855,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "report_sha256": "37a3c63151c76abf75e0f8b53bb336a04831be868f95df04a9d7fd2787a17af2",
+      "passed_including_subtests": 3973
+    },
+    "isolated_baseline": {
+      "status": "verified",
+      "mode": "before",
+      "input_scans": 325,
+      "output_candidate_rows": 228,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "d02d25f111795af49dc86ce191f60574c7262422e585200d9d1c82832525077a",
+      "candidate_csv_sha256": "a77b8da542061ada8d224d6e2626a847615b2fcb20ed971e9d027a0fd16439a3",
+      "code_sha256": "a772988791020938a37bd83b25337a2814fb7ca4afe1a4e235736c6d5cbfa95b",
+      "seconds": 11.346546799999487,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "archived_baseline_identical": true,
+      "baseline_commit": "b0ec06e4479080d8d47bad9e540d22c9ae62d632",
+      "baseline_scoring_source_sha256": "8d7c535e277d5d32ecbe4928e09e4f67b6a9ba1be798e59d76948feadd336cc0",
+      "fingerprint_scope": "code_sha256 is the current workspace identity; isolated baseline scoring source and baseline Git node are pinned separately"
+    },
+    "native_paired_regression": {
+      "status": "verified",
+      "mode": "native",
+      "input_scans": 325,
+      "output_candidate_rows": 230,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "73b4e295befbd1022d176dd981fc436bf8b79c60e740e0e7640682ac1a42a017",
+      "candidate_csv_sha256": "a492f9298f3ca6e61f3394b430c90b80d24a1418704806188f1f3cf517b15c2f",
+      "code_sha256": "a772988791020938a37bd83b25337a2814fb7ca4afe1a4e235736c6d5cbfa95b",
+      "seconds": 17.133877799999027,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "changed_scans": [
+        "scan_1838",
+        "scan_1927",
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "changed_non_pep_scans": [
+        "scan_1838",
+        "scan_1927"
+      ],
+      "top1_changed_scans": [
+        "scan_1838",
+        "scan_1927",
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ]
+    },
+    "python_paired_regression": {
+      "status": "verified",
+      "mode": "python",
+      "input_scans": 325,
+      "output_candidate_rows": 230,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "73b4e295befbd1022d176dd981fc436bf8b79c60e740e0e7640682ac1a42a017",
+      "candidate_csv_sha256": "a492f9298f3ca6e61f3394b430c90b80d24a1418704806188f1f3cf517b15c2f",
+      "code_sha256": "a772988791020938a37bd83b25337a2814fb7ca4afe1a4e235736c6d5cbfa95b",
+      "seconds": 17.84177709999858,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "changed_scans": [
+        "scan_1838",
+        "scan_1927",
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "changed_non_pep_scans": [
+        "scan_1838",
+        "scan_1927"
+      ],
+      "top1_changed_scans": [
+        "scan_1838",
+        "scan_1927",
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ]
+    },
+    "candidate_exports_identical": true,
+    "top1_candidate_row_summary": [
+      {
+        "version": "before",
+        "top1_candidate_rows": 207,
+        "correct_sum_rows": 187,
+        "correct_chain_rows": 148
+      },
+      {
+        "version": "native",
+        "top1_candidate_rows": 209,
+        "correct_sum_rows": 187,
+        "correct_chain_rows": 148
+      }
+    ],
+    "bounded_index_build": {
+      "seconds": 402.08971590000147,
+      "peak_rss_mib": 306.21484375,
+      "memory_strategy": "fresh streaming MSP normalization; exact hydroxy expansion; disk sort; verified 1024-record blocks"
+    },
+    "product_defaults": {
+      "parameters": {
+        "precursor_ppm": 5,
+        "fragment_ppm": 15,
+        "min_relative_intensity": 0.002,
+        "min_score": 50
+      },
+      "class_summaries": [
+        {
+          "truth_class": "PE",
+          "input_scans": 14,
+          "correct_top1_sum_and_adduct": 13,
+          "unannotated": 1
+        },
+        {
+          "truth_class": "PEP",
+          "input_scans": 6,
+          "correct_top1_sum_and_adduct": 3,
+          "unannotated": 3
+        },
+        {
+          "truth_class": "LPE",
+          "input_scans": 2,
+          "correct_top1_sum_and_adduct": 0,
+          "unannotated": 0
+        }
+      ],
+      "pep_exported_top1_scores": {
+        "scan_8849": 97.9383,
+        "scan_9750": 98.5443,
+        "scan_9835": 97.9595
+      },
+      "pep_not_exported": {
+        "scan_8932": "21.0074 points, below 50",
+        "scan_9092": "mzML charge 4+, incompatible; isolated score 86.8775",
+        "scan_9181": "mzML charge 4+, incompatible; isolated score 87.0168"
+      },
+      "additional_class_mismatches": [
+        {
+          "scan_id": "scan_1838",
+          "truth": "LPE 18:1 [M+Na]+",
+          "reported": "PE(P-18:0) [M+Na]+",
+          "score": 80.0,
+          "reason": "Shared headgroups and ordinary support; no chain evidence; missing_chain_level_information"
+        },
+        {
+          "scan_id": "scan_1927",
+          "truth": "LPE 18:1 [M+Na]+",
+          "reported": "PE(P-18:0) [M+Na]+",
+          "score": 80.0,
+          "reason": "Shared headgroups and ordinary support; no chain evidence; missing_chain_level_information"
+        }
+      ],
+      "full_audit_outside_version_control": true,
+      "full_audit_sha256": "1d2d2b4dba6bcc5582ddea38d3bcff9c42f82d30dd91c9ccb4907a773b4267fc"
+    },
+    "evaluation_scope": "Fixed small standard-associated panel; regression validation, not an independent FDR estimate"
+  },
+  "known_limitations": [
+    "Shared-headgroup species fallback permits two class-mismatched LPE-associated candidates after the weight change; the retained gate needs separate review"
+  ]
+}

@@ -10,7 +10,6 @@ from lipidgate.ms2.positive_pep_sodium import sodium_pep_fragments
 from lipidgate.ms2.resolution_policy import fragment_is_chain_evidence, CHAIN_LEVEL_INFO_MISSING_REASON
 from lipidgate.ms2.rules import DEFAULT_RULES
 from lipidgate.ms2.scoring import _pool_weights_for_record, score_candidate
-from lipidgate.ms2.scoring_policy import FAH_ONLY_FALLBACK_REASON
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from curate_positive_pep_sodium import curate, sodium_block
@@ -49,7 +48,7 @@ def test_sodium_pep_formula_balanced_masses_and_requested_pools():
         mz, role = expected[f.name]
         assert f.mz == pytest.approx(mz, abs=1e-6)
         assert f.fragment_type == role
-    assert _pool_weights_for_record(r, DEFAULT_RULES.get('PE-P')) == {'hg':20., 'fah':60., 'other':20.}
+    assert _pool_weights_for_record(r, DEFAULT_RULES.get('PE-P')) == {'hg':60., 'fah':20., 'other':20.}
     assert not any('R=O' in f.name or 'phosphocholine' in f.name for f in r.fragments)
     assert all(fragment_is_chain_evidence(r, f) == (f.fragment_type == 'Diagnostic_FA_Loss') for f in r.fragments)
     complete = score(r, r.fragments)
@@ -62,9 +61,22 @@ def test_sodium_pep_does_not_rescue_missing_head_or_chain_with_common_support():
     no_chain = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_FA_Loss'])
     assert no_chain.downgrade_reason == CHAIN_LEVEL_INFO_MISSING_REASON
     assert no_chain.resolution_level != 'chain_level'
+    assert no_chain.pool_scores['hg'].pool_score == 60
+    assert no_chain.pool_scores['fah'].pool_score == 0
+    assert no_chain.total_score == 80
     no_head = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_HG'])
-    assert no_head.downgrade_reason == FAH_ONLY_FALLBACK_REASON
+    # The existing chain-only fallback requires 40 FAH points for PE-P.
+    # A 20-point FAH pool cannot satisfy it; changing weights does not relax it.
+    assert not no_head.passed_required_gates
+    assert 'hg' in no_head.missing_required_groups
     assert no_head.pool_scores['hg'].pool_score == 0
+
+
+def test_sodium_pep_weight_override_is_limited_to_the_requested_adduct():
+    r = record()
+    for adduct in ('[M+H]+', '[M-H]-', '[M+NH4]+'):
+        r.adduct = adduct
+        assert _pool_weights_for_record(r, DEFAULT_RULES.get('PE-P')) == {'hg':20., 'fah':60., 'other':20.}
 
 
 def test_sodium_pep_chain_changes_follow_removed_compositions():

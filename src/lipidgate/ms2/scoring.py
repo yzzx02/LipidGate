@@ -820,6 +820,8 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
         return SM_SODIUM_POOL_WEIGHTS
     if class_key == "ADGGA" and _is_positive_adduct(record.adduct):
         return ADGGA_POSITIVE_POOL_WEIGHTS
+    if class_key == "PEP" and adduct == "[M+Na]+":
+        return POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS
     if (
         adduct == "[M-H]-" and class_key in {"CER1P", "CERP"}
     ) or (

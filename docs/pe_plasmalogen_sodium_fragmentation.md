@@ -43,13 +43,18 @@ spectrum, but is not included in the user's current nine-ion template.
 No RCO+ acylium ion is added to either PE-P template. Protonated PE-P Other
 still contains only precursor and its P-chain-dependent Common support.
 
-## Scoring remains unchanged
+## Scoring weights and evidence policy
 
-PE-P retains existing HG/FAH/Other **20/60/20**, including intensity-aware
-quality, Other saturation, gates, tentative fallbacks and ranking. The
-diacyl PE HG-dominant 60/20/20 override is a different existing policy.
+PE-P `[M+Na]+` now uses HG/FAH/Other **60/20/20** as requested. Other
+PE-P adducts retain their prior weights. The nine fragments, intensity-quality
+functions, Other saturation, gates, fallback thresholds and ranking policy
+keep their definitions. The dominant pool changes from FAH to HG under the
+existing intensity-quality calculation, so scores must be recomputed;
+they are not obtained by multiplying the former pool scores by three.
 HG-only evidence retains species-level reporting with missing-chain
-provenance; absent HG retains the Low chain-only fallback. Shared NL43 and
+provenance. The existing PE-P chain-only fallback needs 40 FAH points;
+a 20-point FAH pool cannot satisfy it, so missing-HG sodium candidates fail
+the existing gate instead of receiving a relaxed fallback. Shared NL43 and
 NL141 signals alone do not prove P- versus an isobaric O-ether structure.
 
 The chain labels document which neutral composition was removed; they
@@ -85,18 +90,32 @@ or a calibrated false-discovery rate. This small panel was used to examine
 and supplement rules, so its replay is regression validation, not a held-out
 estimate of generalization.
 
-The fixed 325-scan regression changes only scans 8849, 9750 and 9835;
-all other exported candidate identities, ranks, scores, gates, resolution
-and downgrade reasons remain identical. Native and Python policy replays
-export identical candidate tables. Under product defaults the two P-18:0/18:1
-scans give Top1 scores 94.0771 and 89.3053; P-18:0/22:6 scan 8849 gives
-89.2039. The other P-18:0/22:6 scan scores 17.2368, below the 50-point
-reporting threshold. The P-18:0/20:4 scans score 64.7474 and 65.2266 in
+The 325-scan replay compares the prior 20/60/20 sodium revision to the
+requested 60/20/20 weights. Native and Python policy exports are identical.
+The isolated prior scoring source is pinned to commit b0ec06e and reproduces
+the previously verified candidate table. Under product defaults the two
+P-18:0/18:1 scans give Top1 scores **98.5443 and 97.9595**;
+P-18:0/22:6 scan 8849 gives 97.9383. The other P-18:0/22:6 scan scores
+21.0074, below the 50-point reporting threshold.
+The P-18:0/20:4 scans score 86.8775 and 87.0168 in
 the isolated target audit, but their mzML precursor charge fields are 4+;
 the unchanged production charge-compatibility gate excludes `[M+Na]+`.
 They must not be described as missing because of absent library entries
 or as passing production identifications. The target-audit score is not
 the same as an exported result.
+
+The weights also expose two class mismatches on LPE 18:1 sodium-associated
+scans 1838 and 1927. They previously had no result. Shared headgroup/ordinary
+ions now give a `PE(P-18:0)` sodium species candidate 80 points, despite zero
+chain evidence; its downgrade reason remains `missing_chain_level_information`.
+Those rows are not correct PE-P identifications. Matching the shared PE
+headgroups does not establish a plasmenyl class. This is a known limitation
+of the retained gate, recorded rather than hidden from the regression.
+Across unlabelled standards the number of Top1 candidate rows changes from
+207 to 209, while correct sum and chain candidate counts stay 187 and 148.
+These are candidate-row counts (ties possible), not an independently
+calibrated FDR or an increase in recall. The weighting change alone does
+not solve this shared-headgroup ambiguity.
 
 [Lydic et al. (2009)](https://pmc.ncbi.nlm.nih.gov/articles/PMC4112091/)
 reports sodium PE NL43/NL141 and the 164 phosphoethanolamine sodium product.

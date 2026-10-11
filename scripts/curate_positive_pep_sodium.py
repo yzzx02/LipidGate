@@ -71,7 +71,7 @@ def curate(source: Path, destination: Path):
                 added_sodium_pep_records=len(grid), source_sha256=digest(source),
                 output_sha256=digest(destination), fragments_per_record=9,
                 scope='Only plasmenyl PE sodium; every other source block preserved verbatim',
-                pool_counts=dict(HG=2, FAH=4, Other=3), pool_weights=dict(HG=20, FAH=60, Other=20),
+                pool_counts=dict(HG=2, FAH=4, Other=3), pool_weights=dict(HG=60, FAH=20, Other=20),
                 mechanism_scope='Formula-balanced net composition; mass matches do not establish unique elementary pathways')
 
 

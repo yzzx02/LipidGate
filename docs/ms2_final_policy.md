@@ -69,10 +69,13 @@ and sodium fatty-acid plus neutral PE headgroup loss. No RCO acylium or
 sn-1 fatty-acid loss is added. Labels describe net compositions rather than
 proving a unique sequence of elementary reactions.
 
-Existing PE-P HG/FAH/Other weights remain **20/60/20**; the diacyl PE
-60/20/20 override does not apply to PE-P. Existing gates, fallbacks,
-confidence, intensity scoring and ranking are unchanged. Headgroup-only
-evidence cannot resolve chains, and absent HG retains the Low fallback.
+PE-P `[M+Na]+` HG/FAH/Other weights are **60/20/20**. Other PE-P adducts
+retain their existing weights. Gates, fallback thresholds, confidence rules,
+intensity-quality functions and ranking policy retain their definitions;
+scores and candidate order can change with the new weights. The existing
+40-point FAH threshold for PE-P's chain-only fallback is not relaxed, so the
+20-point chain pool cannot rescue a sodium candidate with missing HG.
+Headgroup-only evidence cannot resolve chains.
 Shared headgroups do not independently establish a vinyl ether; the
 standard-associated validation is not an independent P/O discrimination
 test or a calibrated FDR experiment. See
