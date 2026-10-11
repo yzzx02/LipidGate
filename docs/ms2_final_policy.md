@@ -41,8 +41,11 @@ content or normalization changes require a fresh parse and regression checks.
 
 Positive PE-P [M+H]+ Other retains only precursor and the P-chain-dependent
 Common support ion (P-18:0: 294.3155). RCO acylium support is excluded. Chain
-and headgroup pools keep their existing gates and intensity-aware weights;
-missing headgroup rescue stays Low regardless of feature-group membership.
+and headgroup pools retain their intensity-aware weights. Positive PE-P
+requires both HG and at least half of its distinct theoretical chain ions
+(rounded up): the current protonated two-chain-ion template requires one.
+Neither HG-only nor chain-only fallback bypasses this dual gate. Common
+support and precursor peaks do not count as chain evidence.
 
 ## Positive diacyl PE sodium
 
@@ -70,16 +73,37 @@ sn-1 fatty-acid loss is added. Labels describe net compositions rather than
 proving a unique sequence of elementary reactions.
 
 PE-P `[M+Na]+` HG/FAH/Other weights are **60/20/20**. Other PE-P adducts
-retain their existing weights. Gates, fallback thresholds, confidence rules,
-intensity-quality functions and ranking policy retain their definitions;
-scores and candidate order can change with the new weights. The existing
-40-point FAH threshold for PE-P's chain-only fallback is not relaxed, so the
-20-point chain pool cannot rescue a sodium candidate with missing HG.
-Headgroup-only evidence cannot resolve chains.
+retain their existing weights. Both HG and at least half of the distinct
+chain ions must match: the four-ion sodium template requires **two** chain
+ions. Duplicate labels or repeated matches to one experimental peak do not
+provide an extra chain observation. No positive PE-P single-pool fallback
+is allowed, regardless of score. Intensity-quality functions and ranking
+policy remain unchanged; removing ineligible candidates can change ranks.
 Shared headgroups do not independently establish a vinyl ether; the
 standard-associated validation is not an independent P/O discrimination
 test or a calibrated FDR experiment. See
 [mass assignments and measured scope](pe_plasmalogen_sodium_fragmentation.md).
+
+## Positive LPE sodium
+
+LPE `[M+Na]+` adds 82 distinct acyl compositions from the existing protonated
+LPE grid. Names are position-independent (`LPE(18:1)`); sn1/sn2 source
+alternatives produce one sodium record. HG contains NL43 and NL141 and
+requires at least one match. Other contains precursor, NL163 and
+`[H3PO4Na]+` (120.9661). HG/Other weights are **75/25**, with no FAH pool
+or chain gate. The accepted resolution is species level and never claims
+an sn position. See [mass assignments and regression](lpe_sodium_fragments.md).
+
+## Confidence and missing chain evidence
+
+Missing or insufficient chain evidence is Low even if the numerical score
+is high, required gates passed, or raw MS1 confirms the precursor. This
+includes missing LCB/acyl evidence and is applied by both result export and
+result browsing, including older stored results. Scores and audit reasons
+are retained. Positive PE-P without its dual evidence fails eligibility.
+HG-only lyso policies such as LPE sodium are an explicit exception: their
+accepted species-level identity does not claim multiple resolved chains
+or an sn position. They still require their HG gate, score and MS1 evidence.
 
 ## Locked glyceride rules
 

@@ -25,6 +25,8 @@ from .gate_policy import (
     glyceride_substituent_evidence_group,
     glyceride_substituent_group_multiplicity,
     is_positive_ps as _is_positive_ps_record,
+    is_positive_pep,
+    positive_pep_chain_gate_counts,
     is_positive_ps_chain_ketene_loss as _is_positive_ps_headgroup_ketene_loss,
     is_positive_ps_headgroup_loss as _is_positive_ps_headgroup_loss,
     is_positive_tg_est_full_loss_record as _is_positive_tg_est_full_loss_gate_record,
@@ -121,6 +123,7 @@ POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES = {"ASM", "LPC", "LPCO", "SM", "LSM"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
 AHEXCER_NEGATIVE_POOL_WEIGHTS = {"fah": 60.0, "hg": 20.0, "other": 20.0}
 SM_SODIUM_POOL_WEIGHTS = {"fah": 0.0, "hg": 75.0, "other": 25.0}
+LPE_SODIUM_POOL_WEIGHTS = {"fah": 0.0, "hg": 75.0, "other": 25.0}
 ADGGA_POSITIVE_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
 POSITIVE_PHOSPHOLIPID_SUPPORT_BASE_CLASSES = {
     "PA",
@@ -822,6 +825,8 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
         return ADGGA_POSITIVE_POOL_WEIGHTS
     if class_key == "PEP" and adduct == "[M+Na]+":
         return POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS
+    if class_key == "LPE" and adduct == "[M+Na]+":
+        return LPE_SODIUM_POOL_WEIGHTS
     if (
         adduct == "[M-H]-" and class_key in {"CER1P", "CERP"}
     ) or (
@@ -1134,7 +1139,7 @@ def _fah_only_low_confidence_gate_passes(
     missing_groups: Sequence[str] | None = None,
     has_hg_or_structural_pool: bool | None = None,
 ) -> bool:
-    if is_positive_pc_sodium(record):
+    if is_positive_pc_sodium(record) or is_positive_pep(record):
         return False
     if not _is_positive_adduct(record.adduct):
         return False
@@ -1192,7 +1197,7 @@ def _hg_only_low_confidence_gate_passes(
     matches: Sequence[FragmentMatch],
     missing_groups: Sequence[str] | None = None,
 ) -> bool:
-    if is_positive_pc_sodium(record):
+    if is_positive_pc_sodium(record) or is_positive_pep(record):
         return False
     if not _is_positive_hg_dominant_phospholipid(record):
         return False
@@ -1222,6 +1227,13 @@ def _missing_required_groups(
     matches: Sequence[FragmentMatch],
 ) -> List[str]:
     missing = []
+    if is_positive_pep(record):
+        if _matched_hg_fragment_count(record, matches) < max(positive_required_hg_hits, 1):
+            missing.append("hg")
+        required, observed = positive_pep_chain_gate_counts(record, matches)
+        if required <= 0 or observed < required:
+            missing.append("fah")
+        return missing
     if oxidized_chain_requirements(record) is not None:
         required_hg = positive_required_hg_hits if is_positive_mode else _required_negative_hg_hits(record, hg_fragment_count, rule)
         if _matched_hg_fragment_count(record, matches) < required_hg:

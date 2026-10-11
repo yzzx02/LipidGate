@@ -6,7 +6,7 @@ from typing import Sequence
 
 from .chain_utils import extract_chain_tokens, extract_fragment_chain_token
 from .models import FragmentMatch, FragmentRecord, LibraryRecord
-from .resolution_policy import normalized_class_key, record_polarity
+from .resolution_policy import fragment_is_chain_evidence, normalized_class_key, record_polarity
 
 
 POSITIVE_TG_FULL_CHAIN_CLASSES = frozenset({"TG"})
@@ -27,6 +27,20 @@ def is_positive_class(record: LibraryRecord, class_keys: frozenset[str]) -> bool
 
 def is_positive_ps(record: LibraryRecord) -> bool:
     return is_positive_class(record, frozenset({"PS"}))
+
+
+def is_positive_pep(record: LibraryRecord) -> bool:
+    return is_positive_class(record, frozenset({"PEP"}))
+
+
+def positive_pep_chain_gate_counts(
+    record: LibraryRecord, matches: Sequence[FragmentMatch],
+) -> tuple[int, int]:
+    """Require half the distinct chain ions, never duplicate aliases or peaks."""
+    expected_mz = {float(f.mz) for f in record.fragments if fragment_is_chain_evidence(record, f)}
+    observed_mz = {float(m.experimental_peak.mz) for m in matches
+                   if fragment_is_chain_evidence(record, m.fragment)}
+    return (len(expected_mz) + 1) // 2, len(observed_mz)
 
 
 def is_positive_ps_headgroup_loss(fragment: FragmentRecord) -> bool:

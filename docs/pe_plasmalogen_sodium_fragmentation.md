@@ -47,15 +47,18 @@ still contains only precursor and its P-chain-dependent Common support.
 
 PE-P `[M+Na]+` now uses HG/FAH/Other **60/20/20** as requested. Other
 PE-P adducts retain their prior weights. The nine fragments, intensity-quality
-functions, Other saturation, gates, fallback thresholds and ranking policy
-keep their definitions. The dominant pool changes from FAH to HG under the
-existing intensity-quality calculation, so scores must be recomputed;
-they are not obtained by multiplying the former pool scores by three.
-HG-only evidence retains species-level reporting with missing-chain
-provenance. The existing PE-P chain-only fallback needs 40 FAH points;
-a 20-point FAH pool cannot satisfy it, so missing-HG sodium candidates fail
-the existing gate instead of receiving a relaxed fallback. Shared NL43 and
-NL141 signals alone do not prove P- versus an isobaric O-ether structure.
+functions, Other saturation and ranking policy retain their definitions.
+The current positive PE-P gate requires HG plus at least half of its
+distinct chain ions, rounded up: **two of four** for sodium, **one of two**
+for the current protonated template. Repeated labels for the same ion and
+multiple interpretations of one measured peak cannot inflate coverage.
+HG-only and chain-only fallbacks are disabled for positive PE-P. Shared
+NL43/NL141, precursor and Common ions do not replace chain evidence,
+even if they yield 80 points before the gate. Missing-chain results in
+older stored tables display Low; changing that label does not invent an
+observation or alter their archived numerical score.
+Shared NL43 and NL141 signals alone do not prove P- versus an isobaric
+O-ether structure.
 
 The chain labels document which neutral composition was removed; they
 do not claim experimentally determined sn positions or double-bond locations.
@@ -90,10 +93,8 @@ or a calibrated false-discovery rate. This small panel was used to examine
 and supplement rules, so its replay is regression validation, not a held-out
 estimate of generalization.
 
-The 325-scan replay compares the prior 20/60/20 sodium revision to the
-requested 60/20/20 weights. Native and Python policy exports are identical.
-The isolated prior scoring source is pinned to commit b0ec06e and reproduces
-the previously verified candidate table. Under product defaults the two
+The earlier weight-only 325-scan replay compared 20/60/20 with 60/20/20.
+Its old manifests and Git nodes remain available for replay. Under product defaults the two
 P-18:0/18:1 scans give Top1 scores **98.5443 and 97.9595**;
 P-18:0/22:6 scan 8849 gives 97.9383. The other P-18:0/22:6 scan scores
 21.0074, below the 50-point reporting threshold.
@@ -104,18 +105,27 @@ They must not be described as missing because of absent library entries
 or as passing production identifications. The target-audit score is not
 the same as an exported result.
 
-The weights also expose two class mismatches on LPE 18:1 sodium-associated
-scans 1838 and 1927. They previously had no result. Shared headgroup/ordinary
-ions now give a `PE(P-18:0)` sodium species candidate 80 points, despite zero
-chain evidence; its downgrade reason remains `missing_chain_level_information`.
-Those rows are not correct PE-P identifications. Matching the shared PE
-headgroups does not establish a plasmenyl class. This is a known limitation
-of the retained gate, recorded rather than hidden from the regression.
-Across unlabelled standards the number of Top1 candidate rows changes from
-207 to 209, while correct sum and chain candidate counts stay 187 and 148.
-These are candidate-row counts (ties possible), not an independently
-calibrated FDR or an increase in recall. The weighting change alone does
-not solve this shared-headgroup ambiguity.
+The weight-only revision 8379fe3 exposed two class mismatches on LPE 18:1
+sodium-associated scans 1838 and 1927: shared HG/Other ions produced
+`PE(P-18:0)` sodium candidates with 80 points and zero chain matches.
+They also incorrectly displayed High despite `missing_chain_level_information`.
+The current dual gate rejects these PE-P candidates. The added
+[position-independent LPE sodium template](lpe_sodium_fragments.md) supplies
+the correct class/adduct candidate. Its HG-only policy is intentional and
+does not make shared headgroups sufficient for a PE-P assignment.
+The paired regression pins the full scoring and confidence sources from
+8379fe3, the previous library and index, and the unchanged 325-scan queue.
+Its baseline must reproduce the previous candidate archive before any
+current results are compared. This panel is rule regression validation;
+it is not an independently calibrated FDR experiment.
+
+In the current replay both LPE 18:1 sodium scans select `LPE(18:1)` at
+100 points and no PE-P candidate remains. The three valid PE-P sodium Top1
+scores above are unchanged: their chain coverage is respectively 3/4,
+4/4 and 3/4. Swapped P-18:1/18:0 alternatives in scans 9750/9835 match
+zero of four chain ions and now fail even though HG/Other can yield
+79.6165/80 points in an isolated target audit. All 325 replayed spectra
+have identical native and Python candidate tables under the new rules.
 
 [Lydic et al. (2009)](https://pmc.ncbi.nlm.nih.gov/articles/PMC4112091/)
 reports sodium PE NL43/NL141 and the 164 phosphoethanolamine sodium product.

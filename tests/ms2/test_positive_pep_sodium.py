@@ -1,4 +1,5 @@
 import gzip
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -7,7 +8,8 @@ import pytest
 from lipidgate.ms2.library import load_standard_msp, normalize_imported_record, write_standard_msp
 from lipidgate.ms2.models import ExperimentalSpectrum, LibraryRecord, normalize_peaks
 from lipidgate.ms2.positive_pep_sodium import sodium_pep_fragments
-from lipidgate.ms2.resolution_policy import fragment_is_chain_evidence, CHAIN_LEVEL_INFO_MISSING_REASON
+from lipidgate.ms2.resolution_policy import fragment_is_chain_evidence
+from lipidgate.ms2.gate_policy import positive_pep_chain_gate_counts
 from lipidgate.ms2.rules import DEFAULT_RULES
 from lipidgate.ms2.scoring import _pool_weights_for_record, score_candidate
 
@@ -59,17 +61,33 @@ def test_sodium_pep_formula_balanced_masses_and_requested_pools():
 def test_sodium_pep_does_not_rescue_missing_head_or_chain_with_common_support():
     r = record()
     no_chain = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_FA_Loss'])
-    assert no_chain.downgrade_reason == CHAIN_LEVEL_INFO_MISSING_REASON
+    assert no_chain.downgrade_reason == 'missing_required_fah'
+    assert not no_chain.passed_required_gates
     assert no_chain.resolution_level != 'chain_level'
     assert no_chain.pool_scores['hg'].pool_score == 60
     assert no_chain.pool_scores['fah'].pool_score == 0
     assert no_chain.total_score == 80
     no_head = score(r, [f for f in r.fragments if f.fragment_type != 'Diagnostic_HG'])
-    # The existing chain-only fallback requires 40 FAH points for PE-P.
-    # A 20-point FAH pool cannot satisfy it; changing weights does not relax it.
+    # Neither structural pool may bypass the explicit dual gate.
     assert not no_head.passed_required_gates
     assert 'hg' in no_head.missing_required_groups
     assert no_head.pool_scores['hg'].pool_score == 0
+
+
+def test_sodium_pep_requires_half_the_physical_chain_ions_and_hg():
+    r = record()
+    common = [f for f in r.fragments if f.fragment_type != 'Diagnostic_FA_Loss']
+    chains = [f for f in r.fragments if f.fragment_type == 'Diagnostic_FA_Loss']
+    assert len(chains) == 4
+    assert not score(r, common + chains[:1]).passed_required_gates
+    assert score(r, common + chains[:2]).passed_required_gates
+    r.fragments.append(replace(chains[0], name=chains[0].name + ' alias'))
+    single = score(r, common + chains[:1])
+    assert positive_pep_chain_gate_counts(r, single.matched_fragments) == (2, 1)
+    assert not single.passed_required_gates
+    r.fragments = common + chains[:3]
+    assert not score(r, common + chains[:1]).passed_required_gates
+    assert score(r, common + chains[:2]).passed_required_gates
 
 
 def test_sodium_pep_weight_override_is_limited_to_the_requested_adduct():
