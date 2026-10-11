@@ -18,6 +18,8 @@ precursor ordering is unchanged. The original source blocks outside PE sodium
 were verified by the curator.
 
 The same 325-query standard queue replayed its archived pre-RCO baseline.
+Fresh compiled-policy and Python-policy runs exported identical paired
+candidate tables under the fixed standard protocol.
 Candidate names, adducts, order, scores, gates, resolution and downgrade fields
 remain identical in this queue after RCO addition; matched evidence can gain
 the optional ions. Default-settings PE sodium validation remains 13 correct

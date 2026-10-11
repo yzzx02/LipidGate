@@ -274,6 +274,14 @@
       "fragment_checks_sha256": "a86fabe4d2291ef92d855e4b23e34566ce1c4b8c68b45bdcf77ef4b32331c473",
       "graph_report_sha256": "ba77fe2afaed5fad6268a9945cc6e6bf28cdcc83865ed2f35371ce2896eddf85",
       "scope": "Measured standard-associated spectra; headgroup-supported and exploratory mass targets distinguished; no new PE-P library or gates"
+    },
+    "Python_policy_standard_replay": {
+      "archived_baseline_replayed": 325,
+      "native_candidate_rows_exactly_identical": true,
+      "compared_fields": "all exported paired candidate fields",
+      "report_sha256": "3afaa64d9ba85ed80b49afd96ada06c9ec1d3d781693f7fe1b6bb36f7df0dbec",
+      "query_results_sha256": "1dbe464dc7147d203a4a435ef1c5a5b8d18e01cab34822303bdcbf5e20a2f3c1",
+      "protocol": "fixed standard association, 10 ppm precursor, 0.01 Da fragments, 0.1% minimum intensity, score 50"
     }
   },
   "maintenance_scripts_sha256": {
