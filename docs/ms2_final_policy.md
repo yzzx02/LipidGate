@@ -58,6 +58,26 @@ labels count as chain evidence only for this class/adduct. Equal chains do not
 create duplicate physical ions. PE-P sodium is not inferred from this diacyl
 template; see [references and limitations](pe_sodium_fragments.md).
 
+## Positive PE-P sodium
+
+PE-P `[M+Na]+` uses a separate nine-ion, formula-balanced template on the
+existing PE-P protonated composition grid. HG contains NL43 and NL141;
+Other contains precursor, NL163 and `[H3PO4Na]+` (120.9661). FAH contains
+NL43 plus sn-2 ketene loss, NL43 plus the whole vinyl-chain composition,
+dehydrated sodium PE headgroup plus the whole vinyl-chain composition,
+and sodium fatty-acid plus neutral PE headgroup loss. No RCO acylium or
+sn-1 fatty-acid loss is added. Labels describe net compositions rather than
+proving a unique sequence of elementary reactions.
+
+Existing PE-P HG/FAH/Other weights remain **20/60/20**; the diacyl PE
+60/20/20 override does not apply to PE-P. Existing gates, fallbacks,
+confidence, intensity scoring and ranking are unchanged. Headgroup-only
+evidence cannot resolve chains, and absent HG retains the Low fallback.
+Shared headgroups do not independently establish a vinyl ether; the
+standard-associated validation is not an independent P/O discrimination
+test or a calibrated FDR experiment. See
+[mass assignments and measured scope](pe_plasmalogen_sodium_fragmentation.md).
+
 ## Locked glyceride rules
 
 ### TG

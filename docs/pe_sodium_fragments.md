@@ -63,9 +63,11 @@ with an sn-1 `RCOOH` loss as if both chains were esters. The diacyl PE chain
 channels above are not automatically extended to PE-P. Adding a PE-P sodium
 library requires separately verified chain channels and an evidence gate
 that does not claim plasmenyl structure from shared headgroup peaks alone.
-No PE-P sodium records are introduced by this update. See the
+The diacyl curator introduces no PE-P sodium records. A separate later
+PE-P sodium curator implements nine formula-balanced ions on the existing
+1,890 PE-P chain grid. See the
 [PE-P sodium fragmentation note](pe_plasmalogen_sodium_fragmentation.md)
-for the headgroup pathways, exact masses, measured six-scan audit and limits.
+for its distinct evidence pools, chain pathways, exact masses and audit limits.
 
 In six standard-associated PE-P sodium scans from the small MTBLS394 positive
 file, matching within 0.01 Da found NL43 in all six and NL163 in five. The direct
@@ -73,6 +75,8 @@ sn-2 acid-loss channel was absent; the additional NL43 plus sn-2 acid loss was
 matched in three scans at only 0.36-1.67% relative intensity. These observations
 are mass matches, not independent chemical-origin confirmation, and do not
 support copying a mandatory diacyl two-chain loss gate to PE-P sodium.
+The separate PE-P template uses ketene and whole vinyl-chain composition
+channels; the earlier acid-loss-only check did not assess these channels.
 
 ## Bounded build and provenance
 
