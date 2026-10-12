@@ -37,7 +37,29 @@ def spectrum_candidates(rows, limit=MAX_FEATURE_CANDIDATES):
     return ordered.loc[selected].copy()
 
 
+def candidate_scopes(candidates):
+    """Keep precursor-only FA/NAE channels separate, including legacy audits."""
+    scopes = candidates.get("result_rank_scope", pd.Series("main", index=candidates.index)).map(_text).str.lower()
+    classes = candidates.get("compound_class", pd.Series("", index=candidates.index)).map(_text).str.upper()
+    scopes = scopes.where(scopes.isin(["fa", "nae"]), "main")
+    return scopes.mask(classes.eq("FA"), "fa").mask(classes.eq("NAE"), "nae")
+
+
 def select_feature_annotations(candidates):
+    scopes = candidate_scopes(candidates)
+    output = []
+    for scope in ("main", "fa", "nae"):
+        selected = _select_feature_annotations_in_scope(candidates.loc[scopes.eq(scope)])
+        if not selected.empty:
+            if scope != "main":
+                selected["feature_result_role"] = scope + "_independent"
+            output.append(selected)
+    if not output:
+        return candidates.iloc[:0].assign(**{column: pd.Series(dtype=object) for column in SELECTION_COLUMNS})
+    return pd.concat(output, ignore_index=True)
+
+
+def _select_feature_annotations_in_scope(candidates):
     """Select representative Top3 and exceptional High Top1 in other samples.
 
     Input is the browser's normalized, chemically unmodified candidate table.
@@ -107,7 +129,8 @@ def annotation_export_table(annotations):
     result["原始归并特征 ID"] = annotations._feature.to_numpy()
     result["归并特征键"] = annotations._key.to_numpy()
     result["结果类型"] = annotations.feature_result_role.map(
-        {"representative": "代表谱候选", "sample_difference": "样本差异"}).to_numpy()
+        {"representative": "代表谱候选", "sample_difference": "样本差异",
+         "fa_independent": "FA 独立候选", "nae_independent": "NAE 独立候选"}).to_numpy()
     result["特征候选排名"] = annotations.feature_result_rank.to_numpy()
     result["注释来源样本"] = annotations.feature_result_samples.to_numpy()
     return result

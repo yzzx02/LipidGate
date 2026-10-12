@@ -39,6 +39,7 @@ from .library_fragment_policy import (
     synthetic_fragment as _synthetic_fragment,
 )
 from .models import FragmentRecord, LibraryRecord
+from .nae_precursor import normalize_nae_record
 from .chain_labels import annotate_record_chain_labels
 from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
@@ -47,7 +48,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 39
+LIBRARY_CACHE_VERSION = 40
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -1006,7 +1007,7 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 )
             )
             next_id += 1
-    return _expand_hydroxy_fa_sphingolipids(records)
+    return _expand_hydroxy_fa_sphingolipids([normalize_nae_record(record) for record in records])
 
 
 def _quote_msp_field(value: object) -> str:
@@ -1201,9 +1202,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
-    return annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+    return normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
-                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:

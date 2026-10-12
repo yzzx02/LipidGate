@@ -1057,6 +1057,28 @@ class SearchSelectionTests(unittest.TestCase):
         self.assertEqual([row["compound_class"] for row in fa_only_rows], ["FA"])
         self.assertGreaterEqual(rows[1]["final_score"], 99.0)
 
+    def test_nae_has_independent_rank_without_replacing_main_or_fa(self) -> None:
+        nae = LibraryRecord(101, "NAE", "NAE(18:2)", "NAE(18:2)", 700., "[M+CH3COO]-",
+                            fragments=[FragmentRecord(700., "[M+CH3COO]-", "Precursor Ion")])
+        fa = LibraryRecord(102, "FA", "FA(42:0)", "FA(42:0)", 700., "[M-H]-",
+                           fragments=[FragmentRecord(700., "[RCOO]-(42:0)", "Precursor Ion")])
+        pe = LibraryRecord(103, "PE", "PE(34:1)", "PE(16:0_18:1)", 700., "[M-H]-",
+                           fragments=[FragmentRecord(140.0118, "head", "Diagnostic_HG"),
+                                      FragmentRecord(255.2329, "[RCOO]-(16:0)", "Diagnostic_FA"),
+                                      FragmentRecord(281.2486, "[RCOO]-(18:1)", "Diagnostic_FA")])
+        spectrum = ExperimentalSpectrum("independent", 700., 5., "-", normalize_peaks(
+            [(140.0118, 600.), (255.2329, 900.), (281.2486, 800.), (700., 1000.)]))
+        base = self._build_memory_searcher([pe, fa], use_fragment_index=False).score_spectrum(spectrum, top_n=1)
+        actual = self._build_memory_searcher([nae, pe, fa], use_fragment_index=False).score_spectrum(spectrum, top_n=1)
+        self.assertEqual(actual[:2], base)
+        self.assertEqual([row["result_rank_scope"] for row in actual], ["main", "fa", "nae"])
+        self.assertEqual([row["result_rank"] for row in actual], [1, 1, 1])
+        self.assertEqual([row["counts_toward_topn"] for row in actual], [True, False, False])
+        self.assertEqual(actual[-1]["final_score"], 100.)
+        only = self._build_memory_searcher([nae], use_fragment_index=False).score_spectrum(spectrum, top_n=1)
+        self.assertEqual(len(only), 1)
+        self.assertEqual(only[0]["result_rank_scope"], "nae")
+
     def test_low_confidence_hg_only_is_suppressed_when_chain_candidate_passes(self) -> None:
         chain_record = LibraryRecord(
             record_id=70,

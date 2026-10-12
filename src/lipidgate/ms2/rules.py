@@ -108,7 +108,7 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
     # Positive-mode classes such as GPNAE/N-acyl amino lipids often only expose
     # one headgroup-diagnostic fragment in the library, so they still use the
     # original HG-only fallback path.
-    for lipid_class in {"GPNAE", "NAE", "NAGly", "NAGlySer", "NAOrn"}:
+    for lipid_class in {"GPNAE", "NAGly", "NAGlySer", "NAOrn"}:
         by_class[lipid_class] = ClassRule(
             lipid_class=lipid_class,
             required_groups={},
@@ -121,6 +121,11 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
             require_loss_with_fah_only=False,
             score_profile=default_profile,
         )
+    by_class["NAE"] = ClassRule(
+        lipid_class="NAE",
+        chain_level_min_fah=1,
+        score_profile=ScoreProfile(pool_weights={"fah": 100.0, "hg": 0.0, "other": 0.0}),
+    )
     mg_profile = ScoreProfile(pool_weights={"fah": 0.0, "hg": 75.0, "other": 25.0})
     for lipid_class in {"BA", "BASulfate", "SSulfate", "MG", "NAT"}:
         by_class[lipid_class] = ClassRule(

@@ -13,7 +13,7 @@ from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
 from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
-from lipidgate.feature_annotations import select_feature_annotations, spectrum_candidates
+from lipidgate.feature_annotations import candidate_scopes, select_feature_annotations, spectrum_candidates
 
 
 COLUMNS = [
@@ -410,6 +410,9 @@ class ResultBundle:
                 ) / 60
         annotations = select_feature_annotations(candidates)
         representatives = annotations.loc[annotations.feature_result_role.eq("representative")].drop_duplicates("_key").copy()
+        independent = annotations.loc[annotations.feature_result_role.isin(["fa_independent", "nae_independent"])
+                                      & ~annotations._key.isin(representatives._key)].drop_duplicates("_key")
+        representatives = pd.concat([representatives, independent], ignore_index=True)
         notice = "当前仅有鉴定记录；未提供完整 MS1 特征表，无法统计未鉴定特征。"
         if aligned_features is not None:
             aligned = aligned_features.copy()
@@ -522,9 +525,10 @@ class ResultBundle:
         feature = self.features.loc[self.features._key.eq(key)]
         chosen = feature.iloc[0]._spectrum if not feature.empty else ""
         rows["_representative_first"] = rows._spectrum.eq(chosen)
-        return (rows.sort_values(["_representative_first", "_rank", "_score"],
-                                 ascending=[False, True, False], kind="stable")
-                .drop_duplicates("_spectrum").drop(columns="_representative_first"))
+        rows["_scope_order"] = candidate_scopes(rows).map({"main": 0, "fa": 1, "nae": 2})
+        return (rows.sort_values(["_representative_first", "_scope_order", "_rank", "_score"],
+                                 ascending=[False, True, True, False], kind="stable")
+                .drop_duplicates("_spectrum").drop(columns=["_representative_first", "_scope_order"]))
 
     def candidate_rows(self, key, spectrum=None):
         feature = self.features.loc[self.features._key.eq(key)]
@@ -535,10 +539,17 @@ class ResultBundle:
             self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)
         ]
         if self.path is not None and self.path.parent.name == "audit":
+            rows = rows.copy()
+            rows["_candidate_scope"] = candidate_scopes(rows)
             return rows.sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
-        selected = spectrum_candidates(rows)
-        selected["_display_rank"] = range(1, len(selected) + 1)
-        return selected
+        scopes = candidate_scopes(rows)
+        selected_groups = []
+        for scope in ("main", "fa", "nae"):
+            selected = spectrum_candidates(rows.loc[scopes.eq(scope)])
+            selected["_display_rank"] = range(1, len(selected) + 1)
+            selected["_candidate_scope"] = scope
+            selected_groups.append(selected)
+        return pd.concat(selected_groups, ignore_index=True)
 
     def filter(
         self,

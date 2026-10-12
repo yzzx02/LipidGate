@@ -68,7 +68,7 @@ POSITIVE_FAH_ONLY_FALLBACK_MIN_INTENSITY_QUALITY = 0.50
 # M through M+4 for singly charged lipids and is necessarily sufficient for
 # the more closely spaced isotope peaks of multiply charged precursors.
 PRECURSOR_CLUSTER_EXCLUSION_DA = 4.1
-NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS = frozenset({"FA", "OXFA"})
+NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS = frozenset({"FA", "OXFA", "NAE"})
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
 LOSS_FRAGMENT_TYPES = {"Neutral_Loss", "Diagnostic_FA_Loss"}
@@ -923,6 +923,18 @@ def _calculate_pool_scores(
     fragments: Sequence[FragmentRecord] | None = None,
     quality_relative_intensity_overrides: Dict[int, float] | None = None,
 ) -> Dict[str, PoolScore]:
+    if _normalized_class_key(record.compound_class) == "NAE":
+        # Presence is the complete evidence under the explicit NAE policy.
+        # Shared-peak reranking must keep this binary definition as well.
+        matched = any(
+            match.fragment.fragment_type == "Precursor Ion"
+            and abs(match.fragment.mz - record.precursor_mz) < 1e-8
+            for match in matches
+        )
+        result = _empty_pool_scores()
+        value = float(matched)
+        result["fah"] = PoolScore("fah", int(matched), 1, value, value, 1.0, 100.0 * value)
+        return result
     matched_by_pool: Dict[str, List[FragmentMatch]] = defaultdict(list)
     total_fragments_by_pool: Dict[str, List[FragmentRecord]] = defaultdict(list)
     library_fragments = list(record.fragments if fragments is None else fragments)
@@ -1613,6 +1625,15 @@ def score_candidate(
     experimental_mz: Sequence[float] | None = None,
     precomputed_matches: Sequence[FragmentMatch] | None = None,
 ) -> CandidateScore:
+    if _normalized_class_key(record.compound_class) == "NAE":
+        from .nae_precursor import nae_precursor_fragment
+        # Re-match the single precursor, so legacy/precomputed HG or water
+        # matches cannot satisfy this gate. Precursor metadata alone is not a hit.
+        return _score_fa_precursor_only_candidate(
+            spectrum, record, rule, [nae_precursor_fragment(record)],
+            precursor_ppm_tolerance, precursor_mz_tolerance_da,
+            fragment_mz_tolerance, fragment_ppm_tolerance, experimental_mz,
+        )
     fa_precursor_fragments = _record_precursor_ion_fragments(record) if _is_fa_record(record) else []
     if fa_precursor_fragments:
         return _score_fa_precursor_only_candidate(

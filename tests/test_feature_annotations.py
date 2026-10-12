@@ -90,3 +90,34 @@ def test_final_export_uses_the_same_selector_and_keeps_same_name_at_separate_pea
     assert final.loc[final['结果类型'].eq('样本差异'),'source_file'].tolist()==['d.mzML']
     assert len(pd.read_csv(tmp_path/'audit/evaluated.csv'))==len(data)
     assert len(pd.read_csv(tmp_path/'audit/feature_annotations.csv'))==5
+
+
+def test_independent_nae_does_not_take_representative_or_feature_top3(tmp_path):
+    data = cohort().iloc[:3].copy()
+    independent = row('NAE(18:2)', score=100, result_rank_scope='nae', counts_toward_topn=False)
+    independent['compound_class'] = 'NAE'
+    data = pd.concat([data, pd.DataFrame([independent])], ignore_index=True)
+    bundle = ResultBundle.from_frames(data)
+    assert bundle.features.matched_name.tolist() == ['PC(16:0/18:1)']
+    assert bundle.annotations.feature_result_role.tolist() == ['representative']*3 + ['nae_independent']
+    displayed = bundle.candidate_rows('ALIGN|F100')
+    assert displayed.matched_name.tolist() == data.matched_name.tolist()
+    assert displayed._display_rank.tolist() == [1, 2, 3, 1]
+    assert displayed._candidate_scope.tolist() == ['main']*3 + ['nae']
+    assert bundle.spectra('ALIGN|F100').matched_name.tolist() == ['PC(16:0/18:1)']
+    export_browser_results(bundle, tmp_path, xlsx=False)
+    quantitative = pd.read_csv(tmp_path/'feature_results.csv')
+    assert quantitative['Top3 Annotation'].tolist() == ['PC(14:0/20:1)']
+    selected = pd.read_csv(tmp_path/'feature_candidates.csv')
+    assert selected['结果类型'].tolist() == ['代表谱候选']*3 + ['NAE 独立候选']
+
+
+@pytest.mark.parametrize('scope', ['fa', 'nae'])
+def test_independent_only_features_are_visible_without_becoming_main_top3(scope):
+    item = row('FA(18:2)' if scope == 'fa' else 'NAE(18:2)', score=100,
+               result_rank_scope=scope, counts_toward_topn=False)
+    item['compound_class'] = scope.upper()
+    bundle = ResultBundle.from_frames(pd.DataFrame([item]))
+    assert len(bundle.features) == len(bundle.annotations) == 1
+    assert bundle.annotations.feature_result_role.tolist() == [scope+'_independent']
+    assert bundle.candidate_rows('ALIGN|F100')._candidate_scope.tolist() == [scope]

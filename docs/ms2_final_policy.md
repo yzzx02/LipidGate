@@ -11,6 +11,7 @@ new benchmark explicitly justifies a change.
 - `scoring.py` and `scoring_policy.py`: evidence-pool scores and score constants.
 - `ranking_policy.py`: Top1 tie handling and effective fragment counts.
 - `library_fragment_policy.py`: runtime normalization of curated library fragments.
+- `nae_precursor.py`: explicit single-precursor NAE import definitions.
 - `search.py`: spectrum orchestration, shared-peak iteration, and result export.
 - `record_facts.py`: reuse read-only record facts during one candidate score;
   discard the cache on return or error, without changing gates or scores.
@@ -18,6 +19,39 @@ new benchmark explicitly justifies a change.
 Library parsing must not contain class-specific scoring or ranking decisions.
 Passing a gate must not itself award a high score, and a high score must not
 bypass a required gate.
+
+## Fixed-core sterol esters and NAE (2026-10-12 revision)
+
+- Bundled BRSE fixes the sterol core at 28:2 (brassicasterol, C28H46O);
+  CASE fixes it at 28:1 (campesterol, C28H48O). Each enumerates only the
+  esterified C10–C26/DB0–6 acid, with 119 inclusive compositions per class.
+  Neutral ester formulas subtract H2O from sterol plus acid. `[M+NH4]+`
+  precursors and `[sterol-H2O+H]+` products include the ionic mass correction;
+  sterol product m/z values are 381.3516 and 383.3672. The established sterol
+  Diagnostic_FA/precursor pool policy remains unchanged.
+- Positive and negative NAE use exactly one theoretical peak: the current
+  adduct precursor at the record's precursor m/z. Legacy MSP and Excel imports
+  apply the same explicit definition. Remove 62.0606 and all other NAE peaks.
+- NAE requires both precursor metadata within precursor tolerance and a
+  retained measured MS2 peak within fragment tolerance. Metadata alone earns
+  zero. A hit earns exactly 100, without intensity saturation; no hit earns
+  zero and fails the precursor gate. NAE uses its own `nae` ranking scope,
+  with `counts_toward_topn=False`, independently of both main and FA results.
+  It neither suppresses a main candidate nor takes a main Top3 slot. Feature
+  selection, GUI ranks and exported result types preserve this separation.
+- Primary annotation error rates use only the main ranking scope. Independent
+  NAE precursor candidates are recorded separately, like FA; their presence
+  cannot change a Cer primary assignment into a primary annotation error.
+- The NAE score denotes completion of its one-ion evidence policy, not class
+  specificity or an automatic High confidence assignment. The existing MS1
+  evidence and confidence policy continues to apply. Ordinary FA intensity
+  scoring and all PE evidence gates, weights and scores remain unchanged.
+- Curator: `scripts/rebuild_sterol_nae_library.py`. Revision fingerprints:
+  `config/library_revision_sterol_nae_20261012.json`. Old release manifests
+  and the preceding FA-only fingerprints remain historical checkpoints.
+
+Sterol nomenclature follows the
+[MS-DIAL nomenclature table](https://systemsomicslab.github.io/compms/msdial/lipidnomenclature_v1.html).
 
 ## Storage and search optimization invariants
 
@@ -36,6 +70,15 @@ Streaming index repacking requires an explicitly pinned source identity and
 unchanged normalization. It verifies every record and precursor entry, retains
 the source index/code identities, and replaces the output atomically. Library
 content or normalization changes require a fresh parse and regression checks.
+
+## Bundled FA coverage
+
+The 2026-10-12 source-library coverage policy restricts `CompoundClass: FA`
+to chain double-bond counts <= 12, including 12. The explicit curator removes
+703 records (13 through 49 double bonds) and retains 557. It verifies retained
+MSP blocks without changing definitions or order and requires a fresh source
+parse, index build and library fingerprint. This source curation does not
+change FA precursor-only scoring or candidate eligibility at runtime.
 
 ## Positive PE-P supporting evidence
 

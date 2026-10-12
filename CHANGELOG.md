@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — 2026-10-12
+
+- Rebuild BRSE with the fixed 28:2 sterol core and CASE with the fixed 28:1
+  core, each with 119 C10–C26/DB0–6 acyl compositions. Correct neutral ester
+  formulas and charged sterol fragment masses; remove the variable-core grid.
+- Retain only the NAE precursor peak in both polarities and legacy imports.
+  A measured precursor peak within both tolerances scores exactly 100; the
+  62.0606 headgroup and water-loss peaks do not contribute. Keep MS1-dependent
+  confidence and all other class scoring policies unchanged.
+- Rank NAE independently like FA without consuming main Top3 positions.
+  Preserve the independent scope in feature selection, display and exports.
+- Restrict the bundled FA library to at most 12 chain double bonds. Remove
+  703 source records, retain 557 FA records and all other source definitions,
+  and rebuild the negative mass index with new content fingerprints.
+- Add a streaming, repeatable FA curator with an exact before/after audit and
+  tests for the inclusive boundary and preservation of other lipid classes.
+
 ## 1.0.3 — 2026-10-10
 
 - Add a strict C++17 batched numerical matcher and compile eleven existing

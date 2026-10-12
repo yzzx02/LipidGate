@@ -407,7 +407,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.spectrum_choice.setToolTip("查看归入当前特征的每一张 MS2 谱图")
         self.spectrum_choice.currentIndexChanged.connect(self._spectrum_selected)
         detail_layout.addWidget(self.spectrum_choice)
-        detail_layout.addWidget(label("Top3 候选注释", "resultSection"))
+        detail_layout.addWidget(label("Top3 候选 / 独立 FA、NAE", "resultSection"))
         self.candidates = QtWidgets.QTableWidget(0, 7)
         self.candidates.setHorizontalHeaderLabels(
             ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm", "ECN"]
@@ -425,7 +425,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.candidates.verticalHeader().setDefaultSectionSize(25)
         self.candidates.setMaximumHeight(102)
         self.candidates.setMinimumHeight(65)
-        self.candidates.setColumnWidth(0, 42)
+        self.candidates.setColumnWidth(0, 66)
         self.candidates.setColumnWidth(1, 180)
         self.candidates.currentCellChanged.connect(self.candidate_selected)
         detail_layout.addWidget(self.candidates)
@@ -1091,6 +1091,9 @@ class ResultsPage(QtWidgets.QWidget):
                     value = f"{number(value):.2f}"
                 if column == "_rank":
                     value = str(int(row.get("_display_rank", row["_rank"])))
+                    scope = text(row.get("_candidate_scope"))
+                    if scope in {"fa", "nae"}:
+                        value = f"{scope.upper()} {value}"
                 if column == "_ecn":
                     value = ecn_display(value)
                 item = QtWidgets.QTableWidgetItem(text(value))

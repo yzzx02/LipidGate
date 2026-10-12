@@ -979,7 +979,9 @@ class LipidMS2Searcher:
         rank_metrics: Dict[int, Dict[str, float]] = {}
         if passed_results:
             fa_results = [item for item in passed_results if self._is_fa_result(item)]
-            main_results = [item for item in passed_results if not self._is_fa_result(item)]
+            nae_results = [item for item in passed_results if self._normal_class_key(item.record.compound_class) == "NAE"]
+            main_results = [item for item in passed_results
+                            if self._normal_class_key(item.record.compound_class) not in {"FA", "NAE"}]
             if any(self._is_chain_info_result(item) for item in main_results):
                 main_results = [
                     item
@@ -1006,12 +1008,17 @@ class LipidMS2Searcher:
                 self._sort_by_rank_metrics(fa_results, fa_metrics)
                 rank_metrics.update(fa_metrics)
                 scoped_results.extend((item, "fa", False) for item in fa_results[: max(1, top_n)])
+            if nae_results:
+                nae_metrics = self._compute_rank_metrics(nae_results)
+                self._sort_by_rank_metrics(nae_results, nae_metrics)
+                rank_metrics.update(nae_metrics)
+                scoped_results.extend((item, "nae", False) for item in nae_results[: max(1, top_n)])
         else:
             selected_results = self._select_tentative_missing_hg_fallback(eligible_results)
             rank_metrics = self._compute_tentative_rank_metrics(selected_results)
             scoped_results.extend((item, "main", True) for item in selected_results)
         rows = []
-        scope_ranks = {"main": 0, "fa": 0}
+        scope_ranks = {"main": 0, "fa": 0, "nae": 0}
         scope_previous_results: dict[str, CandidateScore] = {}
         for result, rank_scope, counts_toward_topn in scoped_results:
             rank = self._next_result_rank(
