@@ -14,6 +14,11 @@ Windows compilers must target MinGW-w64. The numeric kernel links libstdc++,
 libgcc and winpthreads statically, including with MSYS2 UCRT64 GCC; users do not
 need the toolchain's DLLs on PATH.
 
+The commands below reproduce the tagged v1.0.3 build. For later source/library
+revisions, choose a new package version and output folder before packaging;
+do not overwrite a prior release manifest. The PE sodium branch currently has
+source/library validation only, documented in [validation](validation.md).
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -28,8 +33,10 @@ python scripts/check_frozen_release.py --exe dist/v1.0.3/LipidGate.exe --output 
 python scripts/freeze_windows_release.py --version 1.0.3 --dist-dir dist/v1.0.3 --tests-xml build/verification/tests.xml --frozen-report build/verification/frozen.json
 ```
 
-The first index build is a development step requiring additional memory and
-time. Valid indexes are reused without expansion. The spec bundles indexes,
+The first index build is a development step requiring additional time and
+temporary disk space. Records are parsed incrementally and sorted on disk;
+only hydroxy-sphingolipid expansion seeds and one encoded block are retained.
+Valid indexes are reused without expansion. The spec bundles indexes,
 catalogs, fonts/icons, XCMS bridge, mzML dictionaries and license notices.
 The Qt hook selects separate GUI and pyOpenMS worker DLLs before imports.
 The native build uses strict float64 operations without fast-math or FMA

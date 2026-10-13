@@ -1,0 +1,93 @@
+{
+  "revision": "feature_top3_clear_adduct_links_20261011",
+  "revision_kind": "feature_output_and_adduct_link_presentation",
+  "created_at_utc": "2026-10-11T15:33:09.206556+00:00",
+  "baseline_commit": "170587f1f0659dc5fc23f8c19db90573287b49f3",
+  "baseline_revision_sha256": "cd780e8b85b6b05747c9d85fd2ea39319ba07d66314b72e8be3e37a399f0ad97",
+  "base_release": "v1.0.3",
+  "executable_status": "Source branch only; no executable rebuilt or published",
+  "product_code_sha256": "2a99b40e3c3417c543230da926d7271796711790ccc022b66c3feb0bbeea37af",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+  "feature_output_module_sha256": "f8131bea5c65af69f9db3492b24281a2cde9f381a858f68cc12dbdc65742e4ef",
+  "ion_link_module_sha256": "94acf0edbce8b70fe1c9a9ca4da2ff83aef05532ef4032eb87cc77e3320bb28e",
+  "feature_output": {
+    "maximum_representative_candidates": 3,
+    "distinct_identity": "normalized class and reported name",
+    "output_positions": "separate from immutable original spectrum result_rank",
+    "representative": "One highest-ranked anchor per spectrum; prefer its own explicit gates and High, then original rank/score",
+    "exception": "Other sample best-spectrum unique High Top1 with passed gates and identity outside representative Top3; merge repeated identities/samples",
+    "quantitative_rows": "One existing feature per area matrix row; no duplicate component areas",
+    "same_name_separate_peaks": "Retained; no global class/name deduplication",
+    "audit": "All original candidates/decisions retained; exact selected source rows recorded separately",
+    "extra_raw_reads_for_final_export": false
+  },
+  "ion_links": {
+    "method": "IIN-inspired unambiguous adduct links v2",
+    "config": {
+      "mass_ppm": 5.0,
+      "rt_tolerance_min": 0.05,
+      "shape_pearson_min": 0.9,
+      "shape_cosine_min": 0.95,
+      "min_shape_points": 7,
+      "min_shape_edge_points": 2,
+      "min_abundance_samples": 5,
+      "peak_cache_bytes": 16777216
+    },
+    "public_criteria": "Every shared native sample verified; consistent unique ion assignments, one feature per ion form, consistent neutral mass",
+    "displayed_fields": "Feature IDs and related ion forms only",
+    "internal_hypotheses": "audit/ion_relationships.csv",
+    "matching_effect": "None; no filtering, rescoring, gate/order/confidence changes or area combination"
+  },
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "36d9f7efdcda2615c5cd5d812d0029b48f10254c6977aabcd539091070cc2b76",
+      "source_gzip_bytes": 24067242,
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "index_bytes": 60903424,
+      "unchanged_from_checkpoint": true
+    },
+    "negative": {
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "index_sha256": "e32921a14c2ea96aaad6175cf04b5379074c4cfaa50fa7c407cd49062226e671",
+      "index_bytes": 60211200,
+      "unchanged_from_checkpoint": true
+    }
+  },
+  "verification": {
+    "full_pytest": {
+      "command": "python -X utf8 -m pytest -q --junitxml=build/verification/feature_top3_links_tests.xml",
+      "tests_passed": 888,
+      "subtests_passed": 3118,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 93.087,
+      "junit_sha256": "a6027a135a9e2725dad019adaa83bbc1b782e122fddc5822c9d140e64228c1a1"
+    },
+    "native": {
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "raw_candidate_csv_byte_identical": true,
+      "feature_count": 121,
+      "formal_annotation_rows": 131,
+      "maximum_main_candidates": 2,
+      "same_name_at_multiple_features": 23,
+      "formal_csv_sha256": "b750f0754b97ba7b353e7d9a2ae180bd17661f5c10929502941e0477d31e9af6"
+    },
+    "python": {
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "raw_candidate_csv_byte_identical": true,
+      "feature_count": 121,
+      "formal_annotation_rows": 131,
+      "maximum_main_candidates": 2,
+      "same_name_at_multiple_features": 23,
+      "formal_csv_sha256": "b750f0754b97ba7b353e7d9a2ae180bd17661f5c10929502941e0477d31e9af6"
+    },
+    "metric_scope": "Fixed standard-query regression and output selection, not independent FDR",
+    "raw_data_and_research_outputs": "Outside Git; core_results/23_feature_top3_adduct_links_20261011"
+  }
+}

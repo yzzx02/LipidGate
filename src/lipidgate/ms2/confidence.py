@@ -2,8 +2,17 @@
 
 import math
 
-from .resolution_policy import SINGLE_CHAIN_COVERAGE_REASON
+from .resolution_policy import (
+    CHAIN_LEVEL_INFO_MISSING_REASON, PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON,
+    SINGLE_CHAIN_COVERAGE_REASON,
+)
 from .ms1_evidence import has_ms1_evidence
+
+MISSING_CHAIN_EVIDENCE_REASONS = frozenset({
+    CHAIN_LEVEL_INFO_MISSING_REASON, PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON,
+    SINGLE_CHAIN_COVERAGE_REASON, "missing_chain_annotation", "insufficient_oxidized_chain_evidence",
+    "missing_lcb_chain_evidence", "missing_fah_chain_evidence",
+})
 
 
 def identification_confidence(row) -> str:
@@ -14,7 +23,7 @@ def identification_confidence(row) -> str:
         score = float(row.get("final_score"))
     except (TypeError, ValueError):
         score = math.nan
-    if math.isfinite(score) and score < 50.0:
+    if "final_score" in row and (not math.isfinite(score) or score < 50.0):
         return "低"
     if not has_ms1_evidence(row):
         return "低"
@@ -22,7 +31,7 @@ def identification_confidence(row) -> str:
         ("missing_positive_gate", "missing_required_")
     ):
         return "低"
-    if str(row.get("downgrade_reason", "")) == SINGLE_CHAIN_COVERAGE_REASON:
+    if str(row.get("downgrade_reason", "")) in MISSING_CHAIN_EVIDENCE_REASONS:
         return "低"
     if str(row.get("resolution_level", "")).startswith("tentative_"):
         return "低"

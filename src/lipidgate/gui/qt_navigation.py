@@ -8,6 +8,8 @@ import math
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from lipidgate.ion_relationships import confirmed_ion_relationships
+
 from .plot_axes import MIN_VIEW_SPAN, axis_drag_factor, clamp_window, decimal_tick_step, scaled_from_minimum, scaled_window, tick_label, tick_values
 from .result_data import FAMILY_COLORS, family_for, number, text
 from .ui_icons import plot_cursor, plot_tool_icon, reset_view_button
@@ -133,6 +135,16 @@ class _Canvas(QtWidgets.QWidget):
             pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
             painter.setPen(pen)
             painter.drawPoints(QtGui.QPolygonF(background))
+        # Selected relationships only: a large network never obscures the map.
+        # Both endpoints must be visible, with compatible library adducts.
+        painter.setPen(QtGui.QPen(QtGui.QColor("#788596"), 1.2))
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+        for own, partner in self.owner.selected_links:
+            start = QtCore.QPointF(*self._to_pixel(own["_rt"], own["_mz"]))
+            end = QtCore.QPointF(*self._to_pixel(partner["_rt"], partner["_mz"]))
+            if rect.contains(start) and rect.contains(end):
+                painter.drawLine(start, end)
+                painter.drawEllipse(end, 5.5, 5.5)
         grouped = {}
         pixel_points = []
         pixel_rows = []
@@ -153,7 +165,7 @@ class _Canvas(QtWidgets.QWidget):
             painter.drawPoints(QtGui.QPolygonF(points))
         self._pixel_points = np.asarray(pixel_points, dtype=float).reshape(-1, 2)
         self._pixel_rows = pixel_rows
-        selected = next((row for row in self.owner.rows if row["_key"] == self.owner.key), None)
+        selected = self.owner._rows_by_key.get(self.owner.key)
         if selected is not None:
             x, y = self._to_pixel(selected["_rt"], selected["_mz"])
             if rect.contains(QtCore.QPointF(x, y)):
@@ -279,7 +291,7 @@ class _Canvas(QtWidgets.QWidget):
             return
         self._hover_key = key
         if row:
-            tooltip = f"<b>{html.escape(text(row.get('_display_feature', row['_feature'])))}</b><br>{html.escape(text(row['matched_name']))}<br>m/z {number(row['_mz']):.4f} · RT {number(row['_rt']):.3f} min<br>Score {number(row['final_score']):.2f}"
+            tooltip = f"<b>{html.escape(text(row.get('_display_feature', row['_feature'])))}</b><br>{html.escape(text(row['matched_name']))}<br>Adduct {html.escape(text(row.get('adduct')) or '—')}<br>m/z {number(row['_mz']):.4f} · RT {number(row['_rt']):.3f} min<br>Score {number(row['final_score']):.2f}"
             QtWidgets.QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
         else:
             QtWidgets.QToolTip.hideText()
@@ -330,13 +342,17 @@ class NavigationPlot(QtWidgets.QWidget):
         self.legend = []
         self.dim = True
         self.key = None
+        self.selected_adduct = None
+        self.selected_links = []
+        self._rows_by_key = {}
+        self._relationship_index = {}
         self.mode = "select"
         self.limits = (0.0, 1.0, 0.0, 1.0)
         self.home_limits = self.limits
         self._history = [self.limits]
         self._history_position = 0
         self.canvas = _Canvas(self)
-        self.canvas.setToolTip("轴上右键：右拖/上拖放大，左拖/下拖缩小；纵轴固定最低值；左键拖动平移；图内滚轮缩放")
+        self.canvas.setToolTip("选中特征显示明确的加合物连线；轴上右键：右拖/上拖放大，左拖/下拖缩小；纵轴固定最低值；左键拖动平移；图内滚轮缩放")
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 2)
         toolbar.setSpacing(3)
@@ -447,6 +463,8 @@ class NavigationPlot(QtWidgets.QWidget):
         was_empty = not self.rows
         self.dim = dim
         self.rows = selected.to_dict("records")
+        self._rows_by_key = {row["_key"]: row for row in self.rows}
+        self._update_selected_links()
         self.background_rows = valid.loc[~valid._key.isin(selected._key)].to_dict("records") if dim else []
         families = {}
         for row in self.rows:
@@ -468,8 +486,37 @@ class NavigationPlot(QtWidgets.QWidget):
                 self._set_limits(self.limits, record=False)
         self.canvas.update()
 
-    def select_key(self, key):
+    def set_relationships(self, relations):
+        """Index accepted project links once without touching search results."""
+        self._relationship_index = {}
+        for row in confirmed_ion_relationships(relations).itertuples():
+            for own, partner, own_ion, partner_ion in (
+                (row.feature_a, row.feature_b, row.ion_a, row.ion_b),
+                (row.feature_b, row.feature_a, row.ion_b, row.ion_a),
+            ):
+                self._relationship_index.setdefault(own, []).append((partner, own_ion, partner_ion))
+        self._update_selected_links()
+        self.canvas.update()
+
+    def _update_selected_links(self):
+        self.selected_links = []
+        own = self._rows_by_key.get(self.key)
+        if own is None:
+            return
+        own_adduct = text(own.get("adduct")) if self.selected_adduct is None else self.selected_adduct
+        for key, own_ion, partner_ion in self._relationship_index.get(self.key, []):
+            partner = self._rows_by_key.get(key)
+            if partner is None or (own_adduct and own_adduct != own_ion):
+                continue
+            partner_adduct = text(partner.get("adduct"))
+            if partner_adduct and partner_adduct != partner_ion:
+                continue
+            self.selected_links.append((own, partner))
+
+    def select_key(self, key, *, adduct=None):
         self.key = key
+        self.selected_adduct = adduct
+        self._update_selected_links()
         self.canvas.update()
 
     def _save(self):

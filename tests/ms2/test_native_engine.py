@@ -186,16 +186,22 @@ def test_complete_scores_rank_and_audit_equal_python(tmp_path, native):
         (609.5304463578401, 362.0347595214844), (294.31788640500923, 110.01720428466797),
     ]), precursor_charge=1)
     for prefilter in (False, True):
-        options = dict(min_total_score=0, fragment_tolerance_da=None, fragment_tolerance_ppm=10,
-                       use_fragment_index=prefilter, native_min_candidates=0)
-        python = LipidMS2Searcher(path, use_native_engine=False, **options)
-        cpp = LipidMS2Searcher(path, use_native_engine=True, **options)
-        try:
-            assert cpp.score_spectrum(spectrum) == python.score_spectrum(spectrum)
-            assert any(b.numeric_view is not None for b in cpp.library._blocks.values())
-        finally:
-            python.close()
-            cpp.close()
+        for tolerance in (10, 15):
+            options = dict(min_total_score=0, fragment_tolerance_da=None, fragment_tolerance_ppm=tolerance,
+                           use_fragment_index=prefilter, native_min_candidates=0)
+            python = LipidMS2Searcher(path, use_native_engine=False, **options)
+            cpp = LipidMS2Searcher(path, use_native_engine=True, **options)
+            try:
+                actual = cpp.score_spectrum(spectrum)
+                assert actual == python.score_spectrum(spectrum)
+                if tolerance == 10:
+                    assert actual == []
+                else:
+                    assert actual and actual[0]['passed_required_gates']
+                assert any(b.numeric_view is not None for b in cpp.library._blocks.values())
+            finally:
+                python.close()
+                cpp.close()
 
 
 def test_filtered_visible_indexes_cross_blocks_without_reordering(tmp_path, native):

@@ -17,6 +17,7 @@ from typing import Dict, Iterable, Iterator, List
 
 import pandas as pd
 
+from . import safe_pickle
 from .esterified_ceramide import is_esterified_ceramide
 from .negative_hexcer import is_negative_hexcer, normalize_negative_hexcer_fragments
 from .negative_cer_hsu2016 import normalize_negative_cer_hsu2016_fragments
@@ -39,6 +40,8 @@ from .library_fragment_policy import (
     synthetic_fragment as _synthetic_fragment,
 )
 from .models import FragmentRecord, LibraryRecord
+from .nae_precursor import normalize_nae_record
+from .positive_single_chain_h import normalize_protonated_single_chain_record
 from .chain_labels import annotate_record_chain_labels
 from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
@@ -47,7 +50,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 37
+LIBRARY_CACHE_VERSION = 42
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -585,7 +588,7 @@ def _load_cached_standard_msp(path: Path) -> List[LibraryRecord] | None:
         return None
     try:
         with cache_path.open("rb") as handle:
-            records = pickle.load(handle)
+            records = safe_pickle.load(handle)
     except Exception as exc:
         logging.getLogger(__name__).warning("Cannot read library cache %s: %s", cache_path, exc)
         return None
@@ -677,7 +680,7 @@ def _load_bundled_prebuilt_msp(path: Path) -> List[LibraryRecord] | None:
         return None
     try:
         with gzip.open(archive, "rb") as handle:
-            records = pickle.load(handle)
+            records = safe_pickle.load(handle)
         return records if isinstance(records, list) else None
     except (OSError, ValueError, pickle.UnpicklingError) as exc:
         logging.getLogger(__name__).warning("Cannot read bundled library snapshot %s: %s", archive, exc)
@@ -786,6 +789,13 @@ def _normalize_fragment_type(
     cls = str(compound_class or "").strip()
     ftype = str(fragment_type or "").strip()
     name = str(fragment_name or "").strip()
+    if cls.upper() == "PE" and str(adduct or "").strip() == "[M+Na]+" and name in {"[M+Na-43]+", "[M+Na-141]+"}:
+        return "Diagnostic_HG"
+    if (
+        cls.upper() == "PE" and str(adduct or "").strip() == "[M+Na]+"
+        and re.match(r"^(?:\(R=O\)\+|RCO\(|\[RCO\]\+)", re.sub(r"\s+", "", name), flags=re.I)
+    ):
+        return "FA_Frag"
     if (
         cls == "PS"
         and str(adduct or "").strip() == "[M+H]+"
@@ -1006,7 +1016,9 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 )
             )
             next_id += 1
-    return _expand_hydroxy_fa_sphingolipids(records)
+    return _expand_hydroxy_fa_sphingolipids([
+        normalize_protonated_single_chain_record(normalize_nae_record(record)) for record in records
+    ])
 
 
 def _quote_msp_field(value: object) -> str:
@@ -1201,21 +1213,26 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
-    return annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+    return normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
-                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:
     """Decode MSP; normalize=False exposes disk records for migration/audit."""
+    records = list(iter_standard_msp_records(msp_path, normalize=normalize))
+    return _expand_hydroxy_fa_sphingolipids(records) if normalize else records
+
+
+def iter_standard_msp_records(msp_path: str | Path, *, normalize: bool = True) -> Iterator[LibraryRecord]:
+    """Decode one MSP record at a time, before cohort-wide hydroxy-FA expansion."""
     msp_path = Path(msp_path)
-    records: List[LibraryRecord] = []
     current: Dict[str, str] = {}
     fragments: List[FragmentRecord] = []
     next_id = 0
     reading_peaks = False
 
-    def flush_current() -> None:
+    def flush_current() -> LibraryRecord | None:
         nonlocal current, fragments, next_id, reading_peaks
         if not current:
             return
@@ -1232,16 +1249,19 @@ def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[L
             polarity=current.get("polarity", _infer_polarity_from_adduct(current.get("precursortype", ""))),
             fragments=list(fragments),
         )
-        records.append(normalize_imported_record(record) if normalize else record)
+        record = normalize_imported_record(record) if normalize else record
         next_id += 1
         current = {}
         fragments = []
         reading_peaks = False
+        return record
 
     for raw_line in _iter_standard_msp_lines(msp_path):
         line = raw_line.strip()
         if not line:
-            flush_current()
+            record = flush_current()
+            if record is not None:
+                yield record
             continue
         if ":" in line and not reading_peaks:
             key, value = line.split(":", 1)
@@ -1259,7 +1279,9 @@ def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[L
                 parsed_fragment = _parse_fragment_payload(line)
             except ValueError:
                 if ":" in line:
-                    flush_current()
+                    record = flush_current()
+                    if record is not None:
+                        yield record
                     key, value = line.split(":", 1)
                     normalized_key = key.strip().lower()
                     value = value.strip()
@@ -1284,8 +1306,9 @@ def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[L
                     weight=float(payload.get("weight", 1.0)),
                 )
             )
-    flush_current()
-    return _expand_hydroxy_fa_sphingolipids(records) if normalize else records
+    record = flush_current()
+    if record is not None:
+        yield record
 
 
 def load_library(path: str | Path, use_cache: bool = True) -> List[LibraryRecord]:

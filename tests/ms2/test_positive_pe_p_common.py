@@ -51,5 +51,20 @@ def test_common_support_scores_without_replacing_missing_headgroup_confirmation(
     assert score.pool_scores["other"].matched_count==1
     assert score.total_score==pytest.approx(70.0)
     assert score.pool_scores["hg"].matched_count==0
-    assert score.downgrade_reason=="low_confidence_fah_only"
-    assert score.resolution_level=="tentative_chain_level"
+    assert not score.passed_required_gates
+    assert score.downgrade_reason=="missing_required_hg"
+    assert score.resolution_level=="class_level"
+
+
+def test_protonated_pep_requires_hg_and_half_the_actual_chain_ions():
+    revised=normalize_imported_record(record())
+    chains=[f for f in revised.fragments if f.fragment_type=='Diagnostic_FA_Loss']
+    common=[f for f in revised.fragments if f.fragment_type!='Diagnostic_FA_Loss']
+    assert len(chains)==2
+    def evaluate(fragments):
+        spectrum=ExperimentalSpectrum('dual',revised.precursor_mz,5,'+',
+            normalize_peaks([(f.mz,1000) for f in fragments]))
+        return score_candidate(spectrum,revised,DEFAULT_RULES.get('PE-P'))
+    assert not evaluate(common).passed_required_gates
+    assert evaluate(common+chains[:1]).passed_required_gates
+    assert not evaluate(chains).passed_required_gates

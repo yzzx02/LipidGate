@@ -1,0 +1,120 @@
+{
+  "revision": "advisory_ion_relationships_20261011",
+  "revision_kind": "independent_MS1_relationship_advisory",
+  "created_at_utc": "2026-10-11T14:46:21.942015+00:00",
+  "baseline_commit": "cc2cff425c13f0ce5cfb7ed026ff7ec311fe57c1",
+  "baseline_library_revision_sha256": "0713a8a6ae62c497895403e7b6b822d41cf960b99f107edb8f63af29ca290d1b",
+  "base_release": "v1.0.3",
+  "executable_status": "Source branch only; published v1.0.3 executable is unchanged",
+  "product_code_sha256": "163fa2138eed88ea0ca554bec3ceb7e1536da1990748dc077990d75802fcbf7e",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+  "relation_module_sha256": "72b152c6668e582b41250811a0dae30fcb6d204727f90fcbc638f422122ed35d",
+  "relationship_method": "IIN-inspired independent pair hypotheses v1; not full MZmine IIN/IIMN or CliqueMS",
+  "config": {
+    "mass_ppm": 5.0,
+    "rt_tolerance_min": 0.05,
+    "shape_pearson_min": 0.9,
+    "shape_cosine_min": 0.95,
+    "min_shape_points": 7,
+    "min_shape_edge_points": 2,
+    "min_abundance_samples": 5,
+    "peak_cache_bytes": 16777216
+  },
+  "ion_masses": {
+    "positive": {
+      "[M+H]+": 1.007276466621,
+      "[M+NH4]+": 18.033825553,
+      "[M+Na]+": 22.989220702,
+      "[M+K]+": 38.963157906
+    },
+    "negative": {
+      "[M-H]-": -1.007276466621,
+      "[M+HCOO]-": 44.998202851,
+      "[M+CH3COO]-": 59.013852915
+    }
+  },
+  "scope": "After search/export; no library filtering, rescoring, candidate reorder, gate change, confidence or annotation propagation, row merging or area combination",
+  "relation_statuses": [
+    "EIC_supported",
+    "mixed_evidence",
+    "rejected",
+    "mass_RT_only"
+  ],
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "36d9f7efdcda2615c5cd5d812d0029b48f10254c6977aabcd539091070cc2b76",
+      "source_gzip_bytes": 24067242,
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "index_bytes": 60903424,
+      "unchanged_from_checkpoint": true
+    },
+    "negative": {
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "index_sha256": "e32921a14c2ea96aaad6175cf04b5379074c4cfaa50fa7c407cd49062226e671",
+      "index_bytes": 60211200,
+      "unchanged_from_checkpoint": true
+    }
+  },
+  "verification": {
+    "full_pytest": {
+      "command": "python -m pytest -q --junitxml=build/verification/ion_relationships_tests.xml",
+      "tests_passed": 878,
+      "subtests_passed": 3118,
+      "seconds": 63.944,
+      "failures": 0,
+      "errors": 0,
+      "junit_sha256": "060f3d1d367a3ad286703be3f983eea31dc4c19d24972853950ee2033bd8851a"
+    },
+    "native_search_regression": {
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "code_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+      "candidate_csv_byte_identical": true
+    },
+    "python_search_regression": {
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "code_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+      "candidate_csv_byte_identical": true
+    },
+    "shape_checks": {
+      "status": "completed",
+      "metric_scope": "Frozen reference ion-pair coelution checks only; no native feature IDs synthesized, no annotation FDR estimate",
+      "source_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "source_bytes": 144431698,
+      "config": {
+        "mass_ppm": 5.0,
+        "rt_tolerance_min": 0.05,
+        "shape_pearson_min": 0.9,
+        "shape_cosine_min": 0.95,
+        "min_shape_points": 7,
+        "min_shape_edge_points": 2,
+        "min_abundance_samples": 5,
+        "peak_cache_bytes": 16777216
+      },
+      "method_sha256": "72b152c6668e582b41250811a0dae30fcb6d204727f90fcbc638f422122ed35d",
+      "evaluated_reference_pairs": 75,
+      "shape_status_counts": {
+        "supported": 46,
+        "shape_disagreement": 28,
+        "insufficient_points": 1
+      },
+      "mass_compatible_pairs": 71,
+      "supported_with_documented_coordinates": 38,
+      "seconds": 2.1731422999946517,
+      "peak_array_cache_bytes": 4510352,
+      "additional_peak_rss_bytes": 17461248,
+      "qt_openms_imported": false,
+      "output_csv_sha256": "094cc0cc41cfa78f14dc05d0771984531a2bfb15141ae16e31d62fbe2f5b6509"
+    },
+    "research_artifact_directory": "core_results/22_adduct_relationships_20261011; outside version control"
+  }
+}

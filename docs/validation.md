@@ -1,5 +1,79 @@
 # Release validation
 
+## PE sodium RCO source/library revision, 2026-10-11
+
+The subsequent revision updates the same 3,907 PE `[M+Na]+` records with
+7,735 Common acylium supports, one per distinct acyl composition. Unequal
+chains have eleven library ions; equal chains have eight. RCO+ contributes
+only to Other, which retains three-observation saturation and a 20-point cap.
+It introduces no chain gate, headgroup rescue, weight change or confidence
+promotion. PE-P `[M+H]+` and its locked Other policy remain unchanged.
+
+The final source passed **850 tests and 3,118 subtests** in both fresh policy
+processes (compiled and Python), with no failures, errors or skips. Fresh MSP
+parsing rebuilt both indexed libraries. Full comparison of all 2,350,846
+normalized records verified exactly the requested Common additions in the
+3,907 sodium PE records: every other record/field, numeric type, record ID and
+precursor ordering is unchanged. The original source blocks outside PE sodium
+were verified by the curator.
+
+The same 325-query standard queue replayed its archived pre-RCO baseline.
+Fresh compiled-policy and Python-policy runs exported identical paired
+candidate tables under the fixed standard protocol.
+Candidate names, adducts, order, scores, gates, resolution and downgrade fields
+remain identical in this queue after RCO addition; matched evidence can gain
+the optional ions. Default-settings PE sodium validation remains 13 correct
+Top1 sum/adducts out of 14 scans, one unannotated, and seven correct chain
+compositions. Existing sum-level and single-chain warnings remain. No broader
+FDR claim follows from this particular associated-standard check.
+
+The monitored fresh two-library build peaked at **306.4 MiB RSS** in the single
+builder process and took 448.1 seconds on the local machine. This is an index
+build measurement, not a GUI/raw-file memory ceiling. The final build retains
+only eligible protonated hydroxy-sphingolipid seeds and bounded record blocks.
+
+Six PE-P sodium raw spectra were extracted and plotted separately, including
+the scan with a 184.0739 base peak. The chemical scope and uncertain mass
+assignments are documented in [PE-P sodium fragmentation](pe_plasmalogen_sodium_fragmentation.md).
+Their raw files and plots stay outside Git; no PE-P sodium chain library is
+added. Current fingerprints are in
+[`config/history/library_revision_pe_sodium_rco_20261011.json`](../config/history/library_revision_pe_sodium_rco_20261011.json).
+Prior manifests, source commits and release executables remain intact.
+
+## PE sodium source/library revision, 2026-10-11
+
+This revision adds 3,907 formula-derived diacyl PE `[M+Na]+` records and their
+chain-loss evidence labels. HG/FAH/Other weights remain 60/20/20; existing
+gates, scoring and ranking functions are unchanged. PE-P sodium is researched
+separately and is not added. See [fragment definitions](pe_sodium_fragments.md).
+
+The final source passed **849 tests and 3,118 subtests**, with no failures,
+errors or skips, using the compiled policy path. A fresh Python-policy process
+passed 848 tests and the same 3,118 subtests before the final build-memory
+regression test was added. No Windows executable is published by this revision;
+the immutable v1.0.3 executable and manifest identify the prior library.
+
+Freshly parsed indexes were checked against all 2,346,939 prior normalized
+records: fields, numeric types and stable existing precursor order were
+preserved. The 12,420 generated hydroxy-FA record IDs move by 3,907 to remain
+after the newly extended source bank; original source-record IDs and MS1 native
+feature IDs are unchanged. All new sodium records were checked against their
+formula definitions, and all negative-library records remain identical.
+
+The archived 325-query external-standard baseline replayed exactly with its
+old index. With the new index and product defaults, 13 of 14 PE sodium scans
+returned the correct Top1 sum composition and sodium adduct; one remained
+unannotated. Seven also returned the correct chain composition. Results with
+insufficient chain evidence retain their existing downgrade, so this does not
+mean 13 high-confidence chain identifications. These are standard-associated
+spectra from MTBLS394, not a calibrated FDR estimate. Suspected mixed spectra,
+including the previously flagged PC scan, remain in the fixed paired queue
+and are not treated as definite pure-standard algorithm errors.
+
+Source/library/index identities and regression report hashes are in
+[`config/history/library_revision_pe_sodium_20261011.json`](../config/history/library_revision_pe_sodium_20261011.json).
+Raw files, baseline snapshots, reports and generated indexes stay outside Git.
+
 ## v1.0.3
 
 The integrated source passed **841 tests and 3,118 subtests** with no failures,
@@ -97,5 +171,5 @@ less than a second per polarity on the build machine, excluding executable
 dependency extraction.
 
 Exact released executable, code, MSP and index hashes are in
-`config/release_v1.0.0.json`. Public source and release ZIPs exclude raw samples,
+`config/history/release_v1.0.0.json`. Public source and release ZIPs exclude raw samples,
 retired models, historical binaries and generated caches.

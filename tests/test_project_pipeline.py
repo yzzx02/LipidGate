@@ -323,6 +323,7 @@ def test_real_project_detection_search_and_export(tmp_path):
     from lipidgate.pipeline import run_project
 
     m = PositivePECer(18, 1, 16, 0)
+    sodium_mz = m.precursor_mz + 22.989220702 - 1.007276466621
     exp = oms.MSExperiment()
     for rt in range(100):
         sp = oms.MSSpectrum()
@@ -342,9 +343,12 @@ def test_real_project_detection_search_and_export(tmp_path):
                         m.precursor_mz,
                         m.precursor_mz + 1.00335,
                         m.precursor_mz + 2.0067,
+                        sodium_mz,
+                        sodium_mz + 1.00335,
+                        sodium_mz + 2.0067,
                     ]
                 ),
-                np.array([6000.0, y, 0.4 * y, 0.08 * y]),
+                np.array([6000.0, y, 0.4 * y, 0.08 * y, 0.95 * y, 0.38 * y, 0.076 * y]),
             )
         )
         exp.addSpectrum(sp)
@@ -404,3 +408,11 @@ def test_real_project_detection_search_and_export(tmp_path):
     assert result.passed_data.feature_rt.iloc[0] == pytest.approx(40 / 60, abs=0.05)
     assert result.xlsx_path is None
     assert result.csv_path.exists()
+    # A detected Na/H MS1 pair adds advisory evidence without changing the
+    # single H library candidate, its confidence, or the quantitation rows.
+    relations = pd.read_csv(result.csv_path.parent / "ion_relationships.csv")
+    assert len(relations) == 1 and 'status' not in relations
+    assert relations.iloc[0].ion_a == '[M+H]+'
+    assert relations.iloc[0].ion_b == '[M+Na]+'
+    audit = pd.read_csv(result.csv_path.parent / "audit/ion_relationships.csv")
+    assert audit.iloc[0].supported_samples == 1

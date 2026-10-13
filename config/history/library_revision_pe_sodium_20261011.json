@@ -1,0 +1,310 @@
+{
+  "revision": "pe_sodium_20261011",
+  "revision_kind": "source_and_library",
+  "created_at_utc": "2026-10-11T05:21:34.298794+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "806e21a2484dc1deea6d879855945f5570ab1237",
+  "base_release_manifest_sha256": "112bcef26fa93036bbc85e224b19e28f1b7f63f97a03d2f85b3ac2a48a0c0e3a",
+  "executable_status": "No executable built or published for this revision; prior v1.0.3 release and fingerprints remain immutable",
+  "platform": "Windows x64",
+  "python": "3.13.5",
+  "product_code_sha256": "c230be6d1d59bfdacd48d7a06ea45034c65e42a9a79e585271f1fff43a33125a",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "9141e8accb65706e8377f21a6dc2ab23b6c84bf588f0c5a737fd8a2fff3b3610",
+  "library_cache_version": 38,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "fingerprint_scope": "Effective local verified code, including native DLL/PYD artifacts; rebuilds on another toolchain may have different binary fingerprints",
+  "change_scope": {
+    "added_class": "PE",
+    "added_adduct": "[M+Na]+",
+    "added_raw_records": 3907,
+    "template": "Formula-derived existing diacyl PE chain grid; no sn-position assignment",
+    "pool_weights": {
+      "HG": 60,
+      "FAH": 20,
+      "Other": 20
+    },
+    "existing_gates_and_scoring_functions": "unchanged",
+    "chain_profile": "positive_pe_sodium",
+    "pe_p_sodium_records_added": 0,
+    "positive_pe_p_protonated_other": "precursor and P-chain Common; unchanged"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1253644,
+      "normalized_records": 1266064,
+      "classes": 110,
+      "adducts": 4,
+      "source_gzip_sha256": "53c1da00bbe2bf0635e79aeb1b35af97d24de3e28da4f45a3b92b162dec3fbf8",
+      "source_gzip_bytes": 23930377,
+      "decompressed_source_sha256": "900e36ff98e81ad0c5835c424fbb28509e96c44f39da2f86514434d4d2b32f05",
+      "index_sha256": "371836606f3d561ee1bbc6b184b3c3da288ffe9e25b67e8b3087f2a7b0ddf0db",
+      "index_bytes": 60649472,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "bcb855821bf49eb73499dcca3b47a6030b28be86380f2d41e1adf877222eafcb"
+    },
+    "negative": {
+      "raw_source_records": 1084782,
+      "normalized_records": 1084782,
+      "classes": 117,
+      "adducts": 4,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "18229e3c56a3809cf0355a42895171dfa11874ebf00ee872882dcc2beb1ef968",
+      "index_bytes": 60211200,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61"
+    }
+  },
+  "verification": {
+    "pe_sodium_tests.xml": {
+      "scope": "final code and tests; compiled policy path",
+      "tests_passed": 849,
+      "subtests_passed": 3118,
+      "junit_test_cases": 3967,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "report_sha256": "b899594e354fedab8c3600c6880d7ac0d138444b8c631a088d91ec8bcc70f03b"
+    },
+    "pe_sodium_python_tests.xml": {
+      "scope": "before final build-memory regression test; Python policy path",
+      "tests_passed": 848,
+      "subtests_passed": 3118,
+      "junit_test_cases": 3966,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "report_sha256": "fc723a0a5567aa7bdfa200f0566a9a0cb550378ec7b897e5eaf6e8090f3192f7"
+    },
+    "complete_prior_library_delta": {
+      "libraries": [
+        {
+          "mode": "positive",
+          "preserved_records": 1262157,
+          "added_sodium_pe_records": 3907,
+          "generated_record_ids_rebased": 12420,
+          "status": "all fields, numeric types and stable existing precursor order verified"
+        },
+        {
+          "mode": "negative",
+          "preserved_records": 1084782,
+          "added_sodium_pe_records": 0,
+          "generated_record_ids_rebased": 0,
+          "status": "all fields, numeric types and stable existing precursor order verified"
+        }
+      ],
+      "report_sha256": "c178f5dbbe1a3387a7fcedfe0e21924e9b4da46e125aed83c0b0b4aae85427fb"
+    },
+    "paired_standard_regression": {
+      "archived_baseline_replayed": 325,
+      "summary": [
+        {
+          "version": "Before",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 171,
+          "correct_chain_rows": 138,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 0,
+          "pe_na_correct_chain_rows": 0,
+          "pe_na_correct_adduct_rows": 0
+        },
+        {
+          "version": "After",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 184,
+          "correct_chain_rows": 145,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        }
+      ],
+      "input_mzml_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "prior_index_sha256": "ceec5b2ca5df935d8c2e39068bb5319de7c0ba0a8060cc321931127dac41d8de",
+      "current_index_sha256": "371836606f3d561ee1bbc6b184b3c3da288ffe9e25b67e8b3087f2a7b0ddf0db",
+      "precursor_ppm": 10,
+      "fragment_tolerance_da": 0.01,
+      "min_relative_intensity": 0.001,
+      "min_score": 50,
+      "metric_scope": "candidate rows; conditional on known-standard association, with previously flagged mixed spectra retained for paired comparison",
+      "report_sha256": "39591705df8e6e18c4a5c26af44cf2d8b7c3ee313d7243a3c77ebadd53bd6433",
+      "query_results_sha256": "30f31c438a344fa4c11d8c096f5ea70536ec5dd8705b493e71286174fab57718",
+      "archived_baseline_fields_verified": [
+        "candidate count and order",
+        "matched name",
+        "class",
+        "adduct",
+        "main/native result rank",
+        "score",
+        "required gates",
+        "resolution",
+        "matched fragment count"
+      ]
+    },
+    "product_default_pe_sodium": {
+      "input_scans": 14,
+      "correct_top1_sum_composition_and_adduct": 13,
+      "unannotated": 1,
+      "correct_chain_composition": 7,
+      "defaults": {
+        "precursor_ppm": 5,
+        "fragment_ppm": 15,
+        "min_relative_intensity": 0.002,
+        "min_score": 50
+      },
+      "report_sha256": "8c8e01607f0e10a9d359460a8d465e815c32fa89f46c7f592d8fb8bba60c95d3",
+      "interpretation": "Correct sum/adduct does not imply full-chain high confidence; existing evidence downgrades apply"
+    },
+    "external_truth_scope": {
+      "dataset": "MetaboLights MTBLS394 / LDAControl experiment 1",
+      "sample": "20150709_LipidMix_5um-pos-01.mzML",
+      "truth": "Known standards from Supplementary Table 2; conditional spectrum association",
+      "limitation": "Suspected mixed scans retained for fixed paired regression; not definite pure-standard errors. This is not calibrated FDR."
+    },
+    "gzip_reencoding": {
+      "source_sha256_before_reencoding": "4bb481946524f2f0c75d2cb97c17e0ea5d8c8a6761d7e672b30bd802ab140a25",
+      "source_sha256": "53c1da00bbe2bf0635e79aeb1b35af97d24de3e28da4f45a3b92b162dec3fbf8",
+      "decompressed_source_sha256": "900e36ff98e81ad0c5835c424fbb28509e96c44f39da2f86514434d4d2b32f05",
+      "index_sha256": "371836606f3d561ee1bbc6b184b3c3da288ffe9e25b67e8b3087f2a7b0ddf0db",
+      "unchanged_index_data": {
+        "block_sha256": "ff0507ddf1c9bb5de4358fa3b80728f5e3d80d755f0c6d1ea5cc53ecb747ebea",
+        "entries_sha256": "c1d824c7fcd563d7881695699c0f1eff7bd6bcdd49bfccd71e235ae914a5fd60"
+      },
+      "source_bytes": 23930377
+    }
+  },
+  "maintenance_scripts_sha256": {
+    "scripts/build_prebuilt_libraries.py": "225ff241826adf2781b8441e84b6c8726510bede44474f5d7ceaa8389d27f709",
+    "scripts/curate_positive_pe_sodium.py": "d46161b39b150b298c08d2630cd24254cb1d71ac57ce978573379915ef819963"
+  },
+  "native_backends": {
+    "search_core.json": {
+      "api_version": 1,
+      "source_sha256": "c573300226cb6d6bf6ff60f1d865c2ee9269fc235f89e07d66c34480523a2af5",
+      "binary_sha256": "b2bc2aad804a0b7277ae66a1cab7e8d79192af0845fb29edf4e6d506a3d0777f",
+      "platform": "win32",
+      "machine": "AMD64",
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "link_flags": [
+        "-Wl,-Bstatic,--start-group",
+        "-lstdc++",
+        "-lwinpthread",
+        "-Wl,--end-group,-Bdynamic"
+      ]
+    },
+    "policy/manifest.json": {
+      "python_abi": [
+        3,
+        13
+      ],
+      "platform": "win32",
+      "machine": "AMD64",
+      "cython": "3.3.0",
+      "directives": {
+        "language_level": 3,
+        "annotation_typing": false,
+        "infer_types": false,
+        "cdivision": false,
+        "boundscheck": true,
+        "wraparound": true,
+        "initializedcheck": true,
+        "nonecheck": true,
+        "overflowcheck": true,
+        "binding": true
+      },
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-fno-strict-aliasing",
+        "-fwrapv",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "modules": {
+        "scoring": {
+          "source_sha256": "8d7c535e277d5d32ecbe4928e09e4f67b6a9ba1be798e59d76948feadd336cc0",
+          "binary_name": "scoring.cp313-win_amd64.pyd",
+          "binary_sha256": "b75b330d581872b8f9f4e99033e99f346177db69e5f7576ba9ac83ee0009c999",
+          "bytes": 1051074
+        },
+        "gate_policy": {
+          "source_sha256": "c23216d2c89280a4d45a9543f583b273177896130943eec64aefaf6444f3254c",
+          "binary_name": "gate_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "ffab94ae64a1d5c3671eac0e9e06cb6fdd76a0b4956e7bac9f46be939f44ce34",
+          "bytes": 263828
+        },
+        "oxidized_fragment_policy": {
+          "source_sha256": "24d77a9303c0e628671496dba5f74aa2186313a3665358251c9454d276546a78",
+          "binary_name": "oxidized_fragment_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "f90055ae1f5f5317d71897f95d5bd73230035b65b24072c195ce82e39f3bf5f1",
+          "bytes": 271485
+        },
+        "chain_utils": {
+          "source_sha256": "a17d6e4f3d511590a61202fd4e8b123ab2808f757b9ea08819a312f384e0ca58",
+          "binary_name": "chain_utils.cp313-win_amd64.pyd",
+          "binary_sha256": "b31edb591eef12baa09f617cfe80e282257745b870c717796ea73349bf9d21c4",
+          "bytes": 227164
+        },
+        "matching": {
+          "source_sha256": "1f8867fd7430a1a1a20567bdf0c317a0e8e550722fb0fb2c96d30fc0528ef74a",
+          "binary_name": "matching.cp313-win_amd64.pyd",
+          "binary_sha256": "f50c3f26e3a6be1ab8371038c35d1fbc76ecb950609d1e2ac181ec3b23452548",
+          "bytes": 194205
+        },
+        "record_facts": {
+          "source_sha256": "5e2d5aba58654a7cc744b0280d8606614e4f34937b5d4446eb6ca46b6211ee32",
+          "binary_name": "record_facts.cp313-win_amd64.pyd",
+          "binary_sha256": "b3fc7d0b48c01543419ed66c6aec3e0694b38dd89c2bad18d2698304ab0d719a",
+          "bytes": 217827
+        },
+        "ranking_policy": {
+          "source_sha256": "06dbf517649d197bfa216852c168cf54d5a12bee096830e59cb8ab9ef0cd645f",
+          "binary_name": "ranking_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "a55fe8bac32e5d9bb59a33ba8d8edbbbdd033d673da0cc3a66027336e7142daa",
+          "bytes": 214000
+        },
+        "scoring_policy": {
+          "source_sha256": "19335c1d24c68b3d3deba6daabf3391de5f39107ed75726ccfca0c756fdd1e3a",
+          "binary_name": "scoring_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "679857ec3e5a78e899dd139ccf1d281547c39aef2cc666a1120f207ecf59f0c9",
+          "bytes": 128506
+        },
+        "search": {
+          "source_sha256": "ddc63580b6282906f240dc06fa8eb16003ba42f643f2244dd0ad4336f3cb4ce1",
+          "binary_name": "search.cp313-win_amd64.pyd",
+          "binary_sha256": "6ca9e7f65f72aed47a1fe1b79ea86c915a4f02268c07506340050d771bf30625",
+          "bytes": 919342
+        },
+        "resolution_policy": {
+          "source_sha256": "abe2edb079bf2bf21ebce691cad9c2a58eeb4377ec4fb6c2cd2cbe2295fe7e59",
+          "binary_name": "resolution_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "58d3252414df726828c5b6d95854aa67bc96dde9595e15b0824d61676e80c565",
+          "bytes": 342377
+        },
+        "indexed_library": {
+          "source_sha256": "b58901243b9cf0c176d64e9c544be46fa0bf5e35312afb3827e703dcaa4f2d92",
+          "binary_name": "indexed_library.cp313-win_amd64.pyd",
+          "binary_sha256": "a13c5d413620775aadba436d12c0626a9537a0b46eab015f3b8e984ce76b71fb",
+          "bytes": 678677
+        }
+      }
+    }
+  }
+}

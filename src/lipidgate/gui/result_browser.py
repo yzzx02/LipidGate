@@ -407,7 +407,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.spectrum_choice.setToolTip("查看归入当前特征的每一张 MS2 谱图")
         self.spectrum_choice.currentIndexChanged.connect(self._spectrum_selected)
         detail_layout.addWidget(self.spectrum_choice)
-        detail_layout.addWidget(label("Top N 候选注释", "resultSection"))
+        detail_layout.addWidget(label("Top3 候选 / 独立 FA、NAE", "resultSection"))
         self.candidates = QtWidgets.QTableWidget(0, 7)
         self.candidates.setHorizontalHeaderLabels(
             ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm", "ECN"]
@@ -425,7 +425,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.candidates.verticalHeader().setDefaultSectionSize(25)
         self.candidates.setMaximumHeight(102)
         self.candidates.setMinimumHeight(65)
-        self.candidates.setColumnWidth(0, 42)
+        self.candidates.setColumnWidth(0, 66)
         self.candidates.setColumnWidth(1, 180)
         self.candidates.currentCellChanged.connect(self.candidate_selected)
         detail_layout.addWidget(self.candidates)
@@ -623,6 +623,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_candidate = None
         self.region = None
         self.navigation.rows = []
+        self.navigation.set_relationships(bundle.ion_relationships)
         self.search.clear()
         self.class_search.clear()
         self.notice.setText(bundle.notice)
@@ -1089,7 +1090,10 @@ class ResultsPage(QtWidgets.QWidget):
                 if column in {"final_score", "ppm_error"}:
                     value = f"{number(value):.2f}"
                 if column == "_rank":
-                    value = str(int(row["_rank"]))
+                    value = str(int(row.get("_display_rank", row["_rank"])))
+                    scope = text(row.get("_candidate_scope"))
+                    if scope in {"fa", "nae"}:
+                        value = f"{scope.upper()} {value}"
                 if column == "_ecn":
                     value = ecn_display(value)
                 item = QtWidgets.QTableWidgetItem(text(value))
@@ -1145,6 +1149,13 @@ class ResultsPage(QtWidgets.QWidget):
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
+        self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
+        differences = self.bundle.annotations.loc[
+            self.bundle.annotations._key.eq(feature.get("_key"))
+            & self.bundle.annotations.feature_result_role.eq("sample_difference")]
+        if not differences.empty:
+            values.append(("样本差异注释", "；".join(
+                f"{item.matched_name}（{item.feature_result_samples}）" for item in differences.itertuples())))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))
         if math.isfinite(number(feature.get("_aligned_rt"))):

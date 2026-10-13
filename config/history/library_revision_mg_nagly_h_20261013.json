@@ -1,0 +1,80 @@
+{
+  "revision": "mg_nagly_h_20261013",
+  "preceding_revision": "pe_na_hg_chain_20261012",
+  "base_source_commit": "0f21fa8897a4294fdeec2215c0f5dd4620936971",
+  "local_working_revision": true,
+  "ms2_rules_sha256": "8cdc9aa83acbdba3af8b4b00ad6107d0d07d292ca6649c05a79ab59478655378",
+  "product_code_sha256": "b3cb3e049fdd334c3ef94d867a73eade068caace46353f85eeb0921d47af84bb",
+  "cache_version": 42,
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916,
+      "index_sha256": "698de8914367ca81f216267264e35fc46cfbdab45c8b0c1c85d59e7ba295a259",
+      "index_bytes": 60317696
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893,
+      "index_sha256": "2311f9c5abf82a15c380f50a8d374cd46c9b28e701d4777d8aec65d162cd621c",
+      "index_bytes": 60219392
+    }
+  },
+  "changes": {
+    "MG_H_records": 77,
+    "NAGly_single_H_records": 77,
+    "whitelist_sha256": "dd59153f0cf773850ead9cd69087f497538bd0426bdfddda11ceac35dfe23e57",
+    "chain_range": "C10-C26 / DB0-DB6, existing whitelist only",
+    "MG_H_HG_required": "[M+H-H2O]+",
+    "MG_H_other": [
+      "[M+H-92.0473441]+",
+      "[M+H]+"
+    ],
+    "NAGly_H_HG_at_least_one": [
+      "[C2H6NO2]+",
+      "[M+H-C2H5NO2]+"
+    ],
+    "NAGly_H_other": [
+      "[M+H-H2O]+",
+      "[M+H]+"
+    ],
+    "HG_Other_weights": [
+      75,
+      25
+    ],
+    "existing_MG_ammonium_and_two_chain_NAGly_definitions_preserved": true,
+    "no_Cer_definition_or_gate_changes": true,
+    "unrelated_source_blocks_preserved": true
+  },
+  "verification": {
+    "tests_passed": 916,
+    "subtests_passed": 3118,
+    "JUnit_cases": 4034,
+    "junit_sha256": "4fff1c393fbbd0a25ce1b77aac50404fbe23d98cdd52888d48a5a87b0e1a9b68",
+    "measured_spectra_checked": 1102,
+    "changed_spectra": 16,
+    "unchanged_spectra": 1086,
+    "native_python_outputs_equal": true,
+    "negative_outputs_unchanged": true,
+    "independent_NAE_FA_outputs_unchanged": true,
+    "selected_Cer_outputs_unchanged": true,
+    "native_replay_sha256": "6ccc71f4568ec47d1c01cc7b3ba36ff7c93d925237925178679c94c7533e9319",
+    "python_replay_sha256": "86b77a48b20bf63a57925217fb6b37afbc33f6245f20a9aae16c0b01ae3a3ee1",
+    "curation_audit_sha256": "43de504134fbc1f1d389ee6f5069586ac3f7cd317ffc6a9334c2bed4b3a5007b"
+  },
+  "research": {
+    "H_standard_spectra": 28,
+    "correct_Top1_spectra": 15,
+    "no_output_failure_spectra": 13,
+    "whitelist_H_standard_spectra": 19,
+    "whitelist_correct_spectra": 15,
+    "whitelist_no_output_failures": 4,
+    "new_wrong_output": "DG-O(2:0/O-16:0) -> MG(18:0) [M+H]+, 87.50; counted as wrong",
+    "truth_labels_and_native_ranks_unchanged": true,
+    "absent_output_is_a_failure_without_an_invented_score": true
+  }
+}

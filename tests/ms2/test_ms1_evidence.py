@@ -23,6 +23,16 @@ def confirmed_row(**changes):
     )
 
 
+@pytest.mark.parametrize('score', [float('nan'), float('inf'), float('-inf'),
+                                  'nan', 'inf', 'invalid', '', None, pd.NA])
+def test_invalid_scores_cannot_be_high_confidence_even_with_ms1_and_passed_gates(score):
+    row = confirmed_row()
+    row['final_score'] = score
+    assert identification_confidence(row) == '低'
+    exported = prepare_ms2_result_export_df(pd.DataFrame([row]))
+    assert exported.loc[0, '置信度'] == '低'
+
+
 def test_unlinked_confirmed_ms1_precursor_counts_as_real_evidence_for_confidence():
     row = confirmed_row()
     assert confirmed_ms1_precursor(row)
@@ -63,12 +73,29 @@ def test_missing_ambiguous_stale_or_inconsistent_ms1_proof_cannot_raise_confiden
     {"resolution_level": "tentative_species_level"},
     {"downgrade_reason": "missing_required_hg"},
     {"downgrade_reason": "multiple_fragments_single_chain_coverage"},
+    {"downgrade_reason": "missing_chain_level_information"},
+    {"downgrade_reason": "missing_lcb_chain_evidence"},
+    {"downgrade_reason": "missing_fah_chain_evidence"},
+    {"downgrade_reason": "missing_chain_annotation"},
+    {"downgrade_reason": "insufficient_oxidized_chain_evidence"},
+    {"downgrade_reason": "insufficient_independent_chain_evidence"},
 ])
 def test_real_ms1_support_does_not_bypass_existing_ms2_confidence_requirements(change):
     row = confirmed_row()
     row.update(change)
     assert confirmed_ms1_precursor(row)
     assert identification_confidence(row) == "低"
+
+
+def test_legacy_missing_chain_rows_are_low_in_export_and_final_results():
+    row=confirmed_row()
+    row.update(final_score=80.,resolution_level='species_level',
+               downgrade_reason='missing_chain_level_information')
+    exported=prepare_ms2_result_export_df(pd.DataFrame([row]))
+    final,_,_=filter_results(pd.DataFrame([row]),use_ecn=False)
+    assert exported.loc[0,'置信度']=='低'
+    assert final.loc[0,'置信度']=='低'
+    assert final.loc[0,'final_score']==80.
 
 
 def test_reader_confirmation_survives_failed_feature_link_and_both_export_paths():

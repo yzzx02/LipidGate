@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from collections import Counter
 from functools import lru_cache
+from typing import Callable, Sequence
 
-from .models import FragmentRecord, LibraryRecord
+from .models import FragmentMatch, FragmentRecord, LibraryRecord
 
 
 CHAIN_TOKEN_RE = re.compile(
@@ -78,3 +79,32 @@ def chain_token_multiplicity(record_or_name: LibraryRecord | object) -> Counter[
         else record_or_name
     )
     return Counter(extract_chain_tokens(name))
+
+
+def count_chain_evidence(
+    record: LibraryRecord,
+    fragments_or_matches: Sequence[FragmentRecord | FragmentMatch],
+    predicate: Callable[[LibraryRecord, FragmentRecord], bool],
+) -> int:
+    """Count chain positions using a caller's evidence definition.
+
+    Alternative ions of one chain count once; repeated structural positions
+    retain their multiplicity. Unlabelled qualifying ions retain the existing
+    count, capped by the number of structural positions when known.
+    """
+    multiplicity = chain_token_multiplicity(record)
+    matched_tokens: set[str] = set()
+    unassigned = 0
+    for item in fragments_or_matches:
+        fragment = item.fragment if isinstance(item, FragmentMatch) else item
+        if not predicate(record, fragment):
+            continue
+        token = extract_fragment_chain_token(fragment)
+        if token is not None and token in multiplicity:
+            matched_tokens.add(token)
+        else:
+            unassigned += 1
+    if not multiplicity:
+        return unassigned
+    count = sum(multiplicity[token] for token in matched_tokens) + unassigned
+    return min(count, sum(multiplicity.values()))

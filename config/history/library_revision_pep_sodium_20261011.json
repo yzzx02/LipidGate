@@ -1,0 +1,264 @@
+{
+  "revision": "pep_sodium_20261011",
+  "revision_kind": "source_and_library",
+  "created_at_utc": "2026-10-11T09:59:24.288034+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "c5005d52b94fc15e1961f0a183a736d682d984cc",
+  "previous_library_revision_sha256": "b1ce82fa1bab3bd8d0ed6f603c05e2b69ae43057b5e46da84d4167afaf51c92c",
+  "executable_status": "Source/library branch only; no executable built or published for this revision; previous release manifests and tag unchanged",
+  "platform": "Windows x64",
+  "python": "3.13.5",
+  "product_code_sha256": "1f2e2318dac956624dc75f0c767becf9ad3c0fba28d9a0aebd6895be06cb8460",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "a70369d772ea906e85978262502cc3327b3524daea5647a3c06e22b4cc249e15",
+  "library_cache_version": 39,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "fingerprint_scope": "Effective local verified code including native DLL/PYD artifacts; another toolchain may produce different binary fingerprints",
+  "change_scope": {
+    "updated_class": "PE-P",
+    "updated_adduct": "[M+Na]+",
+    "added_raw_records": 1890,
+    "existing_source_records_preserved_verbatim": 1253644,
+    "fragments_per_record": 9,
+    "pool_counts": {
+      "HG": 2,
+      "FAH": 4,
+      "Other": 3
+    },
+    "existing_pool_weights": {
+      "HG": 20,
+      "FAH": 60,
+      "Other": 20
+    },
+    "library_mass_source": "Elemental formulas; round once at MSP serialization",
+    "ordinary_ions": [
+      "precursor",
+      "NL163",
+      "[H3PO4Na]+"
+    ],
+    "headgroup_ions": [
+      "NL43",
+      "NL141"
+    ],
+    "chain_ions": [
+      "NL43 + sn2 ketene",
+      "NL43 + whole vinyl chain",
+      "C2H5NO3PNa + whole vinyl chain",
+      "sn2 sodium fatty acid + C2H8NO4P"
+    ],
+    "existing_gates_scoring_and_ranking": "unchanged",
+    "pe_p_protonated_other": "unchanged: precursor + P-chain Common; no RCO",
+    "mechanism_scope": "Formula-balanced net compositions and mass checks, not proof of unique elementary pathways"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1255534,
+      "normalized_records": 1267954,
+      "source_gzip_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "source_gzip_bytes": 24064253,
+      "decompressed_source_sha256": "1f5e1cb5ac66d3b6b6d9b3c81d8680c7f1fcfa99527388c9ff15e3520f84661b",
+      "index_sha256": "d02d25f111795af49dc86ce191f60574c7262422e585200d9d1c82832525077a",
+      "index_bytes": 60899328,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "a290b8158785402a7624dbd6b43acdf5490f61b244d99ca7bc5fe09a39bec5a7"
+    },
+    "negative": {
+      "raw_source_records": 1084782,
+      "normalized_records": 1084782,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "6c8722e2bd9d9a8a67312bfa7652d1e2bbd52b71825104beb1075800711026bc",
+      "index_bytes": 60211200,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61"
+    }
+  },
+  "verification": {
+    "curated_blocks": {
+      "preserved_records": 1253644,
+      "replaced_sodium_pep_records": 0,
+      "added_sodium_pep_records": 1890,
+      "source_sha256": "a290b8158785402a7624dbd6b43acdf5490f61b244d99ca7bc5fe09a39bec5a7",
+      "output_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "fragments_per_record": 9,
+      "scope": "Only plasmenyl PE sodium; every other source block preserved verbatim",
+      "pool_counts": {
+        "HG": 2,
+        "FAH": 4,
+        "Other": 3
+      },
+      "pool_weights": {
+        "HG": 20,
+        "FAH": 60,
+        "Other": 20
+      },
+      "mechanism_scope": "Formula-balanced net composition; mass matches do not establish unique elementary pathways"
+    },
+    "tests_native": {
+      "passed": 3972,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "report_sha256": "a9af2b75c6a7a0837553e8f1bc06bf80881683bfad87218edc2838d7c078a714"
+    },
+    "tests_python": {
+      "passed": 3972,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "report_sha256": "b9b4c7ac2c4a97054684253bdaed28e3d506aeb55a2d558cfe5e5d687e18319e"
+    },
+    "paired_standard_regression": {
+      "status": "verified",
+      "archived_baseline_replayed": 325,
+      "summary": [
+        {
+          "version": "Before",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 184,
+          "correct_chain_rows": 145,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        },
+        {
+          "version": "After",
+          "top1_candidate_rows": 207,
+          "correct_sum_rows": 187,
+          "correct_chain_rows": 148,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        }
+      ],
+      "candidate_order_score_or_resolution_changed_scans": [
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "top1_changed_scans": [
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "changed_non_pep_scans": [],
+      "candidate_fields_compared": [
+        "matched_name",
+        "compound_class",
+        "adduct",
+        "result_rank",
+        "final_score",
+        "passed_required_gates",
+        "resolution_level",
+        "downgrade_reason"
+      ],
+      "seconds": 19.09641759999795,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "old_index_sha256": "91327a3ee4b46d250635489c5281420d71606afe5f4ba8f1c61ad25a63d656eb",
+      "new_index_sha256": "d02d25f111795af49dc86ce191f60574c7262422e585200d9d1c82832525077a",
+      "code_sha256": "a70369d772ea906e85978262502cc3327b3524daea5647a3c06e22b4cc249e15",
+      "metric_scope": "candidate rows; conditional on known-standard association, with previously flagged mixed spectra retained for paired comparison"
+    },
+    "python_paired_standard_regression": {
+      "status": "verified",
+      "archived_baseline_replayed": 325,
+      "summary": [
+        {
+          "version": "Before",
+          "top1_candidate_rows": 206,
+          "correct_sum_rows": 184,
+          "correct_chain_rows": 145,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        },
+        {
+          "version": "After",
+          "top1_candidate_rows": 207,
+          "correct_sum_rows": 187,
+          "correct_chain_rows": 148,
+          "pe_na_top1_rows": 13,
+          "pe_na_correct_sum_rows": 13,
+          "pe_na_correct_chain_rows": 7,
+          "pe_na_correct_adduct_rows": 13
+        }
+      ],
+      "candidate_order_score_or_resolution_changed_scans": [
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "top1_changed_scans": [
+        "scan_8849",
+        "scan_9750",
+        "scan_9835"
+      ],
+      "changed_non_pep_scans": [],
+      "candidate_fields_compared": [
+        "matched_name",
+        "compound_class",
+        "adduct",
+        "result_rank",
+        "final_score",
+        "passed_required_gates",
+        "resolution_level",
+        "downgrade_reason"
+      ],
+      "seconds": 21.956919300002482,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "old_index_sha256": "91327a3ee4b46d250635489c5281420d71606afe5f4ba8f1c61ad25a63d656eb",
+      "new_index_sha256": "d02d25f111795af49dc86ce191f60574c7262422e585200d9d1c82832525077a",
+      "code_sha256": "a70369d772ea906e85978262502cc3327b3524daea5647a3c06e22b4cc249e15",
+      "metric_scope": "candidate rows; conditional on known-standard association, with previously flagged mixed spectra retained for paired comparison"
+    },
+    "policy_candidate_export_identical": true,
+    "paired_candidate_csv_sha256": "610526c0a62ef324751b2cbfa887aff280c9f5ac00048ea6a31af07014bf02f6",
+    "bounded_index_build": {
+      "seconds": 438.57270190000054,
+      "peak_rss_mib": 306.26171875,
+      "memory_strategy": "fresh streaming MSP normalization; exact hydroxy expansion; disk sort; verified 1024-record blocks"
+    },
+    "product_defaults": {
+      "parameters": {
+        "precursor_ppm": 5,
+        "fragment_ppm": 15,
+        "min_relative_intensity": 0.002,
+        "min_score": 50
+      },
+      "class_summaries": [
+        {
+          "truth_class": "PE",
+          "input_scans": 14,
+          "correct_top1_sum_and_adduct": 13,
+          "unannotated": 1
+        },
+        {
+          "truth_class": "PEP",
+          "input_scans": 6,
+          "correct_top1_sum_and_adduct": 3,
+          "unannotated": 3
+        }
+      ],
+      "pep_exported_top1_scores": {
+        "scan_8849": 89.2039,
+        "scan_9750": 94.0771,
+        "scan_9835": 89.3053
+      },
+      "pep_not_exported": {
+        "scan_8932": "Score 17.2368, below 50; possible choline contribution",
+        "scan_9092": "mzML precursor charge 4+, incompatible with singly charged sodium adduct; isolated candidate score 64.7474",
+        "scan_9181": "mzML precursor charge 4+, incompatible with singly charged sodium adduct; isolated candidate score 65.2266"
+      },
+      "full_audit_outside_version_control": true,
+      "full_audit_sha256": "09bdde759012da6ac2a987b194752a254f5443f1a680a11c8d1d0bc89bbf3a56"
+    },
+    "six_spectrum_audit_sha256": "49251a5eb07a603ff738a9cdeb1dc90a0698ea852877f6e5cfcc4f0b2d5b9295",
+    "evaluation_scope": "Known-standard-associated small panel used for rule examination; regression validation, not held-out FDR or P/O-selectivity calibration"
+  }
+}
