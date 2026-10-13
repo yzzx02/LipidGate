@@ -14,6 +14,11 @@ PE_HEADGROUP = 2 * C + 8 * H + N + 4 * O + P
 VINYLAMINE = 2 * C + 5 * H + N
 SODIUM_PE_HEADGROUP = PE_HEADGROUP - H + NA
 SODIUM_PE_HEADGROUP_ION = PE_HEADGROUP + SODIUM_ION
+HG_NAMES = frozenset({'[M+Na-43]+', '[M+Na-141]+'})
+
+
+def is_positive_pe_sodium(record) -> bool:
+    return str(record.compound_class).strip().upper() == 'PE' and str(record.adduct).strip() == '[M+Na]+'
 
 
 def sodium_pe_fragments(chain_name: str) -> tuple[float, str, list[FragmentRecord]]:
@@ -27,7 +32,7 @@ def sodium_pe_fragments(chain_name: str) -> tuple[float, str, list[FragmentRecor
     precursor = carbon * C + hydrogen * H + N + 8 * O + P + SODIUM_ION
     fragments = [
         FragmentRecord(precursor - PE_HEADGROUP, "[M+Na-141]+", "Diagnostic_HG"),
-        FragmentRecord(precursor - VINYLAMINE, "[M+Na-43]+", "Common"),
+        FragmentRecord(precursor - VINYLAMINE, "[M+Na-43]+", "Diagnostic_HG"),
         FragmentRecord(precursor - SODIUM_PE_HEADGROUP, "[M+Na-163]+", "Common"),
         FragmentRecord(SODIUM_PE_HEADGROUP_ION, "[C2H8NO4PNa]+", "Common"),
         FragmentRecord(precursor, "[M+Na]+", "Precursor Ion"),
@@ -38,8 +43,7 @@ def sodium_pe_fragments(chain_name: str) -> tuple[float, str, list[FragmentRecor
         acylium = carbon_count * C + (2 * carbon_count - 2 * db_count - 1) * H + O - ELECTRON
         token = f"{carbon_count}:{db_count}"
         fragments.extend([
-            # Observed weak RCO+ supports Other; it never replaces acyl-loss gates.
-            FragmentRecord(acylium, f"(R=O)+({token})", "Common"),
+            FragmentRecord(acylium, f"(R=O)+({token})", "FA_Frag"),
             FragmentRecord(precursor - acid, f"[M+Na-RCOOH]+({token})", "Diagnostic_FA_Loss"),
             FragmentRecord(precursor - VINYLAMINE - acid,
                            f"[M+Na-43-RCOOH]+({token})", "Diagnostic_FA_Loss"),

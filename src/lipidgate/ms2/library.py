@@ -17,6 +17,7 @@ from typing import Dict, Iterable, Iterator, List
 
 import pandas as pd
 
+from . import safe_pickle
 from .esterified_ceramide import is_esterified_ceramide
 from .negative_hexcer import is_negative_hexcer, normalize_negative_hexcer_fragments
 from .negative_cer_hsu2016 import normalize_negative_cer_hsu2016_fragments
@@ -40,6 +41,7 @@ from .library_fragment_policy import (
 )
 from .models import FragmentRecord, LibraryRecord
 from .nae_precursor import normalize_nae_record
+from .positive_single_chain_h import normalize_protonated_single_chain_record
 from .chain_labels import annotate_record_chain_labels
 from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
@@ -48,7 +50,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 40
+LIBRARY_CACHE_VERSION = 42
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -586,7 +588,7 @@ def _load_cached_standard_msp(path: Path) -> List[LibraryRecord] | None:
         return None
     try:
         with cache_path.open("rb") as handle:
-            records = pickle.load(handle)
+            records = safe_pickle.load(handle)
     except Exception as exc:
         logging.getLogger(__name__).warning("Cannot read library cache %s: %s", cache_path, exc)
         return None
@@ -678,7 +680,7 @@ def _load_bundled_prebuilt_msp(path: Path) -> List[LibraryRecord] | None:
         return None
     try:
         with gzip.open(archive, "rb") as handle:
-            records = pickle.load(handle)
+            records = safe_pickle.load(handle)
         return records if isinstance(records, list) else None
     except (OSError, ValueError, pickle.UnpicklingError) as exc:
         logging.getLogger(__name__).warning("Cannot read bundled library snapshot %s: %s", archive, exc)
@@ -787,6 +789,13 @@ def _normalize_fragment_type(
     cls = str(compound_class or "").strip()
     ftype = str(fragment_type or "").strip()
     name = str(fragment_name or "").strip()
+    if cls.upper() == "PE" and str(adduct or "").strip() == "[M+Na]+" and name in {"[M+Na-43]+", "[M+Na-141]+"}:
+        return "Diagnostic_HG"
+    if (
+        cls.upper() == "PE" and str(adduct or "").strip() == "[M+Na]+"
+        and re.match(r"^(?:\(R=O\)\+|RCO\(|\[RCO\]\+)", re.sub(r"\s+", "", name), flags=re.I)
+    ):
+        return "FA_Frag"
     if (
         cls == "PS"
         and str(adduct or "").strip() == "[M+H]+"
@@ -1007,7 +1016,9 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 )
             )
             next_id += 1
-    return _expand_hydroxy_fa_sphingolipids([normalize_nae_record(record) for record in records])
+    return _expand_hydroxy_fa_sphingolipids([
+        normalize_protonated_single_chain_record(normalize_nae_record(record)) for record in records
+    ])
 
 
 def _quote_msp_field(value: object) -> str:
@@ -1202,9 +1213,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
-    return normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+    return normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
-                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz))))
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:

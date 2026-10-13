@@ -23,7 +23,7 @@ def identification_confidence(row) -> str:
         score = float(row.get("final_score"))
     except (TypeError, ValueError):
         score = math.nan
-    if math.isfinite(score) and score < 50.0:
+    if "final_score" in row and (not math.isfinite(score) or score < 50.0):
         return "低"
     if not has_ms1_evidence(row):
         return "低"

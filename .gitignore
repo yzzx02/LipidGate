@@ -40,6 +40,7 @@ libraries/ms2/.library_cache/
 *.csv
 !examples/**/*.csv
 !configs/**/*.csv
+!config/single_chain_whitelist.csv
 
 # Local editor state
 .vscode/
@@ -57,3 +58,32 @@ libraries/ms2/*.msp
 .env
 .env.*
 !.env.example
+
+# Saved analysis projects and derived local databases
+runs/
+*.lipidgate
+lipidgate.project.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.pkl
+*.pkl.gz
+*.npz
+
+# Vendor directories, compressed raw data and research fixtures
+*.d/
+*.mzML.gz
+*.mzXML.gz
+/补峰数据集/
+/research_outputs/
+
+# Installers and historical release archives belong in GitHub Releases
+*.exe
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Small, deliberate regression fixtures may be tracked
+!tests/fixtures/**/*.csv
+!tests/fixtures/**/*.xlsx

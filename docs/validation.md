@@ -37,7 +37,7 @@ the scan with a 184.0739 base peak. The chemical scope and uncertain mass
 assignments are documented in [PE-P sodium fragmentation](pe_plasmalogen_sodium_fragmentation.md).
 Their raw files and plots stay outside Git; no PE-P sodium chain library is
 added. Current fingerprints are in
-[`config/library_revision_pe_sodium_rco_20261011.json`](../config/library_revision_pe_sodium_rco_20261011.json).
+[`config/history/library_revision_pe_sodium_rco_20261011.json`](../config/history/library_revision_pe_sodium_rco_20261011.json).
 Prior manifests, source commits and release executables remain intact.
 
 ## PE sodium source/library revision, 2026-10-11
@@ -71,7 +71,7 @@ including the previously flagged PC scan, remain in the fixed paired queue
 and are not treated as definite pure-standard algorithm errors.
 
 Source/library/index identities and regression report hashes are in
-[`config/library_revision_pe_sodium_20261011.json`](../config/library_revision_pe_sodium_20261011.json).
+[`config/history/library_revision_pe_sodium_20261011.json`](../config/history/library_revision_pe_sodium_20261011.json).
 Raw files, baseline snapshots, reports and generated indexes stay outside Git.
 
 ## v1.0.3
@@ -171,5 +171,5 @@ less than a second per polarity on the build machine, excluding executable
 dependency extraction.
 
 Exact released executable, code, MSP and index hashes are in
-`config/release_v1.0.0.json`. Public source and release ZIPs exclude raw samples,
+`config/history/release_v1.0.0.json`. Public source and release ZIPs exclude raw samples,
 retired models, historical binaries and generated caches.

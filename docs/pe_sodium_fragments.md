@@ -8,35 +8,44 @@ blocks, including PE-P `[M+H]+`, are preserved verbatim.
 | Pool | Ion | Exact neutral loss / product m/z |
 | --- | --- | --- |
 | HG | `[M+Na-141]+` | C2H8NO4P, 141.019094 |
-| Other | `[M+Na-43]+` | C2H5N, 43.042199 |
+| HG | `[M+Na-43]+` | C2H5N, 43.042199 |
 | Other | `[M+Na-163]+` | C2H7NO4PNa, 163.001038 |
 | Other | `[C2H8NO4PNa]+` | 164.008315 |
 | Other | `[M+Na]+` | precursor |
-| Other | `(R=O)+(chain)` | C_n H_(2n-2DB-1) O+, one per distinct acyl composition |
+| FAH | `(R=O)+(chain)` | C_n H_(2n-2DB-1) O+, one per distinct acyl composition |
 | FAH | `[M+Na-RCOOH]+(chain)` | fatty acid at each distinct acyl composition |
 | FAH | `[M+Na-43-RCOOH]+(chain)` | C2H5N plus that fatty acid |
 
-Two different acyl chains therefore have four chain-loss peaks, two Common
-acylium supports and eleven total library peaks. Equal chains share their
-masses: two chain-loss peaks, one acylium support and eight total peaks,
+Two different acyl chains therefore have four chain-loss peaks, two chain
+acylium ions and eleven total library peaks. Equal chains share their
+masses: two chain-loss peaks, one acylium chain ion and eight total peaks,
 without fabricated duplicate observations.
 The 164 ion is stored as **164.0083**, not an observed approximation 164.0089.
 Masses are calculated from elemental formulas, then rounded once when writing MSP.
 
-HG/FAH/Other weights remain **60/20/20**. Existing PE evidence gates,
-intensity quality, tentative fallbacks, two-physical-chain-peak resolution,
-single-chain coverage warning, tie handling and shared-peak policy remain.
-The new sodium acyl-loss labels are registered as chain evidence only for
-diacyl PE `[M+Na]+`; protonated PE and other subclasses retain their profiles.
-RCO+ is explicitly Common/Other, not `FA_Frag` or a chain-loss gate. Other
-already saturates at three physical observations; extra support cannot exceed
-its existing 20-point cap. Absence of RCO+ introduces no required gate or new
-confidence downgrade. Thus matching more ions does not always increase score.
+HG/FAH/Other weights remain **60/20/20**. In the 2026-10-12 chain-role revision,
+HG requires both NL43 and NL141, with no FAH-only or missing-HG fallback for
+PE sodium. Protonated PE retains its own headgroup rules. A fully confirmed
+PE candidate takes precedence over a failed-chain tentative PE in the competing
+H/Na adduct; numeric scores are not boosted to implement this preference.
+RCO+ is `FA_Frag`, belongs to FAH and participates in chain confirmation.
+Two physical chain-evidence peaks satisfy the existing confirmation gate.
+For symmetric PE sodium, a peak identifying its repeated chain covers both
+identical positions: PE(16:0_16:0) can pass with the single 16:0 RCO+ peak.
+The measured peak is stored once; neither its intensity nor match count is
+doubled. Repeated loss-ion labels are not fabricated. A single chain ion for
+unequal chains remains insufficient; multiple ions covering only one of two
+different chains retain the single-chain coverage warning. Intensity quality,
+score weights, ties and shared-peak rules remain.
+Protonated PE, PE-P and other subclasses retain their existing definitions.
+Legacy PE sodium Common RCO+ imports are explicitly reclassified as chain ions.
+Secondary PE sodium candidates use this same confirmation gate and existing
+HG/intensity requirements, without requiring every alternative acyl-loss ion.
 
 In the fixed 14 PE sodium scans, 13 target-chain acylium mass signals occurred
 across 10 scans within 15 ppm, at 0.87-5.46% of the base peak. These measured
-mass matches motivate optional support, not an assertion that every sodium
-spectrum must produce RCO+. Fatty-acid loss channels remain the chain-resolution evidence.
+mass matches do not imply every sodium spectrum produces RCO+. The current
+evidence policy accepts RCO+ and the fatty-acid loss channels as alternatives.
 
 Reference: [Simoes et al. (2008), DOI 10.1002/rcm.3727](https://pubmed.ncbi.nlm.nih.gov/18803343/).
 The paper studies POPE/PLPE across three ESI instruments and MALDI and reports

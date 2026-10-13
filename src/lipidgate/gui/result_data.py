@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from lipidgate.ms2.confidence import identification_confidence
+from lipidgate.ms2.scoring_policy import HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
 from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
 from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
@@ -105,6 +106,38 @@ def ms1_feature_description(row):
     return description
 
 
+def hg_only_rejection_description(row):
+    """Explain the legacy HG rejection code using its saved peak evidence.
+
+    Keep the original gate flag, reason code and score unchanged. A fully
+    matched headgroup below the fallback intensity floor is not an absent HG.
+    Incomplete HG evidence must still retain its existing explanation.
+    """
+    if text(row.get("downgrade_reason")) != "missing_required_hg":
+        return ""
+    evidence = evidence_for(row)
+    if not evidence:
+        return ""
+    fragments = evidence.get("fragments", [])
+    headgroups = [f for f in fragments if f.get("role") == "headgroup"]
+    if not headgroups or any(not np.isfinite(number(f.get("observed_mz"))) for f in headgroups):
+        return ""
+    if any(f.get("role") == "chain" and np.isfinite(number(f.get("observed_mz"))) for f in fragments):
+        return ""
+    base = number(row.get("spectrum_base_peak_intensity"))
+    if not np.isfinite(base) or base <= 0:
+        base = max((number(p[1]) for p in evidence.get("spectrum", [])
+                    if len(p) >= 2 and np.isfinite(number(p[1]))), default=0.0)
+    if base <= 0:
+        return ""
+    relative = max((number(f.get("intensity")) / base for f in headgroups), default=0.0)
+    threshold = HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
+    if not np.isfinite(relative) or not 0 < relative < threshold:
+        return ""
+    return (f"头基峰已匹配（相对强度 {relative * 100:.2f}%），但无链证据；"
+            f"未达到仅头基备用门控的 {threshold * 100:g}% 强度要求")
+
+
 def confidence_description(row):
     """Explain the saved identification decision separately from quantitation."""
     confidence = text(row.get("_confidence")) or identification_confidence(row)
@@ -112,6 +145,9 @@ def confidence_description(row):
         return "High：分数达到 50，MS2 满足当前鉴定规则且有 MS1 前体证据；不代表已检出可积分的 MS1 特征"
     if number(row.get("final_score")) < 50:
         return "Low：鉴定分数低于 50"
+    hg_rejection = hg_only_rejection_description(row)
+    if hg_rejection:
+        return "Low：" + hg_rejection
     if text(row.get("downgrade_reason")) == "low_confidence_fah_only":
         return "Low：缺少该脂质类别要求的头基证据，保留为暂定鉴定；与 MS1 特征是否关联无关"
     if (text(row.get("resolution_level")).startswith("tentative_")

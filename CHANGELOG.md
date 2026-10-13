@@ -1,7 +1,32 @@
 # Changelog
 
-## Unreleased — 2026-10-12
+## Unreleased — 2026-10-13
 
+- Restrict library index/cache decoding to supported data types; reject
+  executable pickle globals. Keep non-finite or invalid stored scores Low.
+- Centralize generic and sphingolipid required evidence in `gate_policy.py`,
+  share fragment routing in `evidence_policy.py` and chain-position counts in
+  `chain_utils.py`, retaining scores, candidate order and compatibility exports.
+- Use one native policy module registry for loading and compilation. Add a
+  repository hygiene CI check, consolidate configuration documentation and
+  preserve prior release/rule fingerprints under `config/history/`.
+- Remove the unused retired YAML loader and empty parser package. Keep local
+  raw data, user projects, build outputs and release archives out of Git.
+
+- Add 77 MG and 77 single-acyl NAGly `[M+H]+` records on the explicit
+  C10–C26/DB0–6 single-chain whitelist. MG requires its dehydration HG peak;
+  NAGly requires either protonated glycine or glycine loss. Both use HG/Other
+  75/25 with the requested ordinary support; retain existing ammonium MG and
+  two-chain NAGly definitions. Refresh imports, cache identities and indexes.
+
+- Require both NL43 and NL141 HG peaks for diacyl PE sodium and disable its
+  missing-HG fallbacks. Prefer fully confirmed PE over a failed-chain tentative
+  PE in the competing H/Na adduct without altering the numeric score.
+- Treat diacyl PE sodium RCO+ as FAH chain evidence. A symmetric-chain match
+  covers both identical positions and passes chain confirmation without
+  duplicating a measured ion or its intensity. Keep HG/FAH/Other at 60/20/20.
+- Refresh existing PE sodium records in place and normalize legacy Common
+  RCO+ imports consistently; preserve all unrelated records and source order.
 - Rebuild BRSE with the fixed 28:2 sterol core and CASE with the fixed 28:1
   core, each with 119 C10–C26/DB0–6 acyl compositions. Correct neutral ester
   formulas and charged sterol fragment masses; remove the variable-core grid.

@@ -16,6 +16,7 @@ from .config import DEFAULT_SEARCH_CONFIG
 from .spectrum_preparation import iter_openms_spectra, make_refiner, prepare_spectrum, precursor_result_fields
 from .precursor_refinement import MS1Survey
 from .matching import match_fragments
+from .gate_policy import candidate_passes_evidence_gate
 from .negative_gm3 import is_negative_gm3
 from .positive_pc_sodium import is_positive_pc_sodium
 from .fragment_labels import canonical_fragment_label
@@ -28,7 +29,7 @@ from .ranking_policy import (
     build_original_rank_tiers,
     multiplicity_adjusted_fragment_count,
 )
-from .resolution_policy import PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON, fragment_is_chain_evidence
+from .resolution_policy import fragment_is_chain_evidence, normalized_class_key
 from .rules import DEFAULT_RULES, RuleSet
 from .sphingolipid_naming import (
     canonicalize_multichain_sphingolipid_name,
@@ -380,6 +381,16 @@ class LipidMS2Searcher:
         record = result.record
         if self._is_single_chain_record(record):
             return False
+        if self._normal_class_key(record.compound_class) == "PE" and str(record.adduct).strip() == "[M+Na]+":
+            # Sodium RCO+ and acyl losses are alternative chain channels.
+            # Apply the same two-chain confirmation used by primary scoring,
+            # rather than requiring every theoretical loss channel again.
+            return (
+                result.passed_required_gates
+                and result.resolution_level == "chain_level"
+                and self._has_matched_fragment_type(result, "Diagnostic_HG")
+                and self._max_required_fragment_relative_intensity(result) >= 0.05
+            )
         expected_fah_tokens = _record_expected_fah_tokens(record)
         has_library_hg = any(fragment.fragment_type == "Diagnostic_HG" for fragment in record.fragments)
         hg_gate_satisfied = (
@@ -497,7 +508,7 @@ class LipidMS2Searcher:
 
     @classmethod
     def _normal_class_key(cls, lipid_class: object) -> str:
-        return re.sub(r"[^A-Za-z0-9]+", "", str(lipid_class or "").upper())
+        return normalized_class_key(lipid_class)
 
     @classmethod
     def _lyso_sum_composition_name(cls, record: LibraryRecord) -> str | None:
@@ -670,7 +681,8 @@ class LipidMS2Searcher:
     @classmethod
     def _qualifies_tentative_missing_hg_fallback(cls, result: CandidateScore) -> bool:
         record = result.record
-        if is_positive_pc_sodium(record):
+        from .positive_pe_sodium import is_positive_pe_sodium
+        if is_positive_pc_sodium(record) or is_positive_pe_sodium(record):
             return False
         if result.passed_required_gates:
             return False
@@ -968,13 +980,7 @@ class LipidMS2Searcher:
         eligible_results = [item for item in scored if self._passes_min_total_score(item)]
         # Partial phospholipid chains remain low-confidence sum composition.
         # Keep the failed confirmation gate intact in the audit and display.
-        passed_results = [
-            item for item in eligible_results
-            if item.passed_required_gates or (
-                item.downgrade_reason == PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON
-                and item.missing_required_groups == ["chain_confirmation"]
-            )
-        ]
+        passed_results = [item for item in eligible_results if candidate_passes_evidence_gate(item)]
         scoped_results: list[tuple[CandidateScore, str, bool]] = []
         rank_metrics: Dict[int, Dict[str, float]] = {}
         if passed_results:
@@ -982,6 +988,22 @@ class LipidMS2Searcher:
             nae_results = [item for item in passed_results if self._normal_class_key(item.record.compound_class) == "NAE"]
             main_results = [item for item in passed_results
                             if self._normal_class_key(item.record.compound_class) not in {"FA", "NAE"}]
+            # A resolved PE in one adduct must not lose to a failed-chain
+            # tentative PE in the competing H/Na adduct on raw score alone.
+            confirmed_pe_adducts = {
+                item.record.adduct for item in main_results
+                if self._normal_class_key(item.record.compound_class) == "PE"
+                and item.record.adduct in {"[M+H]+", "[M+Na]+"}
+                and item.passed_required_gates and item.resolution_level == "chain_level"
+                and not item.downgrade_reason
+            }
+            if confirmed_pe_adducts:
+                main_results = [item for item in main_results if not (
+                    self._normal_class_key(item.record.compound_class) == "PE"
+                    and item.record.adduct in {"[M+H]+", "[M+Na]+"}
+                    and item.record.adduct not in confirmed_pe_adducts
+                    and not item.passed_required_gates
+                )]
             if any(self._is_chain_info_result(item) for item in main_results):
                 main_results = [
                     item

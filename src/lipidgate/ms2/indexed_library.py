@@ -22,6 +22,7 @@ import tempfile
 import zlib
 
 from .models import FragmentRecord, LibraryRecord
+from . import safe_pickle
 
 
 INDEX_FORMAT_VERSION = 3
@@ -124,7 +125,7 @@ def _encode_block(records):
 
 
 def _decode_block(payload, metadata):
-    values = pickle.loads(zlib.decompress(payload))
+    values = safe_pickle.loads(zlib.decompress(payload))
     if metadata.get("record_encoding") == RECORD_ENCODING:
         templates, records, columns = values
         _column_offsets(columns)
@@ -144,7 +145,7 @@ class _RecordBlock:
     __slots__ = ("values", "records", "packed", "templates", "column_buffers", "numeric_view")
 
     def __init__(self, payload, metadata):
-        self.values = pickle.loads(zlib.decompress(payload))
+        self.values = safe_pickle.loads(zlib.decompress(payload))
         encoding = metadata.get("record_encoding")
         self.templates = None
         self.column_buffers = None
@@ -324,7 +325,7 @@ def write_streaming_library_index(path: Path, records: Iterable[LibraryRecord], 
                 rows = cursor.fetchmany(BLOCK_SIZE)
                 if not rows:
                     break
-                block = [_unpack_record(pickle.loads(row[0])) for row in rows]
+                block = [_unpack_record(safe_pickle.loads(row[0])) for row in rows]
                 payload = zlib.compress(_encode_block(block), level=6)
                 if _decode_block(payload, metadata) != block:
                     raise ValueError(f'Library block {verified // BLOCK_SIZE} changed during serialization')

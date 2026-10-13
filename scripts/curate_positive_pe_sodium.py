@@ -32,6 +32,12 @@ def curate(source: Path, destination: Path):
         raise ValueError('Use a separate destination; retain the source until verification completes')
     destination.parent.mkdir(parents=True, exist_ok=True)
     grid = set()
+    for block in iter_blocks(source):
+        if header_value(block, 'CompoundClass') == 'PE' and header_value(block, 'PrecursorType') == '[M+H]+':
+            name = header_value(block, 'Name')
+            sodium_pe_fragments(name)
+            grid.add(name)
+    installed = set()
     preserved = replaced = 0
     with destination.open('wb') as binary, gzip.GzipFile(
         filename='', fileobj=binary, mode='wb', compresslevel=9, mtime=0,
@@ -39,24 +45,30 @@ def curate(source: Path, destination: Path):
         for block in iter_blocks(source):
             is_pe = header_value(block, 'CompoundClass') == 'PE'
             adduct = header_value(block, 'PrecursorType')
-            if is_pe and adduct == '[M+H]+':
-                name = header_value(block, 'Name')
-                sodium_pe_fragments(name)  # Reject unsupported names before installation.
-                grid.add(name)
             if is_pe and adduct == '[M+Na]+':
                 replaced += 1
+                name = header_value(block, 'Name')
+                if name in grid and name not in installed:
+                    stream.write('\n'.join(sodium_block(name)) + '\n\n')
+                    installed.add(name)
                 continue
             stream.write('\n'.join(block) + '\n\n')
             preserved += 1
-        for name in sorted(grid):
+        for name in sorted(grid - installed):
             stream.write('\n'.join(sodium_block(name)) + '\n\n')
     output = iter(iter_blocks(destination))
+    verified_sodium = set()
     for block in iter_blocks(source):
         if header_value(block, 'CompoundClass') == 'PE' and header_value(block, 'PrecursorType') == '[M+Na]+':
+            name = header_value(block, 'Name')
+            if name in grid and name not in verified_sodium:
+                if next(output, None) != sodium_block(name):
+                    raise ValueError(f'Incorrect in-place sodium PE: {name}')
+                verified_sodium.add(name)
             continue
         if next(output, None) != block:
             raise ValueError(f'Existing record changed: {block[0]}')
-    for name in sorted(grid):
+    for name in sorted(grid - verified_sodium):
         actual = next(output, None)
         if actual != sodium_block(name):
             raise ValueError(f'Incorrect sodium PE: {name}')
@@ -70,6 +82,7 @@ def curate(source: Path, destination: Path):
     return dict(preserved_records=preserved, replaced_sodium_pe_records=replaced,
                 added_sodium_pe_records=len(grid), source_sha256=source_hash,
                 output_sha256=destination_hash,
+                existing_sodium_positions_preserved=True,
                 scope='Only diacyl PE sodium; PE-P and all existing non-sodium PE blocks preserved',
                 reference='https://pubmed.ncbi.nlm.nih.gov/18803343/')
 

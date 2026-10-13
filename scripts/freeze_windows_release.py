@@ -109,7 +109,7 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
             raise ValueError("Windows archive verification failed")
     source_zip = dist / f"LipidGate-v{version}-Source.zip"
     tracked = subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z"],cwd=root).decode().split("\0")
-    directories = {"src","tests","scripts","docs","config","configs","assets","libraries","licenses",".github"}
+    directories = {"src","tests","scripts","docs","config","assets","libraries","licenses",".github"}
     root_files = {"README.md","LICENSE","THIRD_PARTY_NOTICES.md","CHANGELOG.md","AGENTS.md","pyproject.toml",
                   "requirements-build.txt","LipidGate.spec",".gitignore",".gitattributes"}
     with zipfile.ZipFile(source_zip,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as archive:

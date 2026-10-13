@@ -79,7 +79,14 @@ python -m pytest -q
 | `tests/` | 检索、关联、积分、界面与导出的回归测试 |
 | `docs/` | 使用和开发说明 |
 | `config/` | 发布版本与验证指纹 |
+| `config/history/` | 历史版本及规则验证指纹，保留审计追溯 |
 | `assets/` | 字体及图标 |
+
+Gate 判定集中在 `ms2/gate_policy.py`，碎片归类在 `ms2/evidence_policy.py`，
+数值评分在各 scorer 中；链证据计数共用 `ms2/chain_utils.py`。
+源码整理、已修复问题及上传范围见 [项目审查记录](docs/repository_review.md)。
+提交前执行 `python scripts/check_repository_hygiene.py --include-untracked`；
+原始样本、分析结果、缓存、构建文件及历史安装包不进入 Git。
 
 ## 许可证
 

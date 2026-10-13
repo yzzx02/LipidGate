@@ -23,6 +23,16 @@ def confirmed_row(**changes):
     )
 
 
+@pytest.mark.parametrize('score', [float('nan'), float('inf'), float('-inf'),
+                                  'nan', 'inf', 'invalid', '', None, pd.NA])
+def test_invalid_scores_cannot_be_high_confidence_even_with_ms1_and_passed_gates(score):
+    row = confirmed_row()
+    row['final_score'] = score
+    assert identification_confidence(row) == '低'
+    exported = prepare_ms2_result_export_df(pd.DataFrame([row]))
+    assert exported.loc[0, '置信度'] == '低'
+
+
 def test_unlinked_confirmed_ms1_precursor_counts_as_real_evidence_for_confidence():
     row = confirmed_row()
     assert confirmed_ms1_precursor(row)
