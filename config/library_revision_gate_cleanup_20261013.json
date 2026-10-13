@@ -215,5 +215,14 @@
         }
       }
     }
+  },
+  "chain_whitelist": {
+    "path": "config/single_chain_whitelist.csv",
+    "sha256": "0887380afa365926ea62f15d119b3d364de2f69a124a05c78adb7933f817cda3",
+    "bytes": 796,
+    "entries": 77,
+    "line_endings": "LF",
+    "curation_input_sha256": "dd59153f0cf773850ead9cd69087f497538bd0426bdfddda11ceac35dfe23e57",
+    "compositions_unchanged": true
   }
 }
