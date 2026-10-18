@@ -85,7 +85,7 @@ def test_empty_export_has_usable_workbook(tmp_path, use_ecn, use_score):
         pd.DataFrame(), tmp_path, use_ecn=use_ecn, use_score=use_score
     )
     wb = load_workbook(result.xlsx_path)
-    assert wb.sheetnames == ["最终鉴定", "逐谱证据", "RT未判定"]
+    assert wb.sheetnames == ["最终鉴定", "特征候选", "逐谱证据", "RT未判定"]
     assert wb["最终鉴定"].max_column == 17
     assert len(result.data) == 0
     wb.close()

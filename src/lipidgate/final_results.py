@@ -115,11 +115,12 @@ def export_final_results(
     passed = evaluated.loc[evaluated.RT_consistency_pass.fillna(False)].copy()
     evidence = prepare_ms2_result_export_df(passed)
     from lipidgate.gui.result_data import result_bundle_from_data
-    from lipidgate.feature_annotations import annotation_export_table
+    from lipidgate.feature_annotations import SELECTION_POLICY, annotation_export_table, feature_export_table
     # Production search already records measured EIC membership. Final output
     # uses that evidence without reopening every raw file a second time.
     bundle = result_bundle_from_data(passed, out / "final_identifications.csv", refresh_membership=False)
-    final = annotation_export_table(bundle.annotations)
+    final = feature_export_table(bundle.features.loc[bundle.features._identified], bundle.annotations)
+    candidate_table = annotation_export_table(bundle.annotations)
     pending = prepare_ms2_result_export_df(
         evaluated.loc[
             evaluated.RT_filter_action.isin(
@@ -129,6 +130,7 @@ def export_final_results(
     )
     csv = out / "final_identifications.csv"
     final.to_csv(csv, index=False, encoding="utf-8-sig")
+    candidate_table.to_csv(out / "feature_candidates.csv", index=False, encoding="utf-8-sig")
     audit = out / "audit"
     audit.mkdir(exist_ok=True)
     evaluated.to_csv(audit / "evaluated.csv", index=False, encoding="utf-8-sig")
@@ -138,7 +140,7 @@ def export_final_results(
     xlsx = (
         write_workbook(
             out / "final_identifications.xlsx",
-            {"最终鉴定": final, "逐谱证据": evidence, "RT未判定": pending},
+            {"最终鉴定": final, "特征候选": candidate_table, "逐谱证据": evidence, "RT未判定": pending},
         )
         if export_xlsx
         else None
@@ -169,6 +171,7 @@ def export_final_results(
                 plot_bands=plot_bands,
                 plot_dpi=plot_dpi,
                 ecn_method="high_confidence_ordered_observed_two_points",
+                feature_selection_policy=SELECTION_POLICY,
             ),
             indent=2,
         ),

@@ -1049,6 +1049,13 @@ class ResultsPage(QtWidgets.QWidget):
         spectra = self.bundle.spectra(key)
         self.spectrum_choice.blockSignals(True)
         self.spectrum_choice.clear()
+        if self.bundle.path is None or self.bundle.path.parent.name != "audit":
+            self.spectrum_choice.addItem("特征汇总（同名最佳记录）", None)
+            difference_count = len(self.bundle.annotations.loc[
+                self.bundle.annotations._key.eq(key)
+                & self.bundle.annotations.feature_result_role.eq("sample_difference")])
+            if difference_count:
+                self.spectrum_choice.addItem(f"高置信差异（{difference_count}）", "__differences__")
         for _, spectrum in spectra.iterrows():
             name = Path(text(spectrum["_source"])).name
             self.spectrum_choice.addItem(f"{name} / {spectrum['_scan']}", spectrum["_spectrum"])
@@ -1125,6 +1132,9 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_candidate = row
         feature = self._feature
         evidence = evidence_for(row)
+        # Summary candidates can come from different spectra. Each candidate's
+        # evidence and intensity scale must stay bound to its own observation.
+        self._experimental = (evidence or {}).get("spectrum")
         def formatted(value, digits):
             value = number(value)
             return f"{value:.{digits}f}" if math.isfinite(value) else "—"
@@ -1140,6 +1150,8 @@ class ResultsPage(QtWidgets.QWidget):
             ),
             ("RT（原始中位数）" if math.isfinite(number(feature.get("_aligned_rt"))) else "RT", f"{feature['_rt']:.3f} min"),
             ("Score", formatted(row.get("final_score"), 2)),
+            ("合格 Top1 支持", f"{row.get('feature_support_count', 0)} / {row.get('feature_vote_sample_count', 0)} 个样本"),
+            ("汇总状态", feature.get("_annotation_status")),
             ("Confidence", confidence_display(row.get("_confidence"))),
             ("ECN", ecn_display(row.get("_ecn"))),
             ("MS1 feature", ms1_feature_display(row)),
@@ -1147,6 +1159,8 @@ class ResultsPage(QtWidgets.QWidget):
             ("MS1 检出样本数", 0 if text(feature.get("_key")).startswith("MS2|") else feature.get("_sample_count")),
             ("MS2 样本数", feature.get("_ms2_sample_count")),
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
+            ("争议样本", feature.get("feature_ambiguous_samples")),
+            ("最佳记录来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
         self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
@@ -1154,7 +1168,7 @@ class ResultsPage(QtWidgets.QWidget):
             self.bundle.annotations._key.eq(feature.get("_key"))
             & self.bundle.annotations.feature_result_role.eq("sample_difference")]
         if not differences.empty:
-            values.append(("样本差异注释", "；".join(
+            values.append(("高置信差异注释", "；".join(
                 f"{item.matched_name}（{item.feature_result_samples}）" for item in differences.itertuples())))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))

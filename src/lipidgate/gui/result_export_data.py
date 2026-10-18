@@ -49,7 +49,14 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     differences = annotations.loc[annotations.feature_result_role.eq("sample_difference")]
     summaries = {key: "; ".join(f"{row.matched_name} ({row.feature_result_samples})" for row in group.itertuples())
                  for key, group in differences.groupby("_key", sort=False)}
-    feature_table["样本差异注释"] = features._key.map(summaries).fillna("").to_numpy()
+    feature_table["高置信差异注释"] = features.get(
+        "feature_conflict_names", features._key.map(summaries)
+    ).fillna("").to_numpy()
+    for title, column in (("合格 Top1 支持样本数", "feature_support_count"),
+                          ("可投票样本数", "feature_vote_sample_count"),
+                          ("争议样本", "feature_ambiguous_samples"),
+                          ("高置信差异数", "feature_conflict_count")):
+        feature_table[title] = features.get(column, pd.Series("", index=features.index)).to_numpy()
     # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
     # detected peak area; leave those cells empty rather than assigning signal.
     area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
@@ -85,14 +92,14 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
                                ("检测峰未记录面积" if ms1_feature_display(row) in {"Linked", "Detected"}
                                 else "无关联检测峰，未计算面积")
                                for available, (_, row) in zip(has_area, features.iterrows())]
-    candidates = bundle.candidates.loc[bundle.candidates._key.isin(features._key)]
+    candidates = bundle.evidence_rows(feature_keys=features._key)
     # Each feature already carries its ranked identification representative.
     # Export just that MS2's preceding survey, without changing identification
     # selection or repeating isotope windows across the spectrum evidence rows.
     isotopes = isotope_export_fields(features, bundle.path)
     for column in ISOTOPE_RESULT_COLUMNS:
         feature_table[column] = isotopes[column].to_numpy()
-    # Scan IDs remain in the saved project audit and in-memory candidates.
+    # Scan IDs remain in the saved project audit and requested evidence rows.
     # The final user-facing tables omit them, including isotope JSON diagnostics.
     evidence_table = prepare_ms2_result_export_df(candidates).drop(columns="scan_id")
     if not evidence_table.empty:
@@ -124,7 +131,7 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     if plots:
         from lipidgate.ecn_filter.plots import plot_ecn_class
 
-        evaluated = bundle.candidates
+        evaluated = bundle.evidence_rows()
         params_path = model_path.parent.parent / "parameters.json"
         tolerance = 0.5
         if params_path.exists():

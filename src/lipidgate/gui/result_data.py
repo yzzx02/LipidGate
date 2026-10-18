@@ -14,7 +14,7 @@ from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
 from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
-from lipidgate.feature_annotations import candidate_scopes, select_feature_annotations, spectrum_candidates
+from lipidgate.feature_annotations import CONSENSUS_LABELS, candidate_scopes, select_feature_annotations, spectrum_candidates
 
 
 COLUMNS = [
@@ -26,6 +26,8 @@ COLUMNS = [
     ("Adduct", "adduct"),
     ("Score", "final_score"),
     ("Confidence", "_confidence"),
+    ("Top1 支持", "_top1_support"),
+    ("鉴定状态", "_annotation_status"),
     ("ECN", "_ecn"),
     ("MS1 Feature", "ms1_support_status"),
 ]
@@ -427,6 +429,7 @@ class ResultBundle:
     notice: str = ""
     ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
     annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
+    audit_store: object = field(default=None, repr=False)
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -518,7 +521,7 @@ class ResultBundle:
                     [representatives, native], ignore_index=True
                 )
             if aligned_features is None:
-                notice = "按原始 MS1 特征与已记录的 MS2 鉴定浏览；每个特征显示代表谱图的候选。"
+                notice = "按原始 MS1 特征与已记录的 MS2 鉴定浏览；主鉴定按合格 Top1 的支持样本数选择。"
         representatives = representatives.reset_index(drop=True)
         representatives["_identified"] = representatives["_identified"].eq(True)
         linked_counts = candidates.groupby("_key")["_spectrum"].nunique()
@@ -551,13 +554,29 @@ class ResultBundle:
         representatives["_display_feature"] = representatives._key.map(display_ids)
         candidates["_display_feature"] = candidates._key.map(display_ids)
         annotations["_display_feature"] = annotations._key.map(display_ids)
+        for column in ("feature_support_count", "feature_vote_sample_count", "feature_conflict_count"):
+            representatives[column] = pd.to_numeric(
+                representatives.get(column, pd.Series(0, index=representatives.index)), errors="coerce"
+            ).fillna(0).astype(int)
+        representatives["_top1_support"] = [
+            f"{support} / {total}" if total else "—"
+            for support, total in zip(representatives.feature_support_count, representatives.feature_vote_sample_count)
+        ]
+        representatives["_annotation_status"] = representatives.get(
+            "feature_consensus_status", pd.Series("", index=representatives.index)
+        ).map(CONSENSUS_LABELS).fillna("未鉴定")
+        differences = representatives.feature_conflict_count.gt(0)
+        representatives.loc[differences, "_annotation_status"] += (
+            "；差异 " + representatives.loc[differences, "feature_conflict_count"].astype(str)
+        )
         return cls(
             candidates, representatives, Path(path) if path else None, notice=notice,
             annotations=annotations,
         )
 
     def spectra(self, key):
-        rows = self.candidates.loc[self.candidates._key.eq(key)].copy()
+        rows = (self.audit_store.rows(feature_keys=[key], anchors_only=True) if self.audit_store is not None
+                else self.candidates.loc[self.candidates._key.eq(key)].copy())
         feature = self.features.loc[self.features._key.eq(key)]
         chosen = feature.iloc[0]._spectrum if not feature.empty else ""
         rows["_representative_first"] = rows._spectrum.eq(chosen)
@@ -570,11 +589,18 @@ class ResultBundle:
         feature = self.features.loc[self.features._key.eq(key)]
         if feature.empty:
             return self.candidates.iloc[:0]
+        explicit_audit = self.path is not None and self.path.parent.name == "audit"
+        if (spectrum is None and not explicit_audit) or spectrum == "__differences__":
+            rows = self.annotations.loc[self.annotations._key.eq(key)].copy()
+            differences = rows.feature_result_role.eq("sample_difference")
+            rows = rows.loc[differences if spectrum == "__differences__" else ~differences]
+            rows["_candidate_scope"] = candidate_scopes(rows)
+            rows["_display_rank"] = rows.groupby("_candidate_scope", sort=False).cumcount() + 1
+            return rows
         spectrum = spectrum or feature.iloc[0]["_spectrum"]
-        rows = self.candidates.loc[
-            self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)
-        ]
-        if self.path is not None and self.path.parent.name == "audit":
+        rows = (self.audit_store.rows(feature_keys=[key], spectrum=spectrum) if self.audit_store is not None
+                else self.candidates.loc[self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)])
+        if explicit_audit:
             rows = rows.copy()
             rows["_candidate_scope"] = candidate_scopes(rows)
             return rows.sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
@@ -586,6 +612,13 @@ class ResultBundle:
             selected["_candidate_scope"] = scope
             selected_groups.append(selected)
         return pd.concat(selected_groups, ignore_index=True)
+
+    def evidence_rows(self, feature_keys=None):
+        """Materialize full evidence only for an explicit detail/export request."""
+        if self.audit_store is not None:
+            return self.audit_store.rows(feature_keys=feature_keys)
+        return (self.candidates if feature_keys is None
+                else self.candidates.loc[self.candidates._key.isin(feature_keys)])
 
     def filter(
         self,
@@ -692,8 +725,13 @@ def load_result_bundle(path):
     if explicit_audit:
         audit = path
         base = base.parent
+    store = None
     if audit.exists():
-        data = pd.read_csv(audit, low_memory=False)
+        if explicit_audit:
+            data = pd.read_csv(audit, low_memory=False)
+        else:
+            from .result_store import AuditCandidateStore
+            store, data = AuditCandidateStore.read_csv(audit)
         if not explicit_audit and "RT_consistency_pass" in data:
             passed = data["RT_consistency_pass"].astype("string").str.casefold().eq("true").fillna(False)
             data = data.loc[passed].copy()
@@ -705,12 +743,24 @@ def load_result_bundle(path):
             data = pd.read_excel(book, sheet_name=sheet)
     else:
         data = pd.read_csv(path, low_memory=False)
-    bundle = result_bundle_from_data(data, path)
+    try:
+        bundle = result_bundle_from_data(data, path)
+        if store is not None:
+            from .result_store import DETAIL_COLUMNS
+            store.bind(bundle.candidates)
+            bundle.annotations = store.hydrate(bundle.annotations)
+            bundle.candidates = bundle.annotations
+            bundle.features = bundle.features.drop(columns=list(DETAIL_COLUMNS), errors="ignore")
+            bundle.audit_store = store
+    except BaseException:
+        if store is not None:
+            store.close()
+        raise
     if audit.exists():
         prefix = (
             "当前直接打开审计表，包含未通过分数或 ECN 筛选的候选；这些记录不是最终鉴定。"
             if explicit_audit else
-            "主结果使用代表谱 Top3；其他样本的明确 High Top1 差异单独保留。完整逐谱候选保存在 audit/evaluated.csv。"
+            "主鉴定按合格 Top1 的支持样本数选择，每个样本最多一次；同名仅显示最佳记录，高置信差异单独提示。逐谱详情按需读取。"
         )
         bundle.notice = prefix + bundle.notice
     return bundle
