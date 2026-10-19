@@ -43,9 +43,11 @@ def ecn_display(value):
     return "-" if text(value) in {"", "无法判断"} else text(value)
 
 
-def eic_coordinates(feature, spectra, source):
+def eic_coordinates(feature, spectra, source, gap_peak=None):
     """Use the selected sample's observed RT, including unlinked MS2 records."""
     sample = Path(source).name
+    if gap_peak is not None:
+        return gap_peak[0], gap_peak[1]
     records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
     row = records.iloc[0] if not records.empty else feature
     if records.empty and Path(text(feature.get("_source"))).name != sample:
@@ -66,8 +68,10 @@ def eic_coordinates(feature, spectra, source):
     return mz, rt
 
 
-def eic_peak_bounds(feature, spectra, source):
-    """Only shade real, sample-specific detected peak boundaries."""
+def eic_peak_bounds(feature, spectra, source, gap_peak=None):
+    """Only shade measured, sample-specific native or targeted peak boundaries."""
+    if gap_peak is not None:
+        return gap_peak[2], gap_peak[3]
     sample = Path(source).name
     records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
     row = records.iloc[0] if not records.empty else feature
@@ -727,7 +731,10 @@ class ResultsPage(QtWidgets.QWidget):
         selected = self.spectrum_choice.currentData()
         if selected:
             spectra = spectra.sort_values("_spectrum", key=lambda values: values.ne(selected), kind="stable")
-        mz, rt = eic_coordinates(row, spectra, source)
+        from lipidgate.ms1.gap_filling_workflow import gap_filled_peak
+        gap_peak = (gap_filled_peak(self.bundle.gap_filling_path, self.current_key, source)
+                    if number(row.get('gap_filled_count')) > 0 else None)
+        mz, rt = eic_coordinates(row, spectra, source, gap_peak)
         if not math.isfinite(mz) or not math.isfinite(rt) or mz <= 0 or rt < 0:
             self._cancel_eic_request()
             self.eic_plot.set_status("此特征缺少 m/z 或 RT")
@@ -741,7 +748,7 @@ class ResultsPage(QtWidgets.QWidget):
             return
         key = (self._eic_generation, signature, mz, rt, self._eic_ppm, EIC_HALF_WINDOW_MIN)
         self._eic_current_key = key
-        self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source)
+        self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source, gap_peak)
         cached = self._eic_cache.get(key)
         if cached is not None:
             self._cancel_eic_request(clear_current=False)
@@ -1163,6 +1170,9 @@ class ResultsPage(QtWidgets.QWidget):
             ("最佳记录来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
+        if number(feature.get('gap_filled_count')) > 0:
+            values.extend([('补峰样本数', feature.get('gap_filled_count')),
+                           ('补峰样本', feature.get('gap_filled_samples'))])
         self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
         differences = self.bundle.annotations.loc[
             self.bundle.annotations._key.eq(feature.get("_key"))

@@ -216,4 +216,7 @@ def feature_export_table(features, annotations):
     areas = feature_area_table(features)
     for column in areas:
         result[column] = areas[column].to_numpy()
+    from lipidgate.feature_areas import gap_filling_export_fields
+    for column, values in gap_filling_export_fields(features).items():
+        result[column] = values.to_numpy()
     return result

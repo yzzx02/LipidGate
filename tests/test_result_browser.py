@@ -1069,3 +1069,8 @@ def exercise_native_mass_and_unresolved_bounds():
     assert eic_peak_bounds(feature, spectra, "a.mzML") == (5.955, 6.115)
     spectra.loc[0, "ms1_peak_boundary_method"] = "unresolved_detector_bounds"
     assert eic_peak_bounds(feature, spectra, "a.mzML") is None
+    # A gap-filled sample uses its own measured coordinates even when the
+    # feature's representative MS2 and native detection belong to another file.
+    gap_peak = (520.3401, 7.201, 7.15, 7.25)
+    assert eic_coordinates(feature, spectra, "b.mzML", gap_peak) == (520.3401, 7.201)
+    assert eic_peak_bounds(feature, spectra, "b.mzML", gap_peak) == (7.15, 7.25)

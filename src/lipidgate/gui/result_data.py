@@ -431,6 +431,7 @@ class ResultBundle:
     ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
     annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
     audit_store: object = field(default=None, repr=False)
+    gap_filling_path: Path | None = None
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -711,7 +712,7 @@ def _load_ms1_tables(run):
     table = table.rename(columns={key: value for key, value in sample_columns.items()
                                  if key == value or value not in table})
     native_path = ms1 / metadata["native_table"] if metadata.get("native_table") else table_path.with_name(table_path.stem + "_native.csv")
-    if algorithm == "pyopenms" and native_path.is_file():
+    if algorithm in {"pyopenms", "xcms"} and native_path.is_file():
         return pd.read_csv(native_path, low_memory=False), table, algorithm
     if "source_file" in table and table.source_file.notna().any():
         return table, None, algorithm
@@ -810,6 +811,10 @@ def result_bundle_from_data(data, path, *, refresh_membership=True):
         data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
+    from lipidgate.ms1.gap_filling_workflow import apply_saved_gap_filling
+    gap_path = base.parent/'ms1/gap_filling/gap_filling.csv'
+    bundle.features = apply_saved_gap_filling(bundle.features, gap_path)
+    bundle.gap_filling_path = gap_path if gap_path.is_file() else None
     relations_path = base / "ion_relationships.csv"
     if relations_path.is_file():
         from lipidgate.ion_relationships import confirmed_ion_relationships

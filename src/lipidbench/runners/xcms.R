@@ -36,6 +36,8 @@ params <- CentWaveParam(
     fitgauss = FALSE
 )
 xdata <- findChromPeaks(raw_data, params, return.type="XCMSnExp")
+raw_pks <- chromPeaks(xdata)
+raw_times <- rtime(xdata, bySample = TRUE)
 
 pdp <- PeakDensityParam(sampleGroups = rep(1, length(files)), minFraction = opt$frac,
                         minSamples = opt$min_samples, bw = 10, binSize = 0.005)
@@ -44,8 +46,15 @@ xdata <- groupChromPeaks(xdata, param = pdp)
 if (length(files) > 1) {
     xdata <- adjustRtime(xdata, ObiwarpParam(binSize = 1))
     xdata <- groupChromPeaks(xdata, param = pdp)
-    xdata <- fillChromPeaks(xdata)
 }
+
+# Gap filling is owned by LipidGate's shared, audited post-alignment stage.
+# Preserve scan-level RT correction so raw EIC extraction never uses aligned RT.
+aligned_times <- if (length(files) > 1) adjustedRtime(xdata, bySample = TRUE) else raw_times
+rt_mapping <- do.call(rbind, lapply(seq_along(files), function(i) data.frame(
+    source_file = basename(files[i]), raw_rt_sec = raw_times[[i]],
+    aligned_rt_sec = aligned_times[[i]])))
+write.csv(rt_mapping, sub("\\.csv$", "_rt_mapping.csv", opt$output), row.names = FALSE)
 
 peakInfo <- featureDefinitions(xdata)
 pks <- chromPeaks(xdata)
@@ -94,5 +103,18 @@ peaktable <- peaktable[, !(names(peaktable) %in% drop_cols)]
 if (!is.na(opt$min_maxo) && "maxo" %in% names(peaktable)) {
     peaktable <- peaktable[!is.na(peaktable$maxo) & peaktable$maxo >= opt$min_maxo, , drop = FALSE]
 }
+
+# CP identifiers are the original detector's IDs, not synthesized native peaks.
+membership <- setNames(rep(NA_character_, nrow(raw_pks)), rownames(raw_pks))
+for (uid in intersect(as.character(peaktable$Row.names), rownames(peakInfo))) {
+    membership[rownames(pks)[peakInfo[uid, "peakidx"][[1]]]] <- uid
+}
+native <- data.frame(Feature_ID = rownames(raw_pks), alignment_uid = unname(membership),
+    source_file = basename(files[as.integer(raw_pks[, "sample"])]),
+    mz = raw_pks[, "mz"], RT = raw_pks[, "rt"] / 60,
+    RTmin = raw_pks[, "rtmin"] / 60, RTmax = raw_pks[, "rtmax"] / 60,
+    intensity = raw_pks[, "into"], RT_unit = rep("minutes", nrow(raw_pks)))
+native <- native[!is.na(native$alignment_uid), , drop = FALSE]
+write.csv(native, sub("\\.csv$", "_native.csv", opt$output), row.names = FALSE)
 
 write.table(peaktable, file = opt$output, sep=",", row.names= FALSE, col.names=TRUE, quote=FALSE)

@@ -62,8 +62,11 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     area_columns = list(areas)
     for column in areas:
         feature_table[column] = areas[column].to_numpy()
+    from lipidgate.feature_areas import gap_filling_export_fields
+    for column, values in gap_filling_export_fields(features).items():
+        feature_table[column] = values.to_numpy()
     has_area = feature_table[area_columns].notna().any(axis=1) if area_columns else pd.Series(False, index=feature_table.index)
-    feature_table["面积状态"] = ["已有检测峰面积" if available else
+    feature_table["面积状态"] = [("含定向补峰面积" if row.get('gap_filled_count', 0) > 0 else "已有检测峰面积") if available else
                                ("检测峰未记录面积" if ms1_feature_display(row) in {"Linked", "Detected"}
                                 else "无关联检测峰，未计算面积")
                                for available, (_, row) in zip(has_area, features.iterrows())]

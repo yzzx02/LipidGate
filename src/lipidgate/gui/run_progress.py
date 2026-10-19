@@ -115,6 +115,10 @@ class RunProgressPanel(QtWidgets.QFrame):
         if self._started is None:
             return
         self.current.setText(message)
+        if message.startswith('MS1 补峰'):
+            self._set_stage(1)
+            self.bar.setRange(0, 0)
+            self.remaining.setText('预计剩余：正在补峰')
         if message.startswith("检查输入"):
             self._set_stage(0)
         elif message.startswith("提取并对齐 MS1"):

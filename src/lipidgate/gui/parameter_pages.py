@@ -140,6 +140,24 @@ class FeaturePage(QtWidgets.QWidget):
         grid.addWidget(self.max_width_field, 0, 1)
         cards.addWidget(widths)
 
+        gap, grid = self._card("缺失峰面积补齐")
+        self.gap_enabled = QtWidgets.QCheckBox("启用 Gap filling")
+        self.gap_enabled.setChecked(True)
+        self.gap_enabled.setToolTip("对齐后回读原始 MS1，恢复有色谱峰支持的缺失面积；无可靠信号时留空。补峰不增加鉴定支持样本数。")
+        grid.addWidget(self.gap_enabled, 0, 0, 1, 2)
+        self.gap_ppm = number(5, 0.1, 1000)
+        self.gap_rt = number(10, 0.1, 300)
+        self.gap_sn = number(3, 0.1, 1000)
+        self.gap_additional = {}
+        for widget in (self.gap_ppm, self.gap_rt, self.gap_sn):
+            widget.setFixedSize(200, 40)
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+            self.gap_enabled.toggled.connect(widget.setEnabled)
+        grid.addWidget(self._field("补峰质量误差", self.gap_ppm, "ppm"), 1, 0)
+        grid.addWidget(self._field("峰顶 RT 容差", self.gap_rt, "s"), 1, 1)
+        grid.addWidget(self._field("补峰最低信噪比", self.gap_sn), 2, 0)
+        cards.addWidget(gap)
+
         external, grid = self._card("外部特征表")
         caption = QtWidgets.QLabel("MS-DIAL 特征表 · 选择 msdial 算法后启用")
         caption.setObjectName("ms1Muted")
@@ -200,11 +218,19 @@ class FeaturePage(QtWidgets.QWidget):
         body.addLayout(footer)
         body.addStretch()
 
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.addStretch(1)
-        layout.addWidget(self.content, 100)
-        layout.addStretch(1)
+        container = QtWidgets.QWidget()
+        centered = QtWidgets.QHBoxLayout(container)
+        centered.setContentsMargins(24, 22, 24, 22)
+        centered.addStretch(1)
+        centered.addWidget(self.content, 100)
+        centered.addStretch(1)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setWidget(container)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
         self.setStyleSheet("""
             QWidget#ms1FeaturePage { background: #f5f7fb; }
             QFrame#ms1Card { background: white; border: 1px solid #dce3ec; border-radius: 8px; }

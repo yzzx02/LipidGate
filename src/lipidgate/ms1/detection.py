@@ -211,6 +211,12 @@ def _run_feature_detection_path(
             run_params = extract_xcms_params(cfg)
             run_xcms(input_dir=mzml_dir, output_file=out_file, **run_params)
             load_xcms_results(out_file)
+            native_path = out_file.with_name(out_file.stem + '_native.csv')
+            if native_path.is_file():
+                aligned, native = pd.read_csv(out_file), pd.read_csv(native_path)
+                identifiers = aligned.set_index('alignment_uid').Feature_ID
+                native['Aligned_Feature_ID'] = native.alignment_uid.map(identifiers)
+                native.to_csv(native_path, index=False)
             return out_file
 
     raise ValueError(f"Unsupported MS1 algorithm: {algo}")
@@ -283,7 +289,7 @@ def run_feature_detection_result(
         parameters=dict(params or {}),
         message=message,
         native_table_path=(table_path.with_name(table_path.stem + '_native.csv')
-                           if algo_norm == 'pyopenms' and table_path.with_name(table_path.stem + '_native.csv').exists()
+                           if algo_norm in {'pyopenms', 'xcms'} and table_path.with_name(table_path.stem + '_native.csv').exists()
                            else None),
     )
 

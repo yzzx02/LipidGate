@@ -95,6 +95,13 @@ def run_project(project_path, settings, progress=lambda message: None):
     validate_precursor_range(options.get("precursor_mz_min"), options.get("precursor_mz_max"))
     validate_parallel_capacity(options.get("workers", 1), len(files), library)
     ms1 = settings["ms1"]
+    from lipidgate.ms1.gap_filling import GapFillingConfig
+    gap_settings = ms1.get('gap_filling', {})
+    gap_enabled = gap_settings.get('enabled', True)
+    if not isinstance(gap_enabled, bool):
+        raise ValueError('gap_filling.enabled 必须为 true 或 false')
+    gap_enabled = gap_enabled and ms1.get('enabled', True)
+    gap_config = GapFillingConfig(**{key: value for key, value in gap_settings.items() if key != 'enabled'}) if gap_enabled else None
     if ms1.get("enabled", True):
         params = ms1.get("params", {})
         widths = params.get(
@@ -125,6 +132,8 @@ def run_project(project_path, settings, progress=lambda message: None):
                 "ms1_runtime_sha256": code_fingerprint(
                     Path(__file__).parent.parent / "lipidbench"
                 ),
+                "ms1_scripts_sha256": {script.name: sha256(script) for script in
+                                       (Path(__file__).parent.parent/'lipidbench/runners').glob('*.R')},
                 "inputs": [
                     {
                         "path": str(p),
@@ -183,6 +192,10 @@ def run_project(project_path, settings, progress=lambda message: None):
         (out / "ms1" / "feature_table.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        if gap_enabled:
+            from lipidgate.ms1.gap_filling_workflow import run_gap_filling
+            progress('MS1 正在补齐缺失峰面积…')
+            run_gap_filling(feature, files, out/'ms1/gap_filling', config=gap_config, progress=progress)
     elif ms1.get("enabled", True):
         progress("所有文件均无 MS1 扫描，跳过特征提取并继续 MS2 匹配。")
     progress("匹配 MS2 谱库…")
