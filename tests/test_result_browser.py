@@ -1074,3 +1074,24 @@ def exercise_native_mass_and_unresolved_bounds():
     gap_peak = (520.3401, 7.201, 7.15, 7.25)
     assert eic_coordinates(feature, spectra, "b.mzML", gap_peak) == (520.3401, 7.201)
     assert eic_peak_bounds(feature, spectra, "b.mzML", gap_peak) == (7.15, 7.25)
+
+
+def test_browser_fill_fraction_display_and_tooltip():
+    import subprocess
+    import sys
+
+    completed = subprocess.run([sys.executable, '-c', '''
+from PySide6 import QtCore, QtWidgets
+from lipidgate.gui.result_browser import BrowserTableModel
+from lipidgate.gui.result_data import COLUMNS
+import pandas as pd
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+model = BrowserTableModel()
+model.set_frame(pd.DataFrame([{'_fill_fraction': .5}, {'_fill_fraction': float('nan')}]))
+column = next(i for i, (label, key) in enumerate(COLUMNS) if label == 'Fill %')
+assert model.data(model.index(0, column)) == '0.50'
+assert model.data(model.index(1, column)) == '—'
+tooltip = model.headerData(column, QtCore.Qt.Orientation.Horizontal, QtCore.Qt.ItemDataRole.ToolTipRole)
+assert '0.50' in tooltip and '50%' in tooltip
+'''], env=dict(os.environ, QT_QPA_PLATFORM='offscreen'), capture_output=True, text=True, timeout=30)
+    assert completed.returncode == 0, completed.stdout + completed.stderr

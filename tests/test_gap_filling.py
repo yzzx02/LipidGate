@@ -1,6 +1,7 @@
 """Measured gap fills stay separate from detector peaks and MS2 confidence."""
 
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -74,40 +75,66 @@ def test_targeted_raw_integration_recovers_weak_peak_after_inverse_rt_mapping(tm
     assert path.read_bytes() == original_file
 
 
-@pytest.mark.parametrize('signal,reason', [
-    (lambda rt: 0., 'no_supported_peak'),
-    (lambda rt: 10., 'no_supported_peak'),
-    (lambda rt: 500. if rt == 90 else 0., 'no_supported_peak'),
-    (gaussian(125), 'no_supported_peak'),
-    (lambda rt: 10.+(rt % 2), 'no_supported_peak'),
-])
-def test_no_signal_noise_spikes_and_distant_peaks_stay_missing(tmp_path, signal, reason):
+@pytest.mark.parametrize('signal', [lambda rt: 0., lambda rt: 500. if rt > 120 else 0.])
+def test_zero_signal_in_requested_window_stays_missing(tmp_path, signal):
     path = write_ms1(tmp_path/'b.mzML', {500.: signal})
     filled, audit = fill_gaps(matrix(), native(), [path], calibration())
     assert filled['b.mzML'].item() == 0.
     assert audit.status.item() == 'missing'
-    assert audit.reason.item() == reason
+    assert audit.reason.item() == 'no_signal'
     assert audit.area.isna().all()
 
 
-@pytest.mark.parametrize('problem', ['no_calibration', 'nonmonotonic_calibration', 'out_of_range',
-                                      'no_ms1_scans', 'read_error', 'profile', 'acquisition_gap', 'clipped_peak'])
+@pytest.mark.parametrize('signal,expected', [
+    (lambda rt: 10., 180.),
+    (lambda rt: 500. if rt == 90 else 0., 500.),
+    (lambda rt: 10.+(rt % 2), 189.),
+    (gaussian(height=.2), .2*3*np.sqrt(2*np.pi)*math.erf(9/(3*np.sqrt(2)))),
+    (gaussian(sigma=40), 500*40*np.sqrt(2*np.pi)*math.erf(9/(40*np.sqrt(2)))),
+])
+def test_window_integration_accepts_flat_noisy_narrow_broad_and_very_weak_signal(tmp_path, signal, expected):
+    path = write_ms1(tmp_path/'b.mzML', {500.: signal})
+    filled, audit = fill_gaps(matrix(), native(), [path], calibration())
+    assert audit.status.item() == 'filled'
+    assert filled['b.mzML'].item() == pytest.approx(expected, rel=.002)
+    assert audit.reason.item() == 'raw_ms1_window_integral'
+    assert audit.method.item() == 'feature_window_auc_v2'
+
+
+@pytest.mark.parametrize('problem', ['nonmonotonic_calibration', 'out_of_range',
+                                      'no_ms1_scans', 'read_error', 'profile', 'acquisition_gap'])
 def test_untrusted_or_unavailable_raw_evidence_never_supplies_area(tmp_path, problem):
     times = np.r_[np.arange(0., 89.), np.arange(94., 181.)] if problem == 'acquisition_gap' else None
     if problem == 'no_ms1_scans':
         times = []
-    signal = gaussian(178) if problem == 'clipped_peak' else gaussian()
-    path = write_ms1(tmp_path/'b.mzML', {500.: signal}, times=times, profile=problem == 'profile')
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian()}, times=times, profile=problem == 'profile')
     frame, mapping = matrix(), calibration()
-    if problem == 'no_calibration': mapping = pd.DataFrame()
     if problem == 'nonmonotonic_calibration': mapping['aligned_rt_sec'] = [180., 0.]
     if problem == 'out_of_range': frame['RT'] = 8.
-    if problem == 'clipped_peak': frame['RT'] = 178/60
     if problem == 'read_error': path.unlink()
     filled, audit = fill_gaps(frame, native(), [path], mapping)
     assert audit.status.item() != 'filled'
     assert filled['b.mzML'].item() == 0.
     assert audit.area.isna().all()
+
+
+def test_missing_rt_mapping_uses_reference_window_with_allowance(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian(98)})
+    _, audit = fill_gaps(matrix(), native(), [path], pd.DataFrame())
+    assert audit.status.item() == 'filled'
+    assert audit.rt_mapping.item() == 'reference_window_with_rt_allowance'
+    assert audit.search_left_raw_min.item() == pytest.approx(71/60)
+    assert audit.search_right_raw_min.item() == pytest.approx(109/60)
+    assert audit.area.item() == pytest.approx(500*3*np.sqrt(2*np.pi), rel=.002)
+
+
+def test_partial_acquisition_integrates_only_observed_scans(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: lambda rt: 10.}, times=np.arange(81., 91.))
+    _, audit = fill_gaps(matrix(), native(), [path], calibration())
+    assert audit.status.item() == 'filled'
+    assert audit.area.item() == pytest.approx(90.)
+    assert audit.left_rt_raw_min.item() == 81/60
+    assert audit.right_rt_raw_min.item() == 90/60
 
 
 def test_native_detection_and_existing_area_are_never_replaced(tmp_path):
@@ -128,6 +155,14 @@ def test_gap_fill_cannot_borrow_a_neighboring_native_peak(tmp_path):
     filled, audit = fill_gaps(matrix(), detected, [path], calibration())
     assert audit.reason.item() == 'native_peak_already_assigned'
     assert filled['b.mzML'].item() == 0.
+
+
+def test_neighbor_ownership_uses_measured_eic_apex_before_detector_centroid(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian()})
+    detected = native([dict(Feature_ID='other_peak', Aligned_Feature_ID='other', source_file='b.mzML',
+                            mz=500., RT=1.65, observed_eic_apex_rt_sec=90., RTmin=1.3, RTmax=1.7)])
+    _, audit = fill_gaps(matrix(), detected, [path], calibration())
+    assert audit.reason.item() == 'native_peak_already_assigned'
 
 
 def test_same_file_valley_keeps_neighboring_isomers_and_areas_separate(tmp_path):
@@ -158,12 +193,20 @@ def test_equally_plausible_local_peaks_remain_ambiguous(tmp_path):
     assert audit.reason.item() == 'ambiguous_local_peaks'
 
 
-@pytest.mark.parametrize('parameter,value', [('mz_ppm', 0), ('min_snr', np.nan),
-                                             ('rt_tolerance_sec', -1), ('min_height', np.inf),
-                                             ('min_fwhm_sec', 61), ('max_fwhm_sec', True)])
+@pytest.mark.parametrize('parameter', ['mz_ppm', 'rt_tolerance_sec'])
+@pytest.mark.parametrize('value', [0, -1, np.nan, np.inf, True, '5'])
 def test_invalid_parameters_are_rejected(parameter, value):
     with pytest.raises(ValueError):
         GapFillingConfig(**{parameter: value})
+
+
+def test_legacy_settings_open_without_restoring_detection_cutoffs():
+    config = GapFillingConfig.from_settings(dict(enabled=True, mz_ppm=8., rt_tolerance_sec=12.,
+                                                min_snr=100., min_height=1e9,
+                                                min_fwhm_sec=3., max_fwhm_sec=60.))
+    assert config == GapFillingConfig(mz_ppm=8., rt_tolerance_sec=12.)
+    with pytest.raises(TypeError):
+        GapFillingConfig.from_settings({'misspelled_setting': 1})
 
 
 def test_rt_mapping_never_extrapolates_or_reverses_time():
@@ -196,6 +239,100 @@ def test_partial_file_failure_clears_previously_recovered_areas(tmp_path, monkey
     assert audit.status.tolist() == ['read_error']
     assert audit.area.isna().all()
     assert filled['b.mzML'].item() == 0.
+
+
+@pytest.mark.parametrize('scan_count,expected', [(0, None), (1, None), (2, 10.), (3, 20.)])
+def test_two_observed_scans_are_sufficient_without_inventing_boundaries(tmp_path, scan_count, expected):
+    path = write_ms1(tmp_path/'b.mzML', {500.: lambda rt: 10.}, times=np.arange(85., 85.+scan_count))
+    _, audit = fill_gaps(matrix(), native(), [path], calibration())
+    if expected is None:
+        if scan_count:
+            assert audit.reason.item() == 'insufficient_ms1_scans'
+        else:
+            assert audit.status.item() in {'missing', 'read_error'}
+        assert audit.area.isna().all()
+    else:
+        assert audit.status.item() == 'filled'
+        assert audit.area.item() == pytest.approx(expected)
+        assert audit.scan_count.item() == scan_count
+
+
+def test_boundary_quartiles_are_mapped_instead_of_using_apex_spread(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: lambda rt: 10.})
+    detected = native([dict(Feature_ID=f'peak{i}', Aligned_Feature_ID='F1', source_file=f'a{i}.mzML',
+                            mz=500., RT=(90+shift)/60, RTmin=(left+shift)/60, RTmax=(right+shift)/60)
+                       for i, (shift, left, right) in enumerate([(0., 78., 102.), (10., 80., 100.),
+                                                               (-5., 82., 98.), (15., 84., 96.)])])
+    mapping = pd.concat([calibration('b.mzML', shift=5.)] +
+                        [calibration(f'a{i}.mzML', shift=shift) for i, shift in enumerate([0., 10., -5., 15.])])
+    _, audit = fill_gaps(matrix(), detected, [path], mapping)
+    assert audit.window_basis.item() == 'native_boundary_quartiles'
+    assert audit.search_left_raw_min.item() == pytest.approx(84.5/60)
+    assert audit.search_right_raw_min.item() == pytest.approx(105.5/60)
+    assert audit.left_rt_raw_min.item() == 85/60
+    assert audit.right_rt_raw_min.item() == 105/60
+    assert audit.area.item() == pytest.approx(200.)
+
+
+def test_nonlinear_rt_mapping_integrates_inverse_window_in_actual_seconds(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: lambda rt: 10.})
+    mapping = pd.DataFrame(dict(source_file=['b.mzML']*4, raw_rt_sec=[0., 60., 120., 180.],
+                                aligned_rt_sec=[0., 40., 100., 180.]))
+    _, audit = fill_gaps(matrix(), native(), [path], mapping)
+    assert audit.expected_rt_raw_min.item() == pytest.approx(110/60)
+    assert audit.search_left_raw_min.item() == pytest.approx(101/60)
+    assert audit.search_right_raw_min.item() == pytest.approx(119/60)
+    assert audit.area.item() == pytest.approx(180.)
+
+
+@pytest.mark.parametrize('height', [.001, 2., 5000.])
+@pytest.mark.parametrize('sigma', [.5, 3., 15.])
+@pytest.mark.parametrize('shift', [-7., 0., 13.])
+@pytest.mark.filterwarnings("ignore:Testing an element's truth value:DeprecationWarning:pymzml")
+def test_window_area_tracks_analytic_gaussian_across_intensity_width_and_rt_shift(tmp_path, height, sigma, shift):
+    times = np.arange(0., 181., min(.2, sigma/5))
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian(90+shift, height, sigma)}, times=times)
+    frame = matrix().assign(RTmin=(90-4*sigma)/60, RTmax=(90+4*sigma)/60)
+    detected = native().assign(RTmin=frame.RTmin.item(), RTmax=frame.RTmax.item())
+    _, audit = fill_gaps(frame, detected, [path], calibration(shift=shift))
+    assert audit.status.item() == 'filled'
+    left, right = audit.left_rt_raw_min.item()*60, audit.right_rt_raw_min.item()*60
+    expected = height*sigma*np.sqrt(2*np.pi)*.5*(
+        math.erf((right-90-shift)/(sigma*np.sqrt(2))) -
+        math.erf((left-90-shift)/(sigma*np.sqrt(2))))
+    assert audit.area.item() == pytest.approx(expected, rel=.001)
+
+
+def test_mass_tolerance_excludes_large_unrelated_signal_and_preserves_distinct_centroids(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian(), 500.002: gaussian(height=50.),
+                                       500.01: gaussian(height=1e9)})
+    frame = matrix([dict(Feature_ID=key, mz=mz, RT=1.5, RTmin=1.35, RTmax=1.65,
+                         **{'a.mzML': 100., 'b.mzML': 0.}) for key, mz in [('F1', 500.), ('F2', 500.002)]])
+    _, audit = fill_gaps(frame, pd.DataFrame(), [path], calibration())
+    assert audit.status.tolist() == ['filled', 'filled']
+    assert audit.area.tolist() == pytest.approx([500*3*np.sqrt(2*np.pi), 50*3*np.sqrt(2*np.pi)], rel=.01)
+
+
+def test_old_targeted_audit_still_opens_without_recomputation(tmp_path):
+    path = write_ms1(tmp_path/'b.mzML', {500.: gaussian()})
+    _, audit = fill_gaps(matrix(), native(), [path], calibration())
+    audit['method'] = 'targeted_eic_v1'
+    audit = audit.drop(columns=['window_basis', 'rt_mapping', 'boundary_method'])
+    audit_path = tmp_path/'old.csv'
+    audit.to_csv(audit_path, index=False)
+    features = pd.DataFrame([{'_key': 'ALIGN|F1', 'b.mzML': np.nan, '_fill_fraction': .5}])
+    result = apply_saved_gap_filling(features, audit_path)
+    assert result['b.mzML'].item() == pytest.approx(audit.area.item())
+    assert result._fill_fraction.item() == .5
+
+
+@pytest.mark.parametrize('existing', [-10., np.inf, -np.inf])
+def test_invalid_existing_quantities_are_preserved_and_recorded(tmp_path, existing):
+    frame = matrix().assign(**{'b.mzML': existing})
+    result, audit = fill_gaps(frame, native(), [tmp_path/'b.mzML'], calibration())
+    assert result['b.mzML'].item() == existing
+    assert audit.reason.item() == 'invalid_existing_area'
+    assert audit.area.isna().all()
 
 
 @pytest.mark.parametrize('problem', ['duplicate_ids', 'empty_ids', 'seconds', 'duplicate_samples'])
@@ -250,10 +387,12 @@ def test_formal_and_gui_export_share_fill_overlay_without_changing_detection_or_
         assert len(table) == 1
         assert table['b.mzML'].item() > 3700
         assert table['a.mzML'].item() == 12345.
+        assert table['Fill %'].item() == .5
         assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(table.columns)
         assert table.final_score.item() == 85.
     bundle = load_result_bundle(result.csv_path)
     assert bundle.features._sample_count.item() == 1
+    assert bundle.features._fill_fraction.item() == .5
     assert bundle.features._cohort_ms1_detected_samples.item() == 1
     assert bundle.features.feature_support_count.item() == 1
     assert bundle.features._ms2_sample_count.item() == 1
@@ -269,12 +408,14 @@ def test_formal_and_gui_export_share_fill_overlay_without_changing_detection_or_
     export_browser_results(bundle, tmp_path/'export', xlsx=True)
     gui = pd.read_csv(tmp_path/'export/feature_results.csv')
     assert gui['b.mzML'].item() == pytest.approx(formal['b.mzML'].item())
+    assert gui['Fill %'].item() == .5
     assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(gui.columns)
     assert gui['面积状态'].item() == '已有 MS1 面积'
     gui_excel = pd.read_excel(tmp_path/'export/LipidGate_results.xlsx', sheet_name='特征结果')
     assert gui_excel['b.mzML'].item() == pytest.approx(formal['b.mzML'].item())
+    assert gui_excel['Fill %'].item() == .5
     assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(gui_excel.columns)
-    assert not {'a.mzML', 'b.mzML', '补峰样本'}.intersection(pd.read_csv(run/'results/feature_candidates.csv').columns)
+    assert not {'a.mzML', 'b.mzML', '补峰样本', 'Fill %'}.intersection(pd.read_csv(run/'results/feature_candidates.csv').columns)
     assert all(path.read_bytes() == contents for path, contents in originals.items())
     pd.testing.assert_frame_equal(records, original_records)
     bundle.audit_store.close()
@@ -359,6 +500,7 @@ def test_real_project_fills_shifted_weak_peak_without_changing_ms2_or_native_mem
     assert peak.area == pytest.approx(700*5*np.sqrt(2*np.pi), rel=.015)
     formal = pd.read_csv(filled.csv_path)
     assert formal['b.mzML'].item() == pytest.approx(peak.area)
+    assert formal['Fill %'].item() == .5
     bundle = load_result_bundle(filled.csv_path)
     annotated = bundle.features.loc[bundle.features._identified].iloc[0]
     assert annotated._cohort_ms1_detected_samples == 1
@@ -368,6 +510,7 @@ def test_real_project_fills_shifted_weak_peak_without_changing_ms2_or_native_mem
     bundle.audit_store.close()
     settings['ms1']['gap_filling'] = dict(enabled=False)
     _, _, unfilled = run_project(project.path, settings)
+    assert pd.read_csv(unfilled.csv_path)['Fill %'].item() == .5
     assert not (unfilled.output_dir.parent/'ms1/gap_filling').exists()
     preserved = ['matched_name', 'source_file', 'scan_id', 'result_rank', 'final_score',
                  'passed_required_gates', '置信度', 'resolution_level']

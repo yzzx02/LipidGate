@@ -205,6 +205,7 @@ def annotation_export_table(annotations):
 def feature_export_table(features, annotations):
     """One identified feature per row; alternatives carry no duplicate areas."""
     result = annotation_export_table(features)
+    result['Fill %'] = pd.to_numeric(features.get('_fill_fraction', pd.Series(float('nan'), index=features.index)), errors='coerce').to_numpy()
     if features.empty:
         return result
     main = annotations.loc[annotations.feature_result_role.eq("representative")]

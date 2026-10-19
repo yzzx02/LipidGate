@@ -111,6 +111,8 @@ def load_msdial_results(file_path, outputfile):
         "Symmetry": "Symmetry",
     }
     keep_cols = list(column_map.keys()) + sample_cols
+    if 'Fill %' in data:
+        keep_cols.append('Fill %')
     df = data[keep_cols].copy()
     df.rename(columns=column_map, inplace=True)
     df = normalize_feature_id(df, column="Feature_ID")

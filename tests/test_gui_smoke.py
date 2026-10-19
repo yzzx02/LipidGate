@@ -105,7 +105,7 @@ def test_gui_main_window_instantiates() -> None:
                                       rt_tolerance_sec=12., min_snr=4., min_fwhm_sec=2.)}})
         assert window.feature_page.gap_rt.isEnabled()
         assert window.analysis_settings()['ms1']['gap_filling'] == dict(enabled=True, mz_ppm=8.,
-                           rt_tolerance_sec=12., min_snr=4., min_fwhm_sec=2.)
+                           rt_tolerance_sec=12.)
         window.load_project_settings({})
         assert window.feature_page.gap_ppm.value() == 5.
         window.feature_page.algo.setCurrentText('pyopenms')

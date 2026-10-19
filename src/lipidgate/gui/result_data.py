@@ -15,7 +15,7 @@ from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
 from lipidgate.feature_annotations import CONSENSUS_LABELS, candidate_scopes, select_feature_annotations, spectrum_candidates
-from lipidgate.feature_areas import NATIVE_AREA_COLUMNS
+from lipidgate.feature_areas import NATIVE_AREA_COLUMNS, feature_fill_fraction, quantification_samples
 
 
 COLUMNS = [
@@ -31,6 +31,7 @@ COLUMNS = [
     ("鉴定状态", "_annotation_status"),
     ("ECN", "_ecn"),
     ("MS1 Feature", "ms1_support_status"),
+    ("Fill %", "_fill_fraction"),
 ]
 FAMILIES = {
     "GP": "磷脂类 GP",
@@ -458,6 +459,7 @@ class ResultBundle:
         if aligned_features is not None:
             aligned = aligned_features.copy()
             aligned["Aligned_Feature_ID"] = aligned["Feature_ID"]
+            aligned['_fill_fraction'] = feature_fill_fraction(aligned, native_features)
             sample_columns = [column for column in aligned if str(column).lower().endswith(".mzml")]
             aligned["_sample_count"] = (
                 aligned[sample_columns].apply(pd.to_numeric, errors="coerce").gt(0).sum(axis=1)
@@ -474,7 +476,7 @@ class ResultBundle:
                 aligned["_raw_rt_min"] = aligned["Feature_ID"].map(rt_summary["min"])
                 aligned["_raw_rt_max"] = aligned["Feature_ID"].map(rt_summary["max"])
             selected = representatives.set_index("_key", drop=False)
-            protected = {"_key", "_feature", "_aligned_feature", "_rt", "_mz", "Feature_ID", "mz", "RT", "RTmin", "RTmax"}
+            protected = {"_key", "_feature", "_aligned_feature", "_rt", "_mz", "Feature_ID", "mz", "RT", "RTmin", "RTmax", "_fill_fraction"}
             protected.update(sample_columns)
             mapped = {column: aligned["_key"].map(selected[column])
                       for column in selected if column not in protected}
@@ -525,6 +527,15 @@ class ResultBundle:
             if aligned_features is None:
                 notice = "按原始 MS1 特征与已记录的 MS2 鉴定浏览；主鉴定按合格 Top1 的支持样本数选择。"
         representatives = representatives.reset_index(drop=True)
+        if '_fill_fraction' not in representatives:
+            representatives['_fill_fraction'] = pd.to_numeric(
+                representatives.get('Fill %', pd.Series(np.nan, index=representatives.index)), errors='coerce')
+        samples = quantification_samples(aligned_features, native_features)
+        if native_features is not None and samples:
+            local = representatives._aligned_feature.eq('') & representatives._native_feature.ne('')
+            local &= representatives._key.isin(local_native._key)
+            representatives.loc[local, '_fill_fraction'] = 1. / len(samples)
+        representatives['_fill_fraction'] = representatives._fill_fraction.where(representatives._fill_fraction.between(0, 1))
         representatives["_identified"] = representatives["_identified"].eq(True)
         linked_counts = candidates.groupby("_key")["_spectrum"].nunique()
         linked_files = candidates.groupby("_key")["_source"].agg(
@@ -712,8 +723,11 @@ def _load_ms1_tables(run):
     table = table.rename(columns={key: value for key, value in sample_columns.items()
                                  if key == value or value not in table})
     native_path = ms1 / metadata["native_table"] if metadata.get("native_table") else table_path.with_name(table_path.stem + "_native.csv")
+    table.attrs['quantification_samples'] = metadata.get('quantification_samples', [])
     if algorithm in {"pyopenms", "xcms"} and native_path.is_file():
-        return pd.read_csv(native_path, low_memory=False), table, algorithm
+        native = pd.read_csv(native_path, low_memory=False)
+        native.attrs['quantification_samples'] = table.attrs['quantification_samples']
+        return native, table, algorithm
     if "source_file" in table and table.source_file.notna().any():
         return table, None, algorithm
     return None, table, algorithm

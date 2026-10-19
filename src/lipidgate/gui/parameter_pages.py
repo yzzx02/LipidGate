@@ -143,19 +143,17 @@ class FeaturePage(QtWidgets.QWidget):
         gap, grid = self._card("缺失峰面积补齐")
         self.gap_enabled = QtWidgets.QCheckBox("启用 Gap filling")
         self.gap_enabled.setChecked(True)
-        self.gap_enabled.setToolTip("对齐后回读原始 MS1，恢复有色谱峰支持的缺失面积；无可靠信号时留空。补峰不增加鉴定支持样本数。")
+        self.gap_enabled.setToolTip("对齐后按对应 m/z、RT 窗口积分缺失面积，无需再次通过找峰检查。补峰不增加鉴定支持样本数。")
         grid.addWidget(self.gap_enabled, 0, 0, 1, 2)
         self.gap_ppm = number(5, 0.1, 1000)
         self.gap_rt = number(10, 0.1, 300)
-        self.gap_sn = number(3, 0.1, 1000)
-        self.gap_additional = {}
-        for widget in (self.gap_ppm, self.gap_rt, self.gap_sn):
+        for widget in (self.gap_ppm, self.gap_rt):
             widget.setFixedSize(200, 40)
             widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
             self.gap_enabled.toggled.connect(widget.setEnabled)
         grid.addWidget(self._field("补峰质量误差", self.gap_ppm, "ppm"), 1, 0)
-        grid.addWidget(self._field("峰顶 RT 容差", self.gap_rt, "s"), 1, 1)
-        grid.addWidget(self._field("补峰最低信噪比", self.gap_sn), 2, 0)
+        grid.addWidget(self._field("备用 RT 半窗", self.gap_rt, "s",
+                                  tooltip="优先使用检出峰的时间边界；缺少边界时按目标 RT ±此秒数积分。未保存 RT 校正映射时，也用此值扩展参考窗口。"), 1, 1)
         cards.addWidget(gap)
 
         external, grid = self._card("外部特征表")

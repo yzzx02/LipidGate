@@ -10,7 +10,7 @@ import pandas as pd
 
 from lipidbench.utils.feature_table_io import load_feature_table, standardize_rt_columns_for_display
 from lipidgate.ms2.provenance import sha256
-from .gap_filling import AUDIT_COLUMNS, METHOD, GapFillingConfig, fill_gaps
+from .gap_filling import AUDIT_COLUMNS, METHOD, SAVED_METHODS, GapFillingConfig, fill_gaps
 
 
 REFERENCES = {
@@ -62,7 +62,7 @@ def run_gap_filling(feature, sources, output_dir, *, config=GapFillingConfig(), 
         table_sha256=sha256(table_path), native_sha256=sha256(Path(native_path)) if native_path else None,
         rt_mapping_sha256=sha256(mapping_path) if mapping_path.is_file() else None,
         audit_sha256=sha256(audit_path), area_unit='intensity*seconds',
-        integration='trapezoid_unsmoothed_measured_scans', force_fill=False,
+        integration='trapezoid_unsmoothed_measured_scans', requires_local_peak=False,
         changes_native_detection=False, transfers_ms2_identification=False,
     ), ensure_ascii=False, indent=2), encoding='utf-8')
     filled = int(audit.status.eq('filled').sum())
@@ -84,15 +84,16 @@ def apply_saved_gap_filling(features, audit_path):
                 'left_rt_raw_min', 'apex_rt_raw_min', 'right_rt_raw_min'}
     if not required.issubset(audit):
         raise ValueError('补峰审计表缺少必要字段')
-    accepted = audit.loc[audit.status.eq('filled') & audit.method.eq(METHOD)].copy()
+    accepted = audit.loc[audit.status.eq('filled') & audit.method.isin(SAVED_METHODS)].copy()
     if accepted.duplicated(['Aligned_Feature_ID', 'source_file']).any():
         raise ValueError('补峰审计表中同一特征/样本有重复积分')
     for column in ('area', 'left_rt_raw_min', 'apex_rt_raw_min', 'right_rt_raw_min'):
         accepted[column] = pd.to_numeric(accepted[column], errors='coerce')
     valid = (np.isfinite(accepted[['area', 'left_rt_raw_min', 'apex_rt_raw_min', 'right_rt_raw_min']]).all(axis=1)
              & accepted.area.gt(0) & accepted.area_unit.eq('intensity*seconds')
-             & accepted.left_rt_raw_min.lt(accepted.apex_rt_raw_min)
-             & accepted.apex_rt_raw_min.lt(accepted.right_rt_raw_min))
+             & accepted.left_rt_raw_min.le(accepted.apex_rt_raw_min)
+             & accepted.apex_rt_raw_min.le(accepted.right_rt_raw_min)
+             & accepted.left_rt_raw_min.lt(accepted.right_rt_raw_min))
     if not valid.all():
         raise ValueError('补峰审计表含无效面积或峰边界')
     out = features.copy()
@@ -129,12 +130,13 @@ def gap_filled_peak(audit_path, feature_key, source):
 
 @lru_cache(maxsize=128)
 def _gap_filled_peak(path, size, mtime_ns, feature_id, sample):
-    for block in pd.read_csv(path, chunksize=2048, dtype={'Aligned_Feature_ID': str}):
-        selected = block.loc[block.Aligned_Feature_ID.eq(feature_id) & block.source_file.eq(sample)]
-        if not selected.empty:
-            row = selected.iloc[0]
-            values = [row.target_mz, row.apex_rt_raw_min, row.left_rt_raw_min, row.right_rt_raw_min]
-            if (np.isfinite(values).all() and values[0] > 0 and 0 <= values[2] < values[1] < values[3]
-                    and row.status == 'filled' and row.method == METHOD):
-                return tuple(float(value) for value in values)
+    with pd.read_csv(path, chunksize=2048, dtype={'Aligned_Feature_ID': str}) as reader:
+        for block in reader:
+            selected = block.loc[block.Aligned_Feature_ID.eq(feature_id) & block.source_file.eq(sample)]
+            if not selected.empty:
+                row = selected.iloc[0]
+                values = [row.target_mz, row.apex_rt_raw_min, row.left_rt_raw_min, row.right_rt_raw_min]
+                if (np.isfinite(values).all() and values[0] > 0 and 0 <= values[2] <= values[1] <= values[3]
+                        and values[2] < values[3] and row.status == 'filled' and row.method in SAVED_METHODS):
+                    return tuple(float(value) for value in values)
     return None

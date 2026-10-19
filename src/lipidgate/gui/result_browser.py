@@ -109,6 +109,9 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         return len(COLUMNS)
 
     def headerData(self, section, orientation, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if (role == QtCore.Qt.ItemDataRole.ToolTipRole and orientation == QtCore.Qt.Orientation.Horizontal
+                and COLUMNS[section][1] == '_fill_fraction'):
+            return '补峰前检出样本数 / 总 MS1 样本数；0.50 表示 50%。补峰不会增加此值。'
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             return (
                 COLUMNS[section][0]
@@ -129,7 +132,7 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
                 return ecn_display(value)
             if key == "ms1_support_status":
                 return ms1_feature_display(row)
-            if key in {"_rt", "_mz", "final_score"}:
+            if key in {"_rt", "_mz", "final_score", "_fill_fraction"}:
                 v = number(value)
                 decimals = 4 if key == "_mz" else 3 if key == "_rt" else 2
                 return "—" if not math.isfinite(v) else f"{v:.{decimals}f}"
@@ -141,7 +144,7 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and key in {
             "_rt",
             "_mz",
-            "final_score",
+            "final_score", "_fill_fraction",
         }:
             return int(
                 QtCore.Qt.AlignmentFlag.AlignRight

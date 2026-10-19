@@ -6,11 +6,59 @@ not use this projection, so alternatives cannot duplicate the area matrix.
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
 
 
 NATIVE_AREA_COLUMNS = ('ms1_feature_area', 'intensity', 'Area', 'peak_area', 'into')
+
+
+def quantification_samples(aligned=None, native=None):
+    """Include registered MS1 files even when a detector found no peaks in one."""
+    samples = set()
+    for table in (aligned, native):
+        if table is None:
+            continue
+        samples.update(Path(str(name)).name.casefold() for name in table.attrs.get('quantification_samples', [])
+                       if str(name).casefold().endswith('.mzml'))
+        samples.update(Path(str(column)).name.casefold() for column in table if str(column).casefold().endswith('.mzml'))
+        if 'source_file' in table:
+            samples.update(Path(str(value)).name.casefold() for value in table.source_file.dropna()
+                           if str(value).casefold().endswith('.mzml'))
+    return samples
+
+
+def feature_fill_fraction(aligned, native=None):
+    """MS-DIAL's Fill %: pre-fill detected samples / total samples, on 0..1.
+
+    Native membership is authoritative when supplied. Imported Fill % is kept
+    otherwise; a matrix without either uses its original positive area coverage.
+    This function must run before any gap-area overlay.
+    """
+    samples = quantification_samples(aligned, native)
+    fraction = pd.Series(np.nan, index=aligned.index, dtype=float)
+    required = {'Feature_ID', 'Aligned_Feature_ID', 'source_file'}
+    if samples and native is not None and required.issubset(native):
+        detected = native[list(required)].copy()
+        detected['source_file'] = detected.source_file.fillna('').map(lambda value: Path(str(value)).name.casefold())
+        detected['Aligned_Feature_ID'] = detected.Aligned_Feature_ID.fillna('').astype(str).str.strip()
+        valid = (~detected.Feature_ID.fillna('').astype(str).str.strip().str.casefold().isin({'', 'nan', 'none', '<na>'})
+                 & detected.source_file.isin(samples))
+        counts = detected.loc[valid].groupby('Aligned_Feature_ID').source_file.nunique()
+        return aligned.Feature_ID.astype(str).map(counts).fillna(0).astype(float) / len(samples)
+    if 'Fill %' in aligned:
+        inherited = pd.to_numeric(aligned['Fill %'], errors='coerce')
+        return inherited.where(inherited.between(0, 1))
+    if not samples:
+        return fraction
+    columns = [column for column in aligned if str(column).casefold().endswith('.mzml')]
+    if columns:
+        values = aligned[columns].apply(pd.to_numeric, errors='coerce')
+        present = np.isfinite(values) & values.gt(0)
+        present.columns = [Path(str(column)).name.casefold() for column in columns]
+        fraction = present.T.groupby(level=0).any().T.sum(axis=1) / len(samples)
+    return fraction
 
 
 def _text_column(features, column):

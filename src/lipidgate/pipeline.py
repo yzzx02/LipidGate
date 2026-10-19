@@ -101,7 +101,7 @@ def run_project(project_path, settings, progress=lambda message: None):
     if not isinstance(gap_enabled, bool):
         raise ValueError('gap_filling.enabled 必须为 true 或 false')
     gap_enabled = gap_enabled and ms1.get('enabled', True)
-    gap_config = GapFillingConfig(**{key: value for key, value in gap_settings.items() if key != 'enabled'}) if gap_enabled else None
+    gap_config = GapFillingConfig.from_settings(gap_settings) if gap_enabled else None
     if ms1.get("enabled", True):
         params = ms1.get("params", {})
         widths = params.get(
@@ -186,6 +186,7 @@ def run_project(project_path, settings, progress=lambda message: None):
         metadata = dict(schema=1, algorithm=ms1["algo"],
                         table=recorded_path(feature_path),
                         native_table=recorded_path(native_path) if native_path else None,
+                        quantification_samples=[file.name for file in ms1_files],
                         sample_columns={str(column): sample_names[str(column).casefold()]
                                         for column in columns if str(column).casefold() in sample_names})
         (out / "ms1").mkdir(exist_ok=True)
@@ -195,7 +196,7 @@ def run_project(project_path, settings, progress=lambda message: None):
         if gap_enabled:
             from lipidgate.ms1.gap_filling_workflow import run_gap_filling
             progress('MS1 正在补齐缺失峰面积…')
-            run_gap_filling(feature, files, out/'ms1/gap_filling', config=gap_config, progress=progress)
+            run_gap_filling(feature, ms1_files, out/'ms1/gap_filling', config=gap_config, progress=progress)
     elif ms1.get("enabled", True):
         progress("所有文件均无 MS1 扫描，跳过特征提取并继续 MS2 匹配。")
     progress("匹配 MS2 谱库…")

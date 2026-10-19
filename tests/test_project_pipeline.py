@@ -86,7 +86,7 @@ def test_empty_export_has_usable_workbook(tmp_path, use_ecn, use_score):
     )
     wb = load_workbook(result.xlsx_path)
     assert wb.sheetnames == ["最终鉴定", "特征候选", "逐谱证据", "RT未判定"]
-    assert wb["最终鉴定"].max_column == 17
+    assert wb["最终鉴定"].max_column == 18
     assert len(result.data) == 0
     wb.close()
 
@@ -172,8 +172,9 @@ def test_plain_workbook_preserves_numeric_values_and_literal_strings(tmp_path):
 
 
 @pytest.mark.parametrize("project_format", ["legacy", "modern"])
+@pytest.mark.parametrize('with_ms2_only_file', [False, True])
 def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
-    tmp_path, monkeypatch, project_format
+    tmp_path, monkeypatch, project_format, with_ms2_only_file
 ):
     import lipidgate.pipeline as pipeline
 
@@ -184,6 +185,11 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     project = (Project.create(tmp_path / "project/test.lipidgate") if project_format == "modern"
                else Project.open(tmp_path / "project"))
     project.add_files([source])
+    if with_ms2_only_file:
+        spectra_only = tmp_path/'spectra_only.mzML'
+        spectra_only.write_text('<mzML><cvParam accession="MS:1000129"/>'
+                                '<cvParam accession="MS:1000511" value="2"/></mzML>')
+        project.add_files([spectra_only])
     settings = {
         "ms1": {
             "enabled": True,
@@ -237,6 +243,9 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     assert (final.output_dir.parent / "provenance.json").exists()
     ms1_metadata = json.loads((final.output_dir.parent / "ms1/feature_table.json").read_text())
     assert ms1_metadata["algorithm"] == "xcms"
+    assert ms1_metadata['quantification_samples'] == ['sample.mzML']
+    gap_manifest = json.loads((final.output_dir.parent/'ms1/gap_filling/gap_filling.json').read_text())
+    assert set(gap_manifest['inputs']) == {str(source.resolve())}
     assert Path(ms1_metadata["table"]) == tmp_path / "features.csv"
     assert Path(ms1_metadata["native_table"]) == tmp_path / "native.csv"
     _, _, second = pipeline.run_project(project.root, settings)
