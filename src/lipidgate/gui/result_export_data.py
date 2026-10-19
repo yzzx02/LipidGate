@@ -8,6 +8,7 @@ from lipidgate.ms2.result_export import prepare_ms2_result_export_df
 from lipidgate.ms2.workbook_export import write_workbook
 from lipidgate.ms2.isotope_export import ISOTOPE_RESULT_COLUMNS, isotope_export_fields
 from lipidgate.feature_annotations import annotation_export_table
+from lipidgate.feature_areas import feature_area_table
 
 from .result_data import COLUMNS, ms1_feature_display, ms1_feature_description, ms1_evidence_display
 
@@ -57,36 +58,10 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
                           ("争议样本", "feature_ambiguous_samples"),
                           ("高置信差异数", "feature_conflict_count")):
         feature_table[title] = features.get(column, pd.Series("", index=features.index)).to_numpy()
-    # Keep the MS1 area matrix with its annotations. Orphan MS2 rows have no
-    # detected peak area; leave those cells empty rather than assigning signal.
-    area_columns = [column for column in features if str(column).lower().endswith(".mzml")]
-    for column in area_columns:
-        feature_table[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
-    if area_columns:
-        # Fill only the measured native peak's own sample. Raw precursor
-        # confirmation without a detected feature never creates an area.
-        local = features._native_feature.ne("") & features._aligned_feature.eq("")
-        measured = pd.Series(float("nan"), index=features.index)
-        for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
-            if column in features:
-                measured = measured.combine_first(pd.to_numeric(features[column], errors="coerce"))
-        for source in features.loc[local, "_source"].unique():
-            if not source or not str(source).lower().endswith(".mzml"):
-                continue
-            if source not in feature_table:
-                feature_table[source] = float("nan")
-                area_columns.append(source)
-            mask = local & features._source.eq(source)
-            values = pd.to_numeric(feature_table[source], errors="coerce").to_numpy(copy=True)
-            fill = mask.to_numpy() & pd.isna(values)
-            values[fill] = measured.to_numpy()[fill]
-            feature_table[source] = values
-    else:
-        for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
-            if column in features:
-                feature_table["Peak area"] = pd.to_numeric(features[column], errors="coerce").to_numpy()
-                area_columns = ["Peak area"]
-                break
+    areas = feature_area_table(features)
+    area_columns = list(areas)
+    for column in areas:
+        feature_table[column] = areas[column].to_numpy()
     has_area = feature_table[area_columns].notna().any(axis=1) if area_columns else pd.Series(False, index=feature_table.index)
     feature_table["面积状态"] = ["已有检测峰面积" if available else
                                ("检测峰未记录面积" if ms1_feature_display(row) in {"Linked", "Detected"}

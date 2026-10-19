@@ -57,6 +57,14 @@ An FA/NAE score and repeated precursor matches do not create class specificity.
   identified feature, with primary identification, Top2/Top3 columns, sample
   support and high-confidence difference metadata. Existing aligned area
   columns remain attached once to the feature.
+- Formal and browser exports share `feature_areas.py`. Without an area matrix,
+  `Peak area` retains the native peak's recorded area. Alongside a matrix, an
+  unaligned native peak fills only its own source sample's missing cell. Existing
+  matrix values, including zero, remain unchanged. Native area aliases
+  (`ms1_feature_area`, `intensity`, `Area`, `peak_area`, `into`) fall back per row;
+  source table loading uses the same alias registry. A finite measured area,
+  native peak ID and known source are required. Precursor confirmation without
+  a detected peak never supplies an area; no integration is recomputed.
 - `feature_candidates.csv` and Excel's “特征候选” sheet contain selected best
   annotation records and differences, without copied cross-sample areas.
 - `audit/evaluated.csv` retains every original evaluated candidate, including

@@ -15,6 +15,7 @@ from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
 from lipidgate.feature_annotations import CONSENSUS_LABELS, candidate_scopes, select_feature_annotations, spectrum_candidates
+from lipidgate.feature_areas import NATIVE_AREA_COLUMNS
 
 
 COLUMNS = [
@@ -495,7 +496,7 @@ class ResultBundle:
             # Unaligned native rows retain their detector areas even when the
             # same run also contains a cross-sample area matrix.
             quantitative = [column for column in native if str(column).lower().endswith(".mzml")
-                            or column in {"intensity", "Area", "peak_area", "into"}]
+                            or column in NATIVE_AREA_COLUMNS]
             local_native = native.loc[native._aligned_feature.eq("")] if aligned_features is not None else native
             if quantitative:
                 if local_native._key.duplicated().any():

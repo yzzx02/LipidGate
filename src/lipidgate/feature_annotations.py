@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from lipidgate.feature_areas import feature_area_table
+
 MAX_FEATURE_CANDIDATES = 3
 SELECTION_POLICY = "qualified_sample_top1_v2"
 SELECTION_COLUMNS = [
@@ -211,7 +213,7 @@ def feature_export_table(features, annotations):
         for title, column in (("Annotation", "matched_name"), ("Adduct", "adduct"),
                               ("Score", "final_score"), ("Confidence", "_confidence")):
             result[f"Top{rank} {title}"] = features._key.map(selected[column]).to_numpy()
-    for column in features:
-        if str(column).lower().endswith(".mzml"):
-            result[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
+    areas = feature_area_table(features)
+    for column in areas:
+        result[column] = areas[column].to_numpy()
     return result
