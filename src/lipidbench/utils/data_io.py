@@ -59,7 +59,7 @@ def load_asari_results(project_dir, output_dir=None, cleanup_project=True):
 def load_xcms_results(file_path):
     data = pd.read_csv(file_path, index_col=0)
     new_data = {}
-    sample_cols = [col for col in data.columns if col.endswith(".mzML")]
+    sample_cols = [col for col in data.columns if str(col).casefold().endswith(".mzml")]
     has_sn = "sn" in data.columns
     has_maxo = "maxo" in data.columns
     has_into = "into" in data.columns
@@ -68,11 +68,13 @@ def load_xcms_results(file_path):
         data[col] = data[col].fillna(0)
     for index, row in data.iterrows():
         entry = {
+            "alignment_uid": str(index),
             "mz": round(row["mzmed"], 4),
             "RTmin": round(row["rtmin"] / 60, 3),
             "RT": round(row["rtmed"] / 60, 3),
             "RTmax": round(row["rtmax"] / 60, 3),
             "npeaks": row["npeaks"],
+            "RT_unit": "minutes",
         }
         if has_sn:
             entry["sn"] = row["sn"]
@@ -109,6 +111,8 @@ def load_msdial_results(file_path, outputfile):
         "Symmetry": "Symmetry",
     }
     keep_cols = list(column_map.keys()) + sample_cols
+    if 'Fill %' in data:
+        keep_cols.append('Fill %')
     df = data[keep_cols].copy()
     df.rename(columns=column_map, inplace=True)
     df = normalize_feature_id(df, column="Feature_ID")

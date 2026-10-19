@@ -9,10 +9,13 @@ import numpy as np
 import pandas as pd
 
 from lipidgate.ms2.confidence import identification_confidence
+from lipidgate.ms2.scoring_policy import HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
 from lipidgate.ms2.aligned_ms2 import associate_ms2_with_alignment
 from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
+from lipidgate.feature_annotations import CONSENSUS_LABELS, candidate_scopes, select_feature_annotations, spectrum_candidates
+from lipidgate.feature_areas import NATIVE_AREA_COLUMNS, feature_fill_fraction, quantification_samples
 
 
 COLUMNS = [
@@ -24,8 +27,11 @@ COLUMNS = [
     ("Adduct", "adduct"),
     ("Score", "final_score"),
     ("Confidence", "_confidence"),
+    ("Top1 支持", "_top1_support"),
+    ("鉴定状态", "_annotation_status"),
     ("ECN", "_ecn"),
     ("MS1 Feature", "ms1_support_status"),
+    ("Fill %", "_fill_fraction"),
 ]
 FAMILIES = {
     "GP": "磷脂类 GP",
@@ -104,6 +110,38 @@ def ms1_feature_description(row):
     return description
 
 
+def hg_only_rejection_description(row):
+    """Explain the legacy HG rejection code using its saved peak evidence.
+
+    Keep the original gate flag, reason code and score unchanged. A fully
+    matched headgroup below the fallback intensity floor is not an absent HG.
+    Incomplete HG evidence must still retain its existing explanation.
+    """
+    if text(row.get("downgrade_reason")) != "missing_required_hg":
+        return ""
+    evidence = evidence_for(row)
+    if not evidence:
+        return ""
+    fragments = evidence.get("fragments", [])
+    headgroups = [f for f in fragments if f.get("role") == "headgroup"]
+    if not headgroups or any(not np.isfinite(number(f.get("observed_mz"))) for f in headgroups):
+        return ""
+    if any(f.get("role") == "chain" and np.isfinite(number(f.get("observed_mz"))) for f in fragments):
+        return ""
+    base = number(row.get("spectrum_base_peak_intensity"))
+    if not np.isfinite(base) or base <= 0:
+        base = max((number(p[1]) for p in evidence.get("spectrum", [])
+                    if len(p) >= 2 and np.isfinite(number(p[1]))), default=0.0)
+    if base <= 0:
+        return ""
+    relative = max((number(f.get("intensity")) / base for f in headgroups), default=0.0)
+    threshold = HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
+    if not np.isfinite(relative) or not 0 < relative < threshold:
+        return ""
+    return (f"头基峰已匹配（相对强度 {relative * 100:.2f}%），但无链证据；"
+            f"未达到仅头基备用门控的 {threshold * 100:g}% 强度要求")
+
+
 def confidence_description(row):
     """Explain the saved identification decision separately from quantitation."""
     confidence = text(row.get("_confidence")) or identification_confidence(row)
@@ -111,6 +149,9 @@ def confidence_description(row):
         return "High：分数达到 50，MS2 满足当前鉴定规则且有 MS1 前体证据；不代表已检出可积分的 MS1 特征"
     if number(row.get("final_score")) < 50:
         return "Low：鉴定分数低于 50"
+    hg_rejection = hg_only_rejection_description(row)
+    if hg_rejection:
+        return "Low：" + hg_rejection
     if text(row.get("downgrade_reason")) == "low_confidence_fah_only":
         return "Low：缺少该脂质类别要求的头基证据，保留为暂定鉴定；与 MS1 特征是否关联无关"
     if (text(row.get("resolution_level")).startswith("tentative_")
@@ -388,6 +429,10 @@ class ResultBundle:
     path: Path | None = None
     plot_paths: list[Path] = field(default_factory=list)
     notice: str = ""
+    ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
+    annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
+    audit_store: object = field(default=None, repr=False)
+    gap_filling_path: Path | None = None
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -405,17 +450,16 @@ class ResultBundle:
                 native_features.loc[seconds, "RT"] = pd.to_numeric(
                     native_features.loc[seconds, "RT"], errors="coerce"
                 ) / 60
-        representatives = (
-            candidates.sort_values(
-                ["_rank", "_score"], ascending=[True, False], kind="stable"
-            )
-            .drop_duplicates("_key")
-            .copy()
-        )
+        annotations = select_feature_annotations(candidates)
+        representatives = annotations.loc[annotations.feature_result_role.eq("representative")].drop_duplicates("_key").copy()
+        independent = annotations.loc[annotations.feature_result_role.isin(["fa_independent", "nae_independent"])
+                                      & ~annotations._key.isin(representatives._key)].drop_duplicates("_key")
+        representatives = pd.concat([representatives, independent], ignore_index=True)
         notice = "当前仅有鉴定记录；未提供完整 MS1 特征表，无法统计未鉴定特征。"
         if aligned_features is not None:
             aligned = aligned_features.copy()
             aligned["Aligned_Feature_ID"] = aligned["Feature_ID"]
+            aligned['_fill_fraction'] = feature_fill_fraction(aligned, native_features)
             sample_columns = [column for column in aligned if str(column).lower().endswith(".mzml")]
             aligned["_sample_count"] = (
                 aligned[sample_columns].apply(pd.to_numeric, errors="coerce").gt(0).sum(axis=1)
@@ -432,7 +476,7 @@ class ResultBundle:
                 aligned["_raw_rt_min"] = aligned["Feature_ID"].map(rt_summary["min"])
                 aligned["_raw_rt_max"] = aligned["Feature_ID"].map(rt_summary["max"])
             selected = representatives.set_index("_key", drop=False)
-            protected = {"_key", "_feature", "_aligned_feature", "_rt", "_mz", "Feature_ID", "mz", "RT", "RTmin", "RTmax"}
+            protected = {"_key", "_feature", "_aligned_feature", "_rt", "_mz", "Feature_ID", "mz", "RT", "RTmin", "RTmax", "_fill_fraction"}
             protected.update(sample_columns)
             mapped = {column: aligned["_key"].map(selected[column])
                       for column in selected if column not in protected}
@@ -455,7 +499,7 @@ class ResultBundle:
             # Unaligned native rows retain their detector areas even when the
             # same run also contains a cross-sample area matrix.
             quantitative = [column for column in native if str(column).lower().endswith(".mzml")
-                            or column in {"intensity", "Area", "peak_area", "into"}]
+                            or column in NATIVE_AREA_COLUMNS]
             local_native = native.loc[native._aligned_feature.eq("")] if aligned_features is not None else native
             if quantitative:
                 if local_native._key.duplicated().any():
@@ -481,8 +525,17 @@ class ResultBundle:
                     [representatives, native], ignore_index=True
                 )
             if aligned_features is None:
-                notice = "按原始 MS1 特征与已记录的 MS2 鉴定浏览；每个特征显示代表谱图的候选。"
+                notice = "按原始 MS1 特征与已记录的 MS2 鉴定浏览；主鉴定按合格 Top1 的支持样本数选择。"
         representatives = representatives.reset_index(drop=True)
+        if '_fill_fraction' not in representatives:
+            representatives['_fill_fraction'] = pd.to_numeric(
+                representatives.get('Fill %', pd.Series(np.nan, index=representatives.index)), errors='coerce')
+        samples = quantification_samples(aligned_features, native_features)
+        if native_features is not None and samples:
+            local = representatives._aligned_feature.eq('') & representatives._native_feature.ne('')
+            local &= representatives._key.isin(local_native._key)
+            representatives.loc[local, '_fill_fraction'] = 1. / len(samples)
+        representatives['_fill_fraction'] = representatives._fill_fraction.where(representatives._fill_fraction.between(0, 1))
         representatives["_identified"] = representatives["_identified"].eq(True)
         linked_counts = candidates.groupby("_key")["_spectrum"].nunique()
         linked_files = candidates.groupby("_key")["_source"].agg(
@@ -513,23 +566,72 @@ class ResultBundle:
         display_ids = display_feature_ids(representatives)
         representatives["_display_feature"] = representatives._key.map(display_ids)
         candidates["_display_feature"] = candidates._key.map(display_ids)
+        annotations["_display_feature"] = annotations._key.map(display_ids)
+        for column in ("feature_support_count", "feature_vote_sample_count", "feature_conflict_count"):
+            representatives[column] = pd.to_numeric(
+                representatives.get(column, pd.Series(0, index=representatives.index)), errors="coerce"
+            ).fillna(0).astype(int)
+        representatives["_top1_support"] = [
+            f"{support} / {total}" if total else "—"
+            for support, total in zip(representatives.feature_support_count, representatives.feature_vote_sample_count)
+        ]
+        representatives["_annotation_status"] = representatives.get(
+            "feature_consensus_status", pd.Series("", index=representatives.index)
+        ).map(CONSENSUS_LABELS).fillna("未鉴定")
+        differences = representatives.feature_conflict_count.gt(0)
+        representatives.loc[differences, "_annotation_status"] += (
+            "；差异 " + representatives.loc[differences, "feature_conflict_count"].astype(str)
+        )
         return cls(
-            candidates, representatives, Path(path) if path else None, notice=notice
+            candidates, representatives, Path(path) if path else None, notice=notice,
+            annotations=annotations,
         )
 
     def spectra(self, key):
-        return (self.candidates.loc[self.candidates._key.eq(key)]
-                .sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
-                .drop_duplicates("_spectrum"))
+        rows = (self.audit_store.rows(feature_keys=[key], anchors_only=True) if self.audit_store is not None
+                else self.candidates.loc[self.candidates._key.eq(key)].copy())
+        feature = self.features.loc[self.features._key.eq(key)]
+        chosen = feature.iloc[0]._spectrum if not feature.empty else ""
+        rows["_representative_first"] = rows._spectrum.eq(chosen)
+        rows["_scope_order"] = candidate_scopes(rows).map({"main": 0, "fa": 1, "nae": 2})
+        return (rows.sort_values(["_representative_first", "_scope_order", "_rank", "_score"],
+                                 ascending=[False, True, True, False], kind="stable")
+                .drop_duplicates("_spectrum").drop(columns=["_representative_first", "_scope_order"]))
 
     def candidate_rows(self, key, spectrum=None):
         feature = self.features.loc[self.features._key.eq(key)]
         if feature.empty:
             return self.candidates.iloc[:0]
+        explicit_audit = self.path is not None and self.path.parent.name == "audit"
+        if (spectrum is None and not explicit_audit) or spectrum == "__differences__":
+            rows = self.annotations.loc[self.annotations._key.eq(key)].copy()
+            differences = rows.feature_result_role.eq("sample_difference")
+            rows = rows.loc[differences if spectrum == "__differences__" else ~differences]
+            rows["_candidate_scope"] = candidate_scopes(rows)
+            rows["_display_rank"] = rows.groupby("_candidate_scope", sort=False).cumcount() + 1
+            return rows
         spectrum = spectrum or feature.iloc[0]["_spectrum"]
-        return self.candidates.loc[
-            self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)
-        ].sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
+        rows = (self.audit_store.rows(feature_keys=[key], spectrum=spectrum) if self.audit_store is not None
+                else self.candidates.loc[self.candidates._key.eq(key) & self.candidates._spectrum.eq(spectrum)])
+        if explicit_audit:
+            rows = rows.copy()
+            rows["_candidate_scope"] = candidate_scopes(rows)
+            return rows.sort_values(["_rank", "_score"], ascending=[True, False], kind="stable")
+        scopes = candidate_scopes(rows)
+        selected_groups = []
+        for scope in ("main", "fa", "nae"):
+            selected = spectrum_candidates(rows.loc[scopes.eq(scope)])
+            selected["_display_rank"] = range(1, len(selected) + 1)
+            selected["_candidate_scope"] = scope
+            selected_groups.append(selected)
+        return pd.concat(selected_groups, ignore_index=True)
+
+    def evidence_rows(self, feature_keys=None):
+        """Materialize full evidence only for an explicit detail/export request."""
+        if self.audit_store is not None:
+            return self.audit_store.rows(feature_keys=feature_keys)
+        return (self.candidates if feature_keys is None
+                else self.candidates.loc[self.candidates._key.isin(feature_keys)])
 
     def filter(
         self,
@@ -621,8 +723,11 @@ def _load_ms1_tables(run):
     table = table.rename(columns={key: value for key, value in sample_columns.items()
                                  if key == value or value not in table})
     native_path = ms1 / metadata["native_table"] if metadata.get("native_table") else table_path.with_name(table_path.stem + "_native.csv")
-    if algorithm == "pyopenms" and native_path.is_file():
-        return pd.read_csv(native_path, low_memory=False), table, algorithm
+    table.attrs['quantification_samples'] = metadata.get('quantification_samples', [])
+    if algorithm in {"pyopenms", "xcms"} and native_path.is_file():
+        native = pd.read_csv(native_path, low_memory=False)
+        native.attrs['quantification_samples'] = table.attrs['quantification_samples']
+        return native, table, algorithm
     if "source_file" in table and table.source_file.notna().any():
         return table, None, algorithm
     return None, table, algorithm
@@ -636,8 +741,13 @@ def load_result_bundle(path):
     if explicit_audit:
         audit = path
         base = base.parent
+    store = None
     if audit.exists():
-        data = pd.read_csv(audit, low_memory=False)
+        if explicit_audit:
+            data = pd.read_csv(audit, low_memory=False)
+        else:
+            from .result_store import AuditCandidateStore
+            store, data = AuditCandidateStore.read_csv(audit)
         if not explicit_audit and "RT_consistency_pass" in data:
             passed = data["RT_consistency_pass"].astype("string").str.casefold().eq("true").fillna(False)
             data = data.loc[passed].copy()
@@ -649,6 +759,33 @@ def load_result_bundle(path):
             data = pd.read_excel(book, sheet_name=sheet)
     else:
         data = pd.read_csv(path, low_memory=False)
+    try:
+        bundle = result_bundle_from_data(data, path)
+        if store is not None:
+            from .result_store import DETAIL_COLUMNS
+            store.bind(bundle.candidates)
+            bundle.annotations = store.hydrate(bundle.annotations)
+            bundle.candidates = bundle.annotations
+            bundle.features = bundle.features.drop(columns=list(DETAIL_COLUMNS), errors="ignore")
+            bundle.audit_store = store
+    except BaseException:
+        if store is not None:
+            store.close()
+        raise
+    if audit.exists():
+        prefix = (
+            "当前直接打开审计表，包含未通过分数或 ECN 筛选的候选；这些记录不是最终鉴定。"
+            if explicit_audit else
+            "主鉴定按合格 Top1 的支持样本数选择，每个样本最多一次；同名仅显示最佳记录，高置信差异单独提示。逐谱详情按需读取。"
+        )
+        bundle.notice = prefix + bundle.notice
+    return bundle
+
+
+def result_bundle_from_data(data, path, *, refresh_membership=True):
+    """Shared native membership and feature output for export and browsing."""
+    path = Path(path)
+    base = path.parent.parent if path.parent.name == "audit" else path.parent
     features, aligned_features, _ = _load_ms1_tables(base.parent)
     legacy_mapping = False
     if features is not None and aligned_features is not None:
@@ -684,18 +821,20 @@ def load_result_bundle(path):
             mz_da = float(mz_da) if mz_da is not None else None
         except (OSError, ValueError, KeyError, TypeError):
             pass
-    data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
+    if refresh_membership:
+        data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
+    from lipidgate.ms1.gap_filling_workflow import apply_saved_gap_filling
+    gap_path = base.parent/'ms1/gap_filling/gap_filling.csv'
+    bundle.features = apply_saved_gap_filling(bundle.features, gap_path)
+    bundle.gap_filling_path = gap_path if gap_path.is_file() else None
+    relations_path = base / "ion_relationships.csv"
+    if relations_path.is_file():
+        from lipidgate.ion_relationships import confirmed_ion_relationships
+        bundle.ion_relationships = confirmed_ion_relationships(pd.read_csv(relations_path, low_memory=False))
     if legacy_mapping:
         bundle.notice += " 旧运行没有保存精确对齐成员表，仅将唯一匹配的原始峰归入对齐行；重新分析可获得完整映射。"
-    if audit.exists():
-        prefix = (
-            "当前直接打开审计表，包含未通过分数或 ECN 筛选的候选；这些记录不是最终鉴定。"
-            if explicit_audit else
-            "仅显示通过本次分数与 ECN 筛选的逐谱候选；完整审计记录保存在 audit/evaluated.csv。"
-        )
-        bundle.notice = prefix + bundle.notice
     bundle.plot_paths = sorted((base / "plots").glob("*_ECN.png"))
     return bundle
 

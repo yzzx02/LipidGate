@@ -1,0 +1,65 @@
+{
+  "revision": "native_area_export_20261019",
+  "revision_date": "2026-10-19",
+  "preceding_revision": "feature_consensus_20261018",
+  "preceding_manifest": "library_revision_feature_consensus_20261018.json",
+  "base_source_commit": "deb9200cca6dde5e534342003664a42c627e0716",
+  "development_branch": "codex/project-review-gates-20261013",
+  "release_kind": "development source; published Windows executable not rebuilt",
+  "feature_selection_policy": "qualified_sample_top1_v2",
+  "product_code_sha256": "478ba92d9b187a88871fc44594c02b2ecfc85e6cce718eb2d28a72b0097a17a1",
+  "ms2_rules_sha256": "d557a69ffa74ea72724c63a3f6ac03d113499971763f45b6cbcf9e0f4f0bcfec",
+  "ms1_runtime_sha256": "67987017d845dc1ffb6f842177a2ccece4aefe4b515d35d491b778e69d3686a0",
+  "cache_version": 42,
+  "index_format": 3,
+  "source_files_sha256": {
+    "src/lipidgate/feature_areas.py": "9fbace1815b18f7cfce37e204e2b403266b7fa04a7dddf38d2a9fe02b016c1c2",
+    "src/lipidgate/feature_annotations.py": "d3b788d9c85921dd00473327d51aac038c901be5361ea5246407c63cca16648a",
+    "src/lipidgate/final_results.py": "9c6c35c1f57d3fb9c971a6f0831345d49cf68efa94b6d0918f0685183eeb39d2",
+    "src/lipidgate/gui/result_data.py": "3e0207bfbe283f502dd51d2362d4459887521d9d9a37cad22ec01498406a805a",
+    "src/lipidgate/gui/result_export_data.py": "5df672fa1b33310f218aacdc0fee486cf9bb434d9987e4b6a667377828c45aff"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893
+    }
+  },
+  "changes": {
+    "formal_and_browser_area_projection_shared": true,
+    "native_area_alias_registry_shared": true,
+    "native_only_peak_area_retained": true,
+    "unaligned_native_own_sample_area_retained": true,
+    "sparse_aliases_fall_back_per_row": true,
+    "existing_matrix_values_and_zero_preserved": true,
+    "precursor_confirmation_without_native_detection_never_supplies_area": true,
+    "main_table_one_row_per_feature": true,
+    "candidate_tables_do_not_duplicate_areas": true,
+    "original_scores_gates_confidence_and_membership_preserved": true,
+    "ms2_rules_changed": false,
+    "ms1_detector_runtime_changed": false,
+    "source_libraries_changed": false
+  },
+  "verification": {
+    "command": "python -m pytest -q --junitxml=.test_outputs/native_area_export_20261019/pytest.xml",
+    "tests_passed": 972,
+    "subtests_passed": 3118,
+    "tests": 4090,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "junit_sha256": "4c6448f93c900c70f43f3ad07f02029e46764ccfec641a2dd779c3792bededb9",
+    "new_area_regression_cases": 19,
+    "regression_scope": "Synthetic saved native tables through formal and GUI CSV/Excel exports; measured values are copied, not integrated.",
+    "repository_hygiene_problems": 0,
+    "independent_measured_accuracy_or_fdr_validation": false
+  }
+}

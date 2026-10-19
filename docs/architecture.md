@@ -29,7 +29,7 @@ Unsupported custom numeric inputs, custom searcher overrides, list-based custom
 libraries and absent/incompatible kernels use the Python path.
 
 Evidence gates, scores and ranking retain their original Python source. The
-build can compile eleven hot modules into C++ extensions with Cython 3.3.0.
+build can compile twelve hot modules into C++ extensions with Cython 3.3.0.
 Numeric inference and annotation typing are disabled, preserving Python/NumPy
 arithmetic and comparisons; fast-math/FMA contraction are disabled. Canonical
 module names, globals, types and logical source paths are retained. A verified
@@ -74,5 +74,15 @@ tables are not rewritten. See the [association rules](identification_display_and
 - `lipidbench/utils`: feature I/O, chromatographic separation and quantification.
 - `lipidgate/ms2`: library storage, evidence gates, ranking and association.
 - `lipidgate/ecn_filter`: optional RT models and audited retention decisions.
+
+Fragment routing belongs to `ms2/evidence_policy.py`; mandatory class gates and
+their shared evaluation belong to `ms2/gate_policy.py`. Generic and sphingolipid
+scorers consume those decisions, keeping numeric score calculation separate.
+Both gate coverage and resolution use the chain-position counter in
+`ms2/chain_utils.py`. See the [source review](repository_review.md).
+
+All index blocks and earlier record caches use `ms2/safe_pickle.py` to restrict
+decoding to the supported data types. Hash metadata records content identity;
+it is not a substitute for restricting executable serialization constructors.
 
 Release validation and fingerprints are in `config/release_v1.0.3.json`.

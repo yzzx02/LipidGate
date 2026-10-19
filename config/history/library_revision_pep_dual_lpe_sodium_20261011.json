@@ -1,0 +1,451 @@
+{
+  "revision": "pep_dual_gate_lpe_sodium_20261011",
+  "revision_kind": "evidence_gate_confidence_and_library_content",
+  "created_at_utc": "2026-10-11T11:26:53.704539+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "8379fe30112042e31481028428cdcacfad372c26",
+  "previous_library_revision_sha256": "66514745cd92a2549dd4517ebbbf0a4197fd626f91c273bb152fe445d4f09238",
+  "executable_status": "Source branch only; no executable built or published; previous release/library fingerprints retained",
+  "platform": "Windows x64",
+  "python": "3.13.5",
+  "product_code_sha256": "06f4a66919b08a6f7eb3c0fd0d851db216289a98e9b661aa72881026e9ebd599",
+  "ms1_runtime_sha256": "a3c1af33a17d49814b6edd325ded384aece8dc398b55f7b5baca0ca5d90a4a04",
+  "ms2_rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+  "library_cache_version": 39,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "fingerprint_scope": "Effective local code and native binaries; toolchain rebuilds can have different binary fingerprints",
+  "change_scope": {
+    "pep_positive_dual_gate": {
+      "adducts": [
+        "[M+H]+",
+        "[M+Na]+"
+      ],
+      "headgroup": "At least the existing HG threshold, minimum one",
+      "chain": "ceil(half of distinct theoretical chain-ion masses), counted by distinct matched experimental peaks",
+      "current_h_chain_ions": 2,
+      "current_h_required": 1,
+      "current_na_chain_ions": 4,
+      "current_na_required": 2,
+      "single_pool_fallback": false,
+      "common_and_precursor_do_not_count_as_chain": true,
+      "negative_pep_gates": "unchanged",
+      "weights": "H retains 20/60/20; Na retains 60/20/20 (HG/FAH/Other)"
+    },
+    "confidence": "Missing/insufficient chain, LCB or acyl evidence is Low in both exports and browsing; numerical scores and reasons retained; intentional lyso HG-only policies retain their separate eligibility",
+    "lpe_sodium": {
+      "added_compositions": 82,
+      "names": "Position-independent LPE(C:DB), no sn1/sn2 alternatives",
+      "ions": {
+        "HG": [
+          "NL43",
+          "NL141"
+        ],
+        "Other": [
+          "precursor",
+          "NL163",
+          "[H3PO4Na]+"
+        ]
+      },
+      "HG_minimum": 1,
+      "chain_gate": false,
+      "pool_weights": {
+        "HG": 75,
+        "FAH": 0,
+        "Other": 25
+      }
+    },
+    "ranking_and_intensity": "Definitions unchanged; removal of ineligible candidates and addition of LPE can change ranks"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1255616,
+      "normalized_records": 1268036,
+      "source_gzip_sha256": "36d9f7efdcda2615c5cd5d812d0029b48f10254c6977aabcd539091070cc2b76",
+      "source_gzip_bytes": 24067242,
+      "decompressed_source_sha256": "fbee8c93eea50b5c6d63b66023dbc032385514193b2dd808cb973fe1b8eddb07",
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "index_bytes": 60903424,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "previous_index_sha256": "73b4e295befbd1022d176dd981fc436bf8b79c60e740e0e7640682ac1a42a017"
+    },
+    "negative": {
+      "raw_source_records": 1084782,
+      "normalized_records": 1084782,
+      "source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "source_gzip_bytes": 39271037,
+      "decompressed_source_sha256": "4e725d85f66d5230fab3a6c6179ddc7d18a0022f32ea1dbb31db4c0c9f4955c7",
+      "index_sha256": "e32921a14c2ea96aaad6175cf04b5379074c4cfaa50fa7c407cd49062226e671",
+      "index_bytes": 60211200,
+      "generated_index_tracked_in_git": false,
+      "previous_source_gzip_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "previous_index_sha256": "9c5f9139ce399e2e3af61d4fdf343efddea319b85b63a6c4e5fa530b41da8bcf"
+    }
+  },
+  "verification": {
+    "tests_native": {
+      "passed": 867,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "passed_including_subtests": 3985,
+      "report_sha256": "76c72114cec338f9f4d84709b193555909c68b341de078b4c5156953eb5fc505"
+    },
+    "tests_python": {
+      "passed": 867,
+      "failed": 0,
+      "errors": 0,
+      "subtests_passed": 3118,
+      "passed_including_subtests": 3985,
+      "report_sha256": "06d2544bebd50274a358172e4f7b70a6a60671882f51f2aba130df1e9f0b3f6f"
+    },
+    "isolated_baseline": {
+      "status": "verified",
+      "mode": "before",
+      "input_scans": 325,
+      "output_candidate_rows": 230,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "73b4e295befbd1022d176dd981fc436bf8b79c60e740e0e7640682ac1a42a017",
+      "candidate_csv_sha256": "1bfc2e796c8ad05b0fc48f8d3a9efee40874568c701c8ef5bff9982a174961d7",
+      "code_sha256": "14638e44f8e21041b14a2b0a69694df35215db836715ceda9929f93d2743c859",
+      "policy_backend": {
+        "scoring": "D:\\lipid_benchmark_full_20260505_1453\\core_results\\20_pep_dual_gate_lpe_sodium_20261011\\scoring_before_dual.py",
+        "gate_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\gate_policy.py",
+        "resolution_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\resolution_policy.py",
+        "oxidized_fragment_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\oxidized_fragment_policy.py",
+        "chain_utils": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\chain_utils.py",
+        "matching": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\matching.py",
+        "record_facts": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\record_facts.py",
+        "indexed_library": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\indexed_library.py",
+        "ranking_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\ranking_policy.py",
+        "scoring_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\scoring_policy.py",
+        "search": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\search.py"
+      },
+      "seconds": 15.098515800000314,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "archived_baseline_identical": true,
+      "baseline_commit": "8379fe30112042e31481028428cdcacfad372c26",
+      "baseline_scoring_source_sha256": "58f3182e2e47e51da6e036067be26c65c5472af9665af4e774f029b8a5b9c205",
+      "baseline_confidence_source_sha256": "bb197c8a0e99f4055e43c9bbe0fbe62c69b0117abb9cccc80cf087eff8b664f5",
+      "fingerprint_scope": "code_sha256 is the workspace identity at replay; isolated baseline scoring/confidence source identities and Git node are pinned separately"
+    },
+    "native_paired_regression": {
+      "fingerprint_scope": "code_sha256 is the workspace identity at replay; isolated baseline scoring/confidence source identities and Git node are pinned separately",
+      "status": "verified",
+      "mode": "native",
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "code_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+      "policy_backend": {
+        "scoring": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\scoring.cp313-win_amd64.pyd",
+        "gate_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\gate_policy.cp313-win_amd64.pyd",
+        "resolution_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\resolution_policy.cp313-win_amd64.pyd",
+        "oxidized_fragment_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\oxidized_fragment_policy.cp313-win_amd64.pyd",
+        "chain_utils": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\chain_utils.cp313-win_amd64.pyd",
+        "matching": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\matching.cp313-win_amd64.pyd",
+        "record_facts": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\record_facts.cp313-win_amd64.pyd",
+        "indexed_library": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\indexed_library.cp313-win_amd64.pyd",
+        "ranking_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\ranking_policy.cp313-win_amd64.pyd",
+        "scoring_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\scoring_policy.cp313-win_amd64.pyd",
+        "search": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\native_backend\\policy\\search.cp313-win_amd64.pyd"
+      },
+      "seconds": 22.81777669999792,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "changed_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ],
+      "changed_non_pep_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ],
+      "top1_changed_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ]
+    },
+    "python_paired_regression": {
+      "fingerprint_scope": "code_sha256 is the workspace identity at replay; isolated baseline scoring/confidence source identities and Git node are pinned separately",
+      "status": "verified",
+      "mode": "python",
+      "input_scans": 325,
+      "output_candidate_rows": 234,
+      "input_sha256": "f0aa51d43820706947120873f5f51d9939a7bf1d4d516873905453a3d9a16075",
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "candidate_csv_sha256": "e7a5bbf71103a0bef5b0963907209e1cbf69c30fea84823c06611fd4c2e93270",
+      "code_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+      "policy_backend": {
+        "scoring": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\scoring.py",
+        "gate_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\gate_policy.py",
+        "resolution_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\resolution_policy.py",
+        "oxidized_fragment_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\oxidized_fragment_policy.py",
+        "chain_utils": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\chain_utils.py",
+        "matching": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\matching.py",
+        "record_facts": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\record_facts.py",
+        "indexed_library": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\indexed_library.py",
+        "ranking_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\ranking_policy.py",
+        "scoring_policy": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\scoring_policy.py",
+        "search": "D:\\Vscode Projects\\LipidGate\\src\\lipidgate\\ms2\\search.py"
+      },
+      "seconds": 23.472649800001818,
+      "metric_scope": "Fixed known-standard-associated queue; regression validation, not independent FDR",
+      "changed_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ],
+      "changed_non_pep_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ],
+      "top1_changed_scans": [
+        "scan_695",
+        "scan_784",
+        "scan_1838",
+        "scan_1927",
+        "scan_2578",
+        "scan_2662"
+      ]
+    },
+    "candidate_exports_identical": true,
+    "top1_candidate_row_summary": [
+      {
+        "version": "before",
+        "top1_candidate_rows": 209,
+        "correct_class_rows": 203,
+        "correct_sum_rows": 187,
+        "correct_chain_rows": 148,
+        "high_confidence_rows": 145
+      },
+      {
+        "version": "native",
+        "top1_candidate_rows": 213,
+        "correct_class_rows": 209,
+        "correct_sum_rows": 193,
+        "correct_chain_rows": 154,
+        "high_confidence_rows": 149
+      }
+    ],
+    "product_defaults": {
+      "parameters": {
+        "precursor_ppm": 5,
+        "fragment_ppm": 15,
+        "min_relative_intensity": 0.002,
+        "min_score": 50
+      },
+      "class_summaries": [
+        {
+          "truth_class": "PE",
+          "input_scans": 14,
+          "correct_top1_sum_and_adduct": 13,
+          "unannotated": 1
+        },
+        {
+          "truth_class": "PEP",
+          "input_scans": 6,
+          "correct_top1_sum_and_adduct": 3,
+          "unannotated": 3
+        },
+        {
+          "truth_class": "LPE",
+          "input_scans": 6,
+          "correct_top1_sum_and_adduct": 6,
+          "unannotated": 0
+        }
+      ],
+      "lpe_corrected": [
+        {
+          "scan_id": "scan_695",
+          "truth_name": "LPE 14:0",
+          "top1_correct": true,
+          "name": "LPE(14:0)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 2,
+          "other_matched": 3
+        },
+        {
+          "scan_id": "scan_784",
+          "truth_name": "LPE 14:0",
+          "top1_correct": true,
+          "name": "LPE(14:0)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 1,
+          "other_matched": 3
+        },
+        {
+          "scan_id": "scan_1838",
+          "truth_name": "LPE 18:1",
+          "top1_correct": true,
+          "name": "LPE(18:1)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 2,
+          "other_matched": 3
+        },
+        {
+          "scan_id": "scan_1927",
+          "truth_name": "LPE 18:1",
+          "top1_correct": true,
+          "name": "LPE(18:1)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 2,
+          "other_matched": 3
+        },
+        {
+          "scan_id": "scan_2578",
+          "truth_name": "LPE 18:0",
+          "top1_correct": true,
+          "name": "LPE(18:0)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 1,
+          "other_matched": 3
+        },
+        {
+          "scan_id": "scan_2662",
+          "truth_name": "LPE 18:0",
+          "top1_correct": true,
+          "name": "LPE(18:0)",
+          "score": 100.0,
+          "confidence": "高",
+          "hg_matched": 2,
+          "other_matched": 3
+        }
+      ],
+      "pep_target_audits": [
+        {
+          "scan_id": "scan_8849",
+          "name": "PE(P-18:0/22:6)",
+          "score": 97.9383,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 3,
+          "gate": true,
+          "charge_compatible": true
+        },
+        {
+          "scan_id": "scan_8932",
+          "name": "PE(P-18:0/22:6)",
+          "score": 21.0074,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 2,
+          "gate": true,
+          "charge_compatible": true
+        },
+        {
+          "scan_id": "scan_9092",
+          "name": "PE(P-18:0/20:4)",
+          "score": 86.8775,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 3,
+          "gate": true,
+          "charge_compatible": false
+        },
+        {
+          "scan_id": "scan_9181",
+          "name": "PE(P-18:0/20:4)",
+          "score": 87.0168,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 2,
+          "gate": true,
+          "charge_compatible": false
+        },
+        {
+          "scan_id": "scan_9750",
+          "name": "PE(P-18:0/18:1)",
+          "score": 98.5443,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 3,
+          "gate": true,
+          "charge_compatible": true
+        },
+        {
+          "scan_id": "scan_9750",
+          "name": "PE(P-18:1/18:0)",
+          "score": 79.6165,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 0,
+          "gate": false,
+          "charge_compatible": true
+        },
+        {
+          "scan_id": "scan_9835",
+          "name": "PE(P-18:0/18:1)",
+          "score": 97.9595,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 4,
+          "gate": true,
+          "charge_compatible": true
+        },
+        {
+          "scan_id": "scan_9835",
+          "name": "PE(P-18:1/18:0)",
+          "score": 80.0,
+          "required_chain_ions": 2,
+          "observed_chain_ions": 0,
+          "gate": false,
+          "charge_compatible": true
+        }
+      ],
+      "full_audit_outside_version_control": true,
+      "full_audit_sha256": "6b4048587217f0b617556259d8b6c5f7072740d462bd38c6bb87b310e2e0670d"
+    },
+    "evaluation_scope": "Fixed small standard-associated panel used to examine rules; regression validation, not an independent FDR estimate",
+    "curation": {
+      "preserved_records": 1255534,
+      "replaced_sodium_lpe_records": 0,
+      "added_sodium_lpe_records": 82,
+      "source_sha256": "deec76d6f8b52d7323cfa31cc7eeafdb4da8587a574955068fcf051d71ed519b",
+      "output_sha256": "36d9f7efdcda2615c5cd5d812d0029b48f10254c6977aabcd539091070cc2b76",
+      "fragments_per_record": 5,
+      "scope": "Position-independent LPE sodium only; other source blocks preserved verbatim",
+      "pool_counts": {
+        "HG": 2,
+        "FAH": 0,
+        "Other": 3
+      },
+      "pool_weights": {
+        "HG": 75,
+        "FAH": 0,
+        "Other": 25
+      }
+    },
+    "bounded_index_build": {
+      "seconds": 484.00209600000017,
+      "peak_rss_mib": 307.02734375,
+      "memory_strategy": "fresh streaming MSP normalization; exact hydroxy expansion; disk sort; verified 1024-record blocks"
+    }
+  },
+  "known_limitations": [
+    "Standard-associated spectra informed the rules; this is regression validation, not held-out FDR",
+    "Shared headgroups alone do not establish P/O ether selectivity or sn/double-bond positions",
+    "PE-P sodium scans 9092 and 9181 retain charge 4+ in mzML and are excluded by unchanged charge compatibility",
+    "Changing confidence for old tables does not rerun candidate eligibility; rerun the project to apply new PE-P gates and LPE content"
+  ]
+}

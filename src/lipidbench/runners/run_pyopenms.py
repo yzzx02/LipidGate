@@ -94,11 +94,23 @@ def align_features(feature_maps):
     aligner.setParameters(params)
     aligner.setReference(feature_maps[ref_index])
 
-    for feature_map in feature_maps[:ref_index] + feature_maps[ref_index + 1 :]:
+    mappings = []
+    for feature_map in feature_maps:
+        source = os.path.basename(feature_map.getMetaValue("spectra_data")[0].decode())
+        raw_times = [float(feature_map.getMetaValue(key)) for key in ("ms1_first_rt_sec", "ms1_last_rt_sec")]
         trafo = oms.TransformationDescription()
-        aligner.align(feature_map, trafo)
-        transformer = oms.MapAlignmentTransformer()
-        transformer.transformRetentionTimes(feature_map, trafo, True)
+        if feature_map is not feature_maps[ref_index]:
+            aligner.align(feature_map, trafo)
+            transformer = oms.MapAlignmentTransformer()
+            transformer.transformRetentionTimes(feature_map, trafo, True)
+        # Pose clustering returns a linear transform. Keep its inverse available
+        # over the actual acquisition, including samples missing a cohort peak.
+        if feature_map is not feature_maps[ref_index] and trafo.getModelType() != "linear":
+            raise ValueError("Unsupported OpenMS RT transform for gap filling")
+        for raw in raw_times:
+            aligned = raw if feature_map is feature_maps[ref_index] else trafo.apply(raw)
+            mappings.append(dict(source_file=source, raw_rt_sec=raw, aligned_rt_sec=aligned))
+    return mappings
 
 
 def _feature_rt_bounds(feature) -> tuple[float, float]:
@@ -379,6 +391,10 @@ def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000,
                                          min_peak_height=min_peak_height)
         feature_map.setUniqueIds()
         feature_map.setPrimaryMSRunPath([filename.encode()])
+        ms1_times = [s.getRT() for s in exp if s.getMSLevel() == 1]
+        if ms1_times:
+            feature_map.setMetaValue("ms1_first_rt_sec", float(min(ms1_times)))
+            feature_map.setMetaValue("ms1_last_rt_sec", float(max(ms1_times)))
         feature_maps.append(feature_map)
         native = single_feature_dataframe(feature_map, file.name)
         native['Feature_ID'] = f'S{len(feature_maps)}_' + native['Feature_ID'].astype(str)
@@ -400,7 +416,14 @@ def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000,
     if len(nonempty_maps) > 1:
         if progress is not None:
             progress("MS1 正在对齐特征…")
-        align_features(nonempty_maps)
+        rt_mapping = align_features(nonempty_maps)
+    else:
+        rt_mapping = [dict(source_file=os.path.basename(nonempty_maps[0].getMetaValue("spectra_data")[0].decode()),
+                           raw_rt_sec=float(nonempty_maps[0].getMetaValue(key)),
+                           aligned_rt_sec=float(nonempty_maps[0].getMetaValue(key)))
+                      for key in ("ms1_first_rt_sec", "ms1_last_rt_sec")]
+    pd.DataFrame(rt_mapping, columns=['source_file', 'raw_rt_sec', 'aligned_rt_sec']).to_csv(
+        Path(output_file).with_name(Path(output_file).stem + "_rt_mapping.csv"), index=False)
     group_features(nonempty_maps, output_file)
     return output_file
 

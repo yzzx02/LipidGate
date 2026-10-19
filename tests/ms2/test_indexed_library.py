@@ -98,7 +98,7 @@ def test_disk_search_preserves_pep_support_and_tie_order(tmp_path, monkeypatch):
     bank = tmp_path / "library.sqlite"
     write_library_index(bank, records, identity())
     monkeypatch.setattr(search_module, "load_library", lambda _: records)
-    options = dict(min_total_score=0, fragment_tolerance_da=None, fragment_tolerance_ppm=10)
+    options = dict(min_total_score=0, fragment_tolerance_da=None, fragment_tolerance_ppm=15)
     full = LipidMS2Searcher(tmp_path / "fixture.msp", **options)
     indexed = LipidMS2Searcher(bank, **options)
     spectrum = ExperimentalSpectrum("scan_3768", 750.5440323345842, 10.60465, "+", normalize_peaks([
@@ -108,8 +108,12 @@ def test_disk_search_preserves_pep_support_and_tie_order(tmp_path, monkeypatch):
     expected = full.score_spectrum(spectrum, top_n=3)
     actual = indexed.score_spectrum(spectrum, top_n=3)
     assert actual == expected
-    assert actual[0]["final_score"] == 70
-    assert actual[0]["downgrade_reason"] == "low_confidence_fah_only"
+    assert actual[0]["final_score"] == 87.8328
+    assert actual[0]["downgrade_reason"] == ""
+    # At 10 ppm the measured HG falls outside tolerance: the explicit PE-P
+    # dual gate must reject it identically in both storage paths.
+    full.fragment_tolerance_ppm = indexed.fragment_tolerance_ppm = 10
+    assert full.score_spectrum(spectrum, top_n=3) == indexed.score_spectrum(spectrum, top_n=3) == []
     full.close()
     indexed.close()
 

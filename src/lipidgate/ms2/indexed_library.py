@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from array import array
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 import json
 from itertools import accumulate
 import math
@@ -22,6 +22,7 @@ import tempfile
 import zlib
 
 from .models import FragmentRecord, LibraryRecord
+from . import safe_pickle
 
 
 INDEX_FORMAT_VERSION = 3
@@ -124,7 +125,7 @@ def _encode_block(records):
 
 
 def _decode_block(payload, metadata):
-    values = pickle.loads(zlib.decompress(payload))
+    values = safe_pickle.loads(zlib.decompress(payload))
     if metadata.get("record_encoding") == RECORD_ENCODING:
         templates, records, columns = values
         _column_offsets(columns)
@@ -144,7 +145,7 @@ class _RecordBlock:
     __slots__ = ("values", "records", "packed", "templates", "column_buffers", "numeric_view")
 
     def __init__(self, payload, metadata):
-        self.values = pickle.loads(zlib.decompress(payload))
+        self.values = safe_pickle.loads(zlib.decompress(payload))
         encoding = metadata.get("record_encoding")
         self.templates = None
         self.column_buffers = None
@@ -266,6 +267,90 @@ def write_library_index(path: Path, records: Sequence[LibraryRecord], identity: 
         if connection is not None:
             connection.close()
         temporary.unlink(missing_ok=True)
+
+
+def write_streaming_library_index(path: Path, records: Iterable[LibraryRecord], identity: dict) -> dict:
+    """Freshly parse/normalize records, sort on disk, and verify one block at a time.
+
+    Equal precursor masses retain input order exactly as in write_library_index.
+    This builder changes neither the runtime format nor the four-block cache.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=path.parent, prefix=path.stem + '_stage_') as directory:
+        stage = sqlite3.connect(Path(directory) / 'records.sqlite')
+        output = None
+        temporary = Path(directory) / 'verified.sqlite'
+        try:
+            stage.execute('PRAGMA journal_mode=OFF')
+            stage.execute('PRAGMA synchronous=OFF')
+            stage.execute('PRAGMA temp_store=FILE')
+            stage.execute(f'PRAGMA cache_size=-{SQL_CACHE_KIB}')
+            stage.execute('CREATE TABLE records (position INTEGER PRIMARY KEY, precursor REAL NOT NULL, payload BLOB NOT NULL)')
+            count = 0
+            classes, adducts = set(), set()
+            batch = []
+            for record in records:
+                classes.add(record.compound_class)
+                adducts.add(record.adduct)
+                batch.append((count, record.precursor_mz, pickle.dumps(_pack_record(record), protocol=5)))
+                count += 1
+                if len(batch) == BLOCK_SIZE:
+                    stage.executemany('INSERT INTO records VALUES (?, ?, ?)', batch)
+                    stage.commit()
+                    batch.clear()
+            if batch:
+                stage.executemany('INSERT INTO records VALUES (?, ?, ?)', batch)
+                stage.commit()
+                batch.clear()
+            stage.execute('CREATE INDEX mass_order ON records (precursor, position)')
+            stage.commit()
+            metadata = dict(identity, index_format=INDEX_FORMAT_VERSION, block_size=BLOCK_SIZE,
+                            record_encoding=RECORD_ENCODING, record_count=count,
+                            classes=sorted(classes), adducts=sorted(adducts))
+            class_ids = {value: index for index, value in enumerate(metadata['classes'])}
+            adduct_ids = {value: index for index, value in enumerate(metadata['adducts'])}
+            output = sqlite3.connect(temporary)
+            output.execute('PRAGMA journal_mode=OFF')
+            output.execute('PRAGMA synchronous=OFF')
+            output.execute(f'PRAGMA cache_size=-{SQL_CACHE_KIB}')
+            output.executescript(
+                'CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);'
+                'CREATE TABLE entries (ordinal INTEGER PRIMARY KEY, precursor REAL NOT NULL, '
+                'class_id INTEGER NOT NULL, adduct_id INTEGER NOT NULL);'
+                'CREATE TABLE blocks (block_id INTEGER PRIMARY KEY, payload BLOB NOT NULL);')
+            cursor = stage.execute('SELECT payload FROM records ORDER BY precursor, position')
+            verified = 0
+            while True:
+                rows = cursor.fetchmany(BLOCK_SIZE)
+                if not rows:
+                    break
+                block = [_unpack_record(safe_pickle.loads(row[0])) for row in rows]
+                payload = zlib.compress(_encode_block(block), level=6)
+                if _decode_block(payload, metadata) != block:
+                    raise ValueError(f'Library block {verified // BLOCK_SIZE} changed during serialization')
+                output.execute('INSERT INTO blocks VALUES (?, ?)', (verified // BLOCK_SIZE, payload))
+                output.executemany('INSERT INTO entries VALUES (?, ?, ?, ?)',
+                    ((verified + offset, r.precursor_mz, class_ids[r.compound_class], adduct_ids[r.adduct])
+                     for offset, r in enumerate(block)))
+                verified += len(block)
+            if verified != count:
+                raise ValueError('Streaming library index lost records')
+            output.execute("INSERT INTO metadata VALUES ('library', ?)", (json.dumps(metadata),))
+            output.commit()
+            if output.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise ValueError('Streaming library index failed integrity verification')
+            output.close()
+            output = None
+            stage.close()
+            stage = None
+            temporary.replace(path)
+            return metadata
+        finally:
+            if output is not None:
+                output.close()
+            if stage is not None:
+                stage.close()
 
 
 def repack_library_index(source: Path, destination: Path, identity: dict, *, expected_identity: dict) -> dict:

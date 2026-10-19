@@ -1,0 +1,159 @@
+{
+  "revision": "window_auc_20261019",
+  "revision_date": "2026-10-19",
+  "preceding_revision": "gap_filling_display_20261019",
+  "preceding_manifest": "library_revision_gap_filling_display_20261019.json",
+  "base_source_commit": "7768a06da0c293345fc196bc4df4661996779e4b",
+  "development_branch": "codex/project-review-gates-20261013",
+  "release_kind": "development source; published Windows executable not rebuilt",
+  "gap_filling_method": "feature_window_auc_v2",
+  "feature_selection_policy": "qualified_sample_top1_v2",
+  "product_code_sha256": "dc75a892e8f0462260858b569ad4fb1dffa92001836d41e04c749de4e98c75e3",
+  "ms2_rules_sha256": "d557a69ffa74ea72724c63a3f6ac03d113499971763f45b6cbcf9e0f4f0bcfec",
+  "ms1_runtime_sha256": "db1ce360550c3ef54500933a5246eaa1d67c5f6d2435e69d292b72eb6f13ec75",
+  "gap_filling_code_sha256": "6759e47999941db4730ea2d9c2d7088b22d3ffac6cdef082d9ed472bb94e8c25",
+  "cache_version": 42,
+  "index_format": 3,
+  "source_files_sha256": {
+    "src/lipidbench/runners/xcms.R": "d340ee4dc9372ca6aa0103fae00e0c550c6a55b3d7ab0fc908fd2779e322a843",
+    "src/lipidbench/utils/data_io.py": "6358876edddecb391768470eee7881e2b5e223d526022d92c4dbbd7d21383d75",
+    "src/lipidgate/feature_annotations.py": "a0e572b48d20e4a4555553f6b00c70d973a8bc76234a98b80a64c8fcbd958da4",
+    "src/lipidgate/feature_areas.py": "9931dc9a15c44dc3e2acd0f0dff95c920e5b1ea95dfd0c3a466dd1b33ebf9681",
+    "src/lipidgate/gui/app.py": "7bdb9d7ce81be0a3b18c769454e5ba22f9e446f106a785df1c364710b30832ea",
+    "src/lipidgate/gui/parameter_pages.py": "457800f3920aae511103e8739c0e0eee4fd01360fda7170a9a0c8646b8c28998",
+    "src/lipidgate/gui/result_browser.py": "8ce203fab6ea111de198743b772b0f5cce47e903617f5f87ba6305259eef3618",
+    "src/lipidgate/gui/result_data.py": "873bcb2dc7fba7424d8ed0d387cf5d4e53a1183c0f9cc8604525c8ea0dbd236a",
+    "src/lipidgate/ms1/gap_filling.py": "11552bbffffc5cd6f7f3235eb11087f0790fe3240f39b917e04a814f869d29e4",
+    "src/lipidgate/ms1/gap_filling_workflow.py": "439b9431178104ab606e7b081108a0a076a53ac69db12d523d7a057fb457981e",
+    "src/lipidgate/pipeline.py": "1de171d764c3b63d2812d1a54f1ea9db1f3e5a805a4d99257606971877a2602e"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893
+    }
+  },
+  "changes": {
+    "integration_window": "25th percentile of native left boundaries to 75th percentile of right boundaries on aligned RT; feature bounds or RT half-window fallback",
+    "raw_scan_integration": "trapezoids in actual seconds; no smoothed intensity or fabricated scans",
+    "requires_snr_fwhm_height_or_successful_redetection": false,
+    "missing_rt_mapping": "reference window with configured RT allowance",
+    "invalid_supplied_rt_mapping": "not filled",
+    "same_file_valley_and_native_peak_ownership_preserved": true,
+    "neighbor_ownership_prefers_measured_eic_apex": true,
+    "fill_fraction": "distinct native detected samples / total MS1 samples, on 0..1; computed before overlay",
+    "empty_ms1_sample_included_in_denominator": true,
+    "ms2_only_files_excluded_from_gap_filling": true,
+    "public_fill_sample_list_and_count": false,
+    "legacy_v1_audits_and_settings_reopen": true,
+    "ms2_votes_confidence_scores_gates_and_candidate_order_preserved": true,
+    "original_tables_and_raw_files_read_only": true,
+    "candidate_tables_do_not_duplicate_areas": true,
+    "ms2_rules_changed": false,
+    "source_libraries_changed": false
+  },
+  "verification": {
+    "command": "python -m pytest -q --junitxml=.test_outputs/window_auc_20261019/pytest.xml",
+    "tests_passed": 1068,
+    "subtests_passed": 3118,
+    "tests": 4186,
+    "gap_filling_cases": 86,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "c6e735691936d11dbabc6efb59f29dd5e50cd61d9fe99f0587d6c8bb6e719383",
+    "repository_hygiene_problems": 0,
+    "pyopenms_project_enabled_vs_disabled_preserves_ms2_decisions": true,
+    "gui_offscreen_settings_and_fill_fraction_rendered": true,
+    "xcms_comparison": {
+      "scope": "actual R/XCMS on synthetic centroid mzML; not real-sample performance/FDR",
+      "package_version": "4.8.0",
+      "filled_count": 3,
+      "windows_match": true,
+      "target_measured_area": 7361.968794107437,
+      "target_reference_area": 6820.32841086388,
+      "relative_difference": 0.07941558684781157,
+      "analytic_observed_window_area": 7369.441928217937,
+      "integration_difference": "XCMS uses intensity sum times nominal region width / scan intervals on adjusted RT; LipidGate uses trapezoids in actual raw seconds. ROI matches, areas are not bitwise equivalent.",
+      "raw_native_alignment_files_unchanged": true,
+      "report_sha256": "1707eb05b86d5f5f34078f047a98a5e0054e6cd76b40b08ea7f45418a7bbda43",
+      "validation_script_sha256": "8b1ff4cac10a47dfe58ef081dc5e214008b311abf7e6fe8356d07e9ff1d75658"
+    },
+    "real_masked_area_validation": {
+      "scope": "500 masked detected sample/feature cells in 11 real centroid mzML files; not standards-based truth or FDR",
+      "samples": 11,
+      "masked_cells": 500,
+      "seed": 20261019,
+      "feature_rows_before_subsetting": 118209,
+      "native_rows": 272115,
+      "overall": {
+        "total": 500,
+        "recovered": 428,
+        "median_area_ratio": 0.8486880738409064,
+        "median_absolute_relative_error": 0.28734927008236744,
+        "within_20pct": 169,
+        "within_50pct": 282,
+        "area_ratio_q10": 0.2332692392575389,
+        "area_ratio_q90": 1.2800742149606323,
+        "apex_error_median_sec": 0.9930480000000186,
+        "reasons": {
+          "raw_ms1_window_integral": 428,
+          "native_peak_already_assigned": 41,
+          "ambiguous_local_peaks": 30,
+          "acquisition_gap": 1
+        }
+      },
+      "strata": {
+        "eic_local_valley": {
+          "total": 243,
+          "recovered": 219,
+          "median_area_ratio": 0.9063647040467933,
+          "median_absolute_relative_error": 0.14733069305843138,
+          "within_20pct": 122,
+          "within_50pct": 170,
+          "area_ratio_q10": 0.32713134490737816,
+          "area_ratio_q90": 1.0000000529097661,
+          "apex_error_median_sec": 0.9856260000000017,
+          "reasons": {
+            "raw_ms1_window_integral": 219,
+            "native_peak_already_assigned": 12,
+            "ambiguous_local_peaks": 12
+          }
+        },
+        "unresolved_detector_bounds": {
+          "total": 257,
+          "recovered": 209,
+          "median_area_ratio": 0.7626280023925952,
+          "median_absolute_relative_error": 0.46509416571824913,
+          "within_20pct": 47,
+          "within_50pct": 112,
+          "area_ratio_q10": 0.15613821412957346,
+          "area_ratio_q90": 1.731693736967033,
+          "apex_error_median_sec": 0.995261999999979,
+          "reasons": {
+            "raw_ms1_window_integral": 209,
+            "native_peak_already_assigned": 29,
+            "ambiguous_local_peaks": 18,
+            "acquisition_gap": 1
+          }
+        }
+      },
+      "original_files_unchanged": true,
+      "includes_unresolved_detector_areas_with_different_quantification_method": true,
+      "ground_truth_for_naturally_missing_cells": false,
+      "validates_fdr": false,
+      "report_sha256": "58a222ae5f7f23718b6556c5e64fe2e9156a47214af273b75ecd202312139451",
+      "comparison_csv_sha256": "e27298214f931c19a27a280ef1fd061af5661c15f8377c9eee9614ed50ea02a7",
+      "validation_script_sha256": "2ce8270ff57158f5cab5b0a36219765784e2f93696cf479f6dc56113511b5be9"
+    },
+    "raw_samples_and_research_outputs_excluded_from_version_control": true
+  }
+}

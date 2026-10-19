@@ -548,6 +548,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "algo": f.algo.currentText(),
                 "params": f._feature_params(f.algo.currentText()),
                 "msdial_table": f.msdial_table.text() or None,
+                "gap_filling": dict(enabled=f.gap_enabled.isChecked(), mz_ppm=f.gap_ppm.value(),
+                                    rt_tolerance_sec=f.gap_rt.value()),
             },
             "ms2": {
                 "mode": m._mode_value(),
@@ -600,6 +602,10 @@ class MainWindow(QtWidgets.QMainWindow):
         f.ms1_min_fraction.setValue(p.get("minFraction", 0.2))
         f.ms1_min_samples.setValue(p.get("minSamples", p.get("min_samples", 1)) or 1)
         f.msdial_table.setText(a.get("msdial_table") or "")
+        gap = a.get('gap_filling', {})
+        f.gap_enabled.setChecked(gap.get('enabled', True))
+        f.gap_ppm.setValue(gap.get('mz_ppm', 5))
+        f.gap_rt.setValue(gap.get('rt_tolerance_sec', 10))
         m.mode.setCurrentIndex(m.mode.findData(b.get("mode", "negative")))
         m._on_mode_changed()
         saved_library = b.get("library_path")

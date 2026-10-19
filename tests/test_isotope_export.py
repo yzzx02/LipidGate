@@ -163,7 +163,7 @@ def test_browser_export_enriches_feature_table_without_changing_scores_or_areas(
     pd.testing.assert_frame_equal(bundle.candidates, before)
 
 
-def test_browser_exports_only_the_ranked_representatives_isotope_window(tmp_path):
+def test_browser_exports_the_best_same_name_records_own_isotope_window(tmp_path):
     from lipidgate.gui.result_data import ResultBundle
     from lipidgate.gui.result_export_data import export_browser_results
 
@@ -180,14 +180,17 @@ def test_browser_exports_only_the_ranked_representatives_isotope_window(tmp_path
     bundle = ResultBundle.from_frames(rows, path=tmp_path / "results.csv")
     before = bundle.candidates.copy(deep=True)
     before_features = bundle.features.copy(deep=True)
-    assert bundle.features.scan_id.tolist() == ["scan_6"]
+    # Feature presentation retains this identity's best complete record. The
+    # original rank 2 stays intact, and its own survey must supply isotopes.
+    assert bundle.features.scan_id.tolist() == ["scan_4"]
+    assert bundle.features.result_rank.tolist() == [2]
     export_browser_results(bundle, tmp_path / "exports", xlsx=False)
     exported = pd.read_csv(tmp_path / "exports/feature_results.csv")
     evidence = pd.read_csv(tmp_path / "exports/spectrum_evidence.csv")
     assert len(exported) == 1 and len(evidence) == 3
-    assert exported.iloc[0]["同位素"] == "500.000000:100.00%; 501.003355:88.89%"
-    assert exported.iloc[0]["同位素 MS1 RT (min)"] == pytest.approx(62 / 60)
-    assert exported.iloc[0].Score == 95
+    assert exported.iloc[0]["同位素"] == "500.000000:100.00%; 501.003355:60.00%"
+    assert exported.iloc[0]["同位素 MS1 RT (min)"] == pytest.approx(60 / 60)
+    assert exported.iloc[0].Score == 99
     assert evidence.final_score.tolist() == [80, 95, 99]
     pd.testing.assert_frame_equal(bundle.candidates, before)
     pd.testing.assert_frame_equal(bundle.features, before_features)

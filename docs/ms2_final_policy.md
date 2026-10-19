@@ -5,12 +5,19 @@ new benchmark explicitly justifies a change.
 
 ## Module boundaries
 
-- `chain_utils.py`: chain-token parsing and repeated-chain multiplicity.
-- `gate_policy.py`: class-specific pass/fail evidence gates.
+- `chain_utils.py`: chain-token parsing, repeated-chain multiplicity and the
+  shared evidence-position counter.
+- `evidence_policy.py`: fragment routing and read-only counts, shared by gates
+  and scorers; no score bonuses or admission decisions.
+- `gate_policy.py`: generic and sphingolipid pass/fail evidence gates, required
+  groups and documented tentative admission exceptions.
 - `resolution_policy.py`: chain-level versus molecular-species-level decisions.
 - `scoring.py` and `scoring_policy.py`: evidence-pool scores and score constants.
 - `ranking_policy.py`: Top1 tie handling and effective fragment counts.
 - `library_fragment_policy.py`: runtime normalization of curated library fragments.
+- `nae_precursor.py`: explicit single-precursor NAE import definitions.
+- `positive_single_chain_h.py`: protonated MG/single-acyl NAGly fragment
+  definitions and the single-chain NAGly HG admission/resolution policy.
 - `search.py`: spectrum orchestration, shared-peak iteration, and result export.
 - `record_facts.py`: reuse read-only record facts during one candidate score;
   discard the cache on return or error, without changing gates or scores.
@@ -18,6 +25,60 @@ new benchmark explicitly justifies a change.
 Library parsing must not contain class-specific scoring or ranking decisions.
 Passing a gate must not itself award a high score, and a high score must not
 bypass a required gate.
+
+## Protonated MG and single-acyl NAGly (2026-10-13 revision)
+
+- Add each class only for `[M+H]+`, on the 77 existing single-chain whitelist
+  entries in `config/single_chain_whitelist.csv`, intersected with C10–C26 and
+  DB0–6. Do not enumerate the full rectangular grid or add 2:0 records.
+- MG HG is `[M+H-H2O]+`, canonically labelled `[M-H2O+H]+`. It is mandatory.
+  Other contains `[M+H-92]+` (loss of C3H8O3, 92.0473441 Da) and precursor.
+- Single-acyl NAGly HG contains `[C2H6NO2]+` (76.0393049) and
+  `[M+H-C2H5NO2]+` (75.0320284 Da loss). At least one must match. Other contains
+  dehydration and precursor. The legacy two-chain signature requirement does
+  not apply to the new single-acyl records.
+- Both definitions use HG/Other 75/25. Gate completion and numeric score remain
+  separate requirements. Precursor metadata must still meet its tolerance.
+- Normalize explicit imports to these same fragment definitions. Preserve
+  existing ammoniated MG, legacy two-chain NAGly and other classes unchanged.
+- Research accounting retains all measured standard spectra. For protonated
+  MG/NAGly, a missing correct annotation counts as a spectrum-level failure,
+  including standards outside the declared whitelist. Keep those misses
+  separate from wrong returned annotations in the audit; do not assign them
+  invented scores or spectra.
+
+## Fixed-core sterol esters and NAE (2026-10-12 revision)
+
+- Bundled BRSE fixes the sterol core at 28:2 (brassicasterol, C28H46O);
+  CASE fixes it at 28:1 (campesterol, C28H48O). Each enumerates only the
+  esterified C10–C26/DB0–6 acid, with 119 inclusive compositions per class.
+  Neutral ester formulas subtract H2O from sterol plus acid. `[M+NH4]+`
+  precursors and `[sterol-H2O+H]+` products include the ionic mass correction;
+  sterol product m/z values are 381.3516 and 383.3672. The established sterol
+  Diagnostic_FA/precursor pool policy remains unchanged.
+- Positive and negative NAE use exactly one theoretical peak: the current
+  adduct precursor at the record's precursor m/z. Legacy MSP and Excel imports
+  apply the same explicit definition. Remove 62.0606 and all other NAE peaks.
+- NAE requires both precursor metadata within precursor tolerance and a
+  retained measured MS2 peak within fragment tolerance. Metadata alone earns
+  zero. A hit earns exactly 100, without intensity saturation; no hit earns
+  zero and fails the precursor gate. NAE uses its own `nae` ranking scope,
+  with `counts_toward_topn=False`, independently of both main and FA results.
+  It neither suppresses a main candidate nor takes a main Top3 slot. Feature
+  selection, GUI ranks and exported result types preserve this separation.
+- Primary annotation error rates use only the main ranking scope. Independent
+  NAE precursor candidates are recorded separately, like FA; their presence
+  cannot change a Cer primary assignment into a primary annotation error.
+- The NAE score denotes completion of its one-ion evidence policy, not class
+  specificity or an automatic High confidence assignment. The existing MS1
+  evidence and confidence policy continues to apply. Ordinary FA intensity
+  scoring and all PE evidence gates, weights and scores remain unchanged.
+- Curator: `scripts/rebuild_sterol_nae_library.py`. Revision fingerprints:
+  `config/history/library_revision_sterol_nae_20261012.json`. Old release manifests
+  and the preceding FA-only fingerprints remain historical checkpoints.
+
+Sterol nomenclature follows the
+[MS-DIAL nomenclature table](https://systemsomicslab.github.io/compms/msdial/lipidnomenclature_v1.html).
 
 ## Storage and search optimization invariants
 
@@ -37,12 +98,92 @@ unchanged normalization. It verifies every record and precursor entry, retains
 the source index/code identities, and replaces the output atomically. Library
 content or normalization changes require a fresh parse and regression checks.
 
+## Bundled FA coverage
+
+The 2026-10-12 source-library coverage policy restricts `CompoundClass: FA`
+to chain double-bond counts <= 12, including 12. The explicit curator removes
+703 records (13 through 49 double bonds) and retains 557. It verifies retained
+MSP blocks without changing definitions or order and requires a fresh source
+parse, index build and library fingerprint. This source curation does not
+change FA precursor-only scoring or candidate eligibility at runtime.
+
 ## Positive PE-P supporting evidence
 
 Positive PE-P [M+H]+ Other retains only precursor and the P-chain-dependent
 Common support ion (P-18:0: 294.3155). RCO acylium support is excluded. Chain
-and headgroup pools keep their existing gates and intensity-aware weights;
-missing headgroup rescue stays Low regardless of feature-group membership.
+and headgroup pools retain their intensity-aware weights. Positive PE-P
+requires both HG and at least half of its distinct theoretical chain ions
+(rounded up): the current protonated two-chain-ion template requires one.
+Neither HG-only nor chain-only fallback bypasses this dual gate. Common
+support and precursor peaks do not count as chain evidence.
+
+## Positive diacyl PE sodium
+
+PE `[M+Na]+` adds the existing diacyl PE chain grid. HG requires NL43 and NL141;
+both must match, with no FAH-only or missing-HG fallback. Protonated PE keeps
+its own HG rules. Other contains NL163, the 164.0083 sodium phosphoethanolamine ion,
+precursor as ordinary support. Each distinct chain's RCO+ is now `FA_Frag`
+and belongs to FAH. RCO+ and the sodium acyl-loss ions are chain evidence.
+Symmetric PE sodium counts its matching repeated-chain ion as two chain
+positions, satisfying the confirmation gate without duplicating the actual
+peak or its intensity. Unequal chains still need two physical chain peaks;
+multiple peaks covering one unequal chain keep their coverage warning.
+Other retains its existing three-observation saturation and 20-point cap.
+FAH contains RCO+, direct fatty-acid losses and their additional NL43
+channels, annotated with each distinct acyl composition. HG/FAH/Other remain
+60/20/20, with unchanged intensity quality and score calculation. Sodium acyl-loss
+labels count as chain evidence only for this class/adduct. Equal chains do not
+create duplicate physical ions. PE-P sodium is not inferred from this diacyl
+template; see [references and limitations](pe_sodium_fragments.md).
+Secondary sodium PE candidates use the same confirmed chain gate and existing
+headgroup/intensity requirements instead of demanding all alternative loss
+templates. A fully confirmed PE H/Na candidate excludes failed-chain tentative
+PE in the competing adduct from primary competition, without score bonuses.
+Fingerprints: `config/history/library_revision_pe_na_hg_chain_20261012.json`.
+
+## Positive PE-P sodium
+
+PE-P `[M+Na]+` uses a separate nine-ion, formula-balanced template on the
+existing PE-P protonated composition grid. HG contains NL43 and NL141;
+Other contains precursor, NL163 and `[H3PO4Na]+` (120.9661). FAH contains
+NL43 plus sn-2 ketene loss, NL43 plus the whole vinyl-chain composition,
+dehydrated sodium PE headgroup plus the whole vinyl-chain composition,
+and sodium fatty-acid plus neutral PE headgroup loss. No RCO acylium or
+sn-1 fatty-acid loss is added. Labels describe net compositions rather than
+proving a unique sequence of elementary reactions.
+
+PE-P `[M+Na]+` HG/FAH/Other weights are **60/20/20**. Other PE-P adducts
+retain their existing weights. Both HG and at least half of the distinct
+chain ions must match: the four-ion sodium template requires **two** chain
+ions. Duplicate labels or repeated matches to one experimental peak do not
+provide an extra chain observation. No positive PE-P single-pool fallback
+is allowed, regardless of score. Intensity-quality functions and ranking
+policy remain unchanged; removing ineligible candidates can change ranks.
+Shared headgroups do not independently establish a vinyl ether; the
+standard-associated validation is not an independent P/O discrimination
+test or a calibrated FDR experiment. See
+[mass assignments and measured scope](pe_plasmalogen_sodium_fragmentation.md).
+
+## Positive LPE sodium
+
+LPE `[M+Na]+` adds 82 distinct acyl compositions from the existing protonated
+LPE grid. Names are position-independent (`LPE(18:1)`); sn1/sn2 source
+alternatives produce one sodium record. HG contains NL43 and NL141 and
+requires at least one match. Other contains precursor, NL163 and
+`[H3PO4Na]+` (120.9661). HG/Other weights are **75/25**, with no FAH pool
+or chain gate. The accepted resolution is species level and never claims
+an sn position. See [mass assignments and regression](lpe_sodium_fragments.md).
+
+## Confidence and missing chain evidence
+
+Missing or insufficient chain evidence is Low even if the numerical score
+is high, required gates passed, or raw MS1 confirms the precursor. This
+includes missing LCB/acyl evidence and is applied by both result export and
+result browsing, including older stored results. Scores and audit reasons
+are retained. Positive PE-P without its dual evidence fails eligibility.
+HG-only lyso policies such as LPE sodium are an explicit exception: their
+accepted species-level identity does not claim multiple resolved chains
+or an sn position. They still require their HG gate, score and MS1 evidence.
 
 ## Locked glyceride rules
 

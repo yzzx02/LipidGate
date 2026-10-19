@@ -14,9 +14,6 @@ import sys
 import sysconfig
 
 
-MODULES = ("scoring", "gate_policy", "resolution_policy", "oxidized_fragment_policy",
-           "chain_utils", "matching", "record_facts", "indexed_library", "ranking_policy",
-           "scoring_policy", "search")
 DIRECTIVES = dict(language_level=3, annotation_typing=False, infer_types=False, cdivision=False,
                   boundscheck=True, wraparound=True, initializedcheck=True, nonecheck=True,
                   overflowcheck=True, binding=True)
@@ -24,6 +21,9 @@ DIRECTIVES = dict(language_level=3, annotation_typing=False, infer_types=False, 
 
 def ensure_policy(root: Path, compiler: str | None = None, *, force=False) -> Path:
     root = Path(root).resolve()
+    sys.path.insert(0, str(root / "src"))
+    from lipidgate.ms2.native_policy import POLICY_MODULES
+
     source_dir = root / "src/lipidgate/ms2"
     output = source_dir / "native_backend/policy"
     output.mkdir(parents=True, exist_ok=True)
@@ -32,14 +32,14 @@ def ensure_policy(root: Path, compiler: str | None = None, *, force=False) -> Pa
         prior = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         prior = {}
-    sources = {name: hashlib.sha256((source_dir / (name + ".py")).read_bytes()).hexdigest() for name in MODULES}
+    sources = {name: hashlib.sha256((source_dir / (name + ".py")).read_bytes()).hexdigest() for name in POLICY_MODULES}
     platform_identity = dict(python_abi=list(sys.version_info[:2]), platform=sys.platform, machine=platform.machine())
     flags = ["-std=c++17", "-O3", "-shared", "-ffp-contract=off", "-fno-fast-math", "-fno-strict-aliasing", "-fwrapv"]
     flags += ["-static-libgcc", "-static-libstdc++"] if sys.platform == "win32" else ["-fPIC"]
     if sys.platform == "darwin":
         flags += ["-undefined", "dynamic_lookup"]
     reused = {}
-    for name in MODULES:
+    for name in POLICY_MODULES:
         item = prior.get("modules", {}).get(name, {})
         binary = output / (name + sysconfig.get_config_var("EXT_SUFFIX"))
         if (not force and not compiler and prior.get("cython") == "3.3.0"
@@ -48,7 +48,7 @@ def ensure_policy(root: Path, compiler: str | None = None, *, force=False) -> Pa
                 and item.get("source_sha256") == sources[name] and binary.is_file()
                 and item.get("binary_sha256") == hashlib.sha256(binary.read_bytes()).hexdigest()):
             reused[name] = item
-    if len(reused) == len(MODULES):
+    if len(reused) == len(POLICY_MODULES):
         return output
     if not importlib.util.find_spec("Cython"):
         tooling = root / "build/native_toolchain"
@@ -71,7 +71,7 @@ def ensure_policy(root: Path, compiler: str | None = None, *, force=False) -> Pa
     generated.mkdir(parents=True, exist_ok=True)
     manifest = dict(platform_identity, cython=__version__, directives=DIRECTIVES, flags=flags,
                     compiler=subprocess.check_output([compiler, "--version"], text=True).splitlines()[0], modules=reused)
-    for name in MODULES:
+    for name in POLICY_MODULES:
         if name in reused:
             continue
         source, cpp = source_dir / (name + ".py"), generated / (name + ".cpp")

@@ -9,6 +9,7 @@ from .chain_utils import (
     FRAGMENT_CHAIN_TOKEN_RE,
     canonical_chain_token,
     chain_token_multiplicity,
+    count_chain_evidence,
     extract_chain_tokens,
     extract_fragment_chain_token,
 )
@@ -67,6 +68,13 @@ _POSITIVE_PC_CHAIN_LOSS_RULE = FragmentEvidenceRule(
 )
 _POSITIVE_PC_SODIUM_LOSS_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA_Loss"}), r"^\[M\+NA-(?:59-)?(?:NA)?FA\]\+\(",
+)
+_POSITIVE_PE_SODIUM_LOSS_RULE = FragmentEvidenceRule(
+    frozenset({"Diagnostic_FA_Loss"}), r"^\[M\+NA-(?:43-)?R(?:[12])?COOH\]\+\(",
+)
+_POSITIVE_PE_SODIUM_PROFILE = ChainEvidenceProfile(
+    name="positive_pe_sodium", class_keys=frozenset({"PE"}), polarity="+",
+    evidence_rules=(_RCO_RULE, _POSITIVE_PE_SODIUM_LOSS_RULE), required_coverage="infer_remaining_chain",
 )
 _POSITIVE_PC_P_VINYL_LOSS_RULE = FragmentEvidenceRule(
     frozenset({"Diagnostic_FA_Loss"}), r"^\[M-\(RCH2=CH-OH\)\+H\]\+\(P-",
@@ -169,6 +177,8 @@ def record_polarity(record: LibraryRecord) -> str:
 
 def get_chain_evidence_profile(record: LibraryRecord) -> ChainEvidenceProfile | None:
     class_key = normalized_class_key(record.compound_class)
+    if class_key == "PE" and str(record.adduct).strip() == "[M+Na]+":
+        return _POSITIVE_PE_SODIUM_PROFILE
     polarity = record_polarity(record)
     return next(
         (
@@ -217,6 +227,13 @@ def positive_phospholipid_chain_resolution(
         float(match.experimental_peak.mz)
         for match in chain_matches
     }
+    # Symmetric PE sodium carries two identical chain positions. One matching
+    # chain ion covers both, without duplicating its measured peak/intensity.
+    if (normalized_class_key(record.compound_class) == "PE"
+            and str(record.adduct).strip() == "[M+Na]+"
+            and len(expected) == 1 and expected.issubset(observed)
+            and chain_evidence_count(record, matches) >= 2):
+        return "chain_level", ""
     if len(peaks) < 2:
         return "tentative_species_level", PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON
     if len(expected.intersection(observed)) < 2 or not expected.issubset(observed):
@@ -233,22 +250,7 @@ def chain_evidence_count(
     record: LibraryRecord,
     fragments_or_matches: Sequence[FragmentRecord | FragmentMatch],
 ) -> int:
-    multiplicity = chain_token_multiplicity(record)
-    matched_tokens: set[str] = set()
-    unassigned = 0
-    for item in fragments_or_matches:
-        fragment = item.fragment if isinstance(item, FragmentMatch) else item
-        if not fragment_is_chain_evidence(record, fragment):
-            continue
-        token = extract_fragment_chain_token(fragment)
-        if token is not None and token in multiplicity:
-            matched_tokens.add(token)
-        else:
-            unassigned += 1
-    if not multiplicity:
-        return len(matched_tokens) + unassigned
-    count = sum(multiplicity[token] for token in matched_tokens) + unassigned
-    return min(count, sum(multiplicity.values()))
+    return count_chain_evidence(record, fragments_or_matches, fragment_is_chain_evidence)
 
 
 def required_chain_evidence_hits(record: LibraryRecord, profile: ChainEvidenceProfile) -> int:

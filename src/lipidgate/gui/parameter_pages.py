@@ -140,6 +140,22 @@ class FeaturePage(QtWidgets.QWidget):
         grid.addWidget(self.max_width_field, 0, 1)
         cards.addWidget(widths)
 
+        gap, grid = self._card("缺失峰面积补齐")
+        self.gap_enabled = QtWidgets.QCheckBox("启用 Gap filling")
+        self.gap_enabled.setChecked(True)
+        self.gap_enabled.setToolTip("对齐后按对应 m/z、RT 窗口积分缺失面积，无需再次通过找峰检查。补峰不增加鉴定支持样本数。")
+        grid.addWidget(self.gap_enabled, 0, 0, 1, 2)
+        self.gap_ppm = number(5, 0.1, 1000)
+        self.gap_rt = number(10, 0.1, 300)
+        for widget in (self.gap_ppm, self.gap_rt):
+            widget.setFixedSize(200, 40)
+            widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+            self.gap_enabled.toggled.connect(widget.setEnabled)
+        grid.addWidget(self._field("补峰质量误差", self.gap_ppm, "ppm"), 1, 0)
+        grid.addWidget(self._field("备用 RT 半窗", self.gap_rt, "s",
+                                  tooltip="优先使用检出峰的时间边界；缺少边界时按目标 RT ±此秒数积分。未保存 RT 校正映射时，也用此值扩展参考窗口。"), 1, 1)
+        cards.addWidget(gap)
+
         external, grid = self._card("外部特征表")
         caption = QtWidgets.QLabel("MS-DIAL 特征表 · 选择 msdial 算法后启用")
         caption.setObjectName("ms1Muted")
@@ -200,11 +216,19 @@ class FeaturePage(QtWidgets.QWidget):
         body.addLayout(footer)
         body.addStretch()
 
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.addStretch(1)
-        layout.addWidget(self.content, 100)
-        layout.addStretch(1)
+        container = QtWidgets.QWidget()
+        centered = QtWidgets.QHBoxLayout(container)
+        centered.setContentsMargins(24, 22, 24, 22)
+        centered.addStretch(1)
+        centered.addWidget(self.content, 100)
+        centered.addStretch(1)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setWidget(container)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
         self.setStyleSheet("""
             QWidget#ms1FeaturePage { background: #f5f7fb; }
             QFrame#ms1Card { background: white; border: 1px solid #dce3ec; border-radius: 8px; }
@@ -376,7 +400,8 @@ class MS2Page(QtWidgets.QWidget):
             mz_layout.addWidget(widget, 1)
             self.mz_range_enabled.toggled.connect(widget.setEnabled)
         mz_range.setToolTip("范围作用于待鉴定的 MS2 前体及候选谱库。上下限均包含；0 表示该端不限。")
-        self.output_topn = QtWidgets.QCheckBox("保留每张谱图的 Top N 候选")
+        self.output_topn = QtWidgets.QCheckBox("保留逐谱 Top N 候选供复核")
+        self.output_topn.setToolTip("正式结果使用每个特征的代表谱 Top3；逐谱候选保留在审计记录中。")
         self.output_topn.setChecked(True)
         self.top_n = QtWidgets.QSpinBox()
         self.top_n.setRange(1, 50)

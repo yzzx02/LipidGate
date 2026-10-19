@@ -1,0 +1,84 @@
+{
+  "revision": "feature_consensus_20261018",
+  "revision_date": "2026-10-18",
+  "preceding_revision": "gate_cleanup_20261013",
+  "preceding_manifest": "library_revision_gate_cleanup_20261013.json",
+  "base_source_commit": "0b3090c98c404fa044c1dc5dc8e22f7c319d3d6a",
+  "development_branch": "codex/project-review-gates-20261013",
+  "release_kind": "development source; published Windows executable not rebuilt",
+  "feature_selection_policy": "qualified_sample_top1_v2",
+  "product_code_sha256": "efc1530d4b487cf0fb8353ac88d4cfc283b35e3ca383b376e1a731ddb41396d9",
+  "ms2_rules_sha256": "d557a69ffa74ea72724c63a3f6ac03d113499971763f45b6cbcf9e0f4f0bcfec",
+  "ms1_runtime_sha256": "67987017d845dc1ffb6f842177a2ccece4aefe4b515d35d491b778e69d3686a0",
+  "cache_version": 42,
+  "index_format": 3,
+  "source_files_sha256": {
+    "src/lipidgate/feature_annotations.py": "d7fa8290ab1653f5138df837038bed62192b27eda6ada9c7bc08a2d7c4483b0d",
+    "src/lipidgate/final_results.py": "9c6c35c1f57d3fb9c971a6f0831345d49cf68efa94b6d0918f0685183eeb39d2",
+    "src/lipidgate/gui/result_data.py": "66df337de0111bcb3fe20a7d6cc4468ae1a1104df114a7d549bde65145cd84e5",
+    "src/lipidgate/gui/result_store.py": "4bfeceb2f65f795e482087f261d41f402d9792917f4b02bf4900ef34713c7334",
+    "src/lipidgate/gui/result_browser.py": "ad55e6089422946c5eb5632f28fd3be1a2659940668ea8e0caa84fceb7444941",
+    "src/lipidgate/gui/result_export_data.py": "61ea452e692e75ba49903586fe96f8f2112e8ed039d45a633c7650147b730504"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893
+    }
+  },
+  "changes": {
+    "primary_by_qualified_sample_top1": true,
+    "repeated_scans_count_once": true,
+    "ambiguous_samples_abstain": true,
+    "independent_fa_nae_preserved": true,
+    "same_identity_best_complete_record": true,
+    "high_top1_differences_preserved": true,
+    "main_csv_and_xlsx_one_row_per_feature": true,
+    "normal_browser_audit_on_demand": true,
+    "original_scores_gates_confidence_and_membership_preserved": true,
+    "ms2_scoring_rules_changed": false,
+    "source_libraries_changed": false
+  },
+  "verification": {
+    "command": "python -m pytest -q --junitxml=.test_outputs/feature_consensus_20261018/pytest.xml",
+    "tests_passed": 953,
+    "subtests_passed": 3118,
+    "tests": 4071,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "junit_sha256": "5f237801bab9a0bcf2dba7d68f540a52c01617526f24f48cdc38ba4b0c37a8c9",
+    "targeted_gui_check_after_support_label_reordering": "1 passed",
+    "repository_hygiene_problems": 0,
+    "independent_measured_accuracy_or_fdr_validation": false
+  },
+  "memory_fixture": {
+    "kind": "synthetic repeated-spectrum fixture; DataFrame deep sizes, not process RSS",
+    "spectra": 1000,
+    "main_rows": 1,
+    "resident_candidate_records": 1,
+    "eager_candidate_bytes": 9782792,
+    "lazy_candidate_bytes": 10376,
+    "lazy_feature_bytes": 12141,
+    "temporary_disk_index_bytes": 10297344,
+    "eager_seconds": 0.142,
+    "lazy_seconds": 0.391,
+    "all_spectra_accessible": true,
+    "audit_unchanged": true,
+    "weak_spectrum_confidence": "低"
+  },
+  "limitations": [
+    "Memory measurements describe synthetic DataFrame deep sizes, not process RSS or measured datasets.",
+    "Normal browsing loads requested spectrum details from an owned temporary SQLite index.",
+    "Explicit audit view and requested complete exports materialize their requested evidence.",
+    "The published Windows executable has not been rebuilt."
+  ]
+}

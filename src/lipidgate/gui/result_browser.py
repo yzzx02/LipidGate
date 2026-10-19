@@ -43,9 +43,11 @@ def ecn_display(value):
     return "-" if text(value) in {"", "无法判断"} else text(value)
 
 
-def eic_coordinates(feature, spectra, source):
+def eic_coordinates(feature, spectra, source, gap_peak=None):
     """Use the selected sample's observed RT, including unlinked MS2 records."""
     sample = Path(source).name
+    if gap_peak is not None:
+        return gap_peak[0], gap_peak[1]
     records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
     row = records.iloc[0] if not records.empty else feature
     if records.empty and Path(text(feature.get("_source"))).name != sample:
@@ -66,8 +68,10 @@ def eic_coordinates(feature, spectra, source):
     return mz, rt
 
 
-def eic_peak_bounds(feature, spectra, source):
-    """Only shade real, sample-specific detected peak boundaries."""
+def eic_peak_bounds(feature, spectra, source, gap_peak=None):
+    """Only shade measured, sample-specific native or targeted peak boundaries."""
+    if gap_peak is not None:
+        return gap_peak[2], gap_peak[3]
     sample = Path(source).name
     records = spectra.loc[spectra._source.map(lambda p: Path(p).name).eq(sample)]
     row = records.iloc[0] if not records.empty else feature
@@ -105,6 +109,9 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         return len(COLUMNS)
 
     def headerData(self, section, orientation, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if (role == QtCore.Qt.ItemDataRole.ToolTipRole and orientation == QtCore.Qt.Orientation.Horizontal
+                and COLUMNS[section][1] == '_fill_fraction'):
+            return '补峰前检出样本数 / 总 MS1 样本数；0.50 表示 50%。补峰不会增加此值。'
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             return (
                 COLUMNS[section][0]
@@ -125,7 +132,7 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
                 return ecn_display(value)
             if key == "ms1_support_status":
                 return ms1_feature_display(row)
-            if key in {"_rt", "_mz", "final_score"}:
+            if key in {"_rt", "_mz", "final_score", "_fill_fraction"}:
                 v = number(value)
                 decimals = 4 if key == "_mz" else 3 if key == "_rt" else 2
                 return "—" if not math.isfinite(v) else f"{v:.{decimals}f}"
@@ -137,7 +144,7 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and key in {
             "_rt",
             "_mz",
-            "final_score",
+            "final_score", "_fill_fraction",
         }:
             return int(
                 QtCore.Qt.AlignmentFlag.AlignRight
@@ -407,7 +414,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.spectrum_choice.setToolTip("查看归入当前特征的每一张 MS2 谱图")
         self.spectrum_choice.currentIndexChanged.connect(self._spectrum_selected)
         detail_layout.addWidget(self.spectrum_choice)
-        detail_layout.addWidget(label("Top N 候选注释", "resultSection"))
+        detail_layout.addWidget(label("Top3 候选 / 独立 FA、NAE", "resultSection"))
         self.candidates = QtWidgets.QTableWidget(0, 7)
         self.candidates.setHorizontalHeaderLabels(
             ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm", "ECN"]
@@ -425,7 +432,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.candidates.verticalHeader().setDefaultSectionSize(25)
         self.candidates.setMaximumHeight(102)
         self.candidates.setMinimumHeight(65)
-        self.candidates.setColumnWidth(0, 42)
+        self.candidates.setColumnWidth(0, 66)
         self.candidates.setColumnWidth(1, 180)
         self.candidates.currentCellChanged.connect(self.candidate_selected)
         detail_layout.addWidget(self.candidates)
@@ -623,6 +630,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_candidate = None
         self.region = None
         self.navigation.rows = []
+        self.navigation.set_relationships(bundle.ion_relationships)
         self.search.clear()
         self.class_search.clear()
         self.notice.setText(bundle.notice)
@@ -726,7 +734,10 @@ class ResultsPage(QtWidgets.QWidget):
         selected = self.spectrum_choice.currentData()
         if selected:
             spectra = spectra.sort_values("_spectrum", key=lambda values: values.ne(selected), kind="stable")
-        mz, rt = eic_coordinates(row, spectra, source)
+        from lipidgate.ms1.gap_filling_workflow import gap_filled_peak
+        gap_peak = (gap_filled_peak(self.bundle.gap_filling_path, self.current_key, source)
+                    if number(row.get('gap_filled_count')) > 0 else None)
+        mz, rt = eic_coordinates(row, spectra, source, gap_peak)
         if not math.isfinite(mz) or not math.isfinite(rt) or mz <= 0 or rt < 0:
             self._cancel_eic_request()
             self.eic_plot.set_status("此特征缺少 m/z 或 RT")
@@ -740,7 +751,7 @@ class ResultsPage(QtWidgets.QWidget):
             return
         key = (self._eic_generation, signature, mz, rt, self._eic_ppm, EIC_HALF_WINDOW_MIN)
         self._eic_current_key = key
-        self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source)
+        self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source, gap_peak)
         cached = self._eic_cache.get(key)
         if cached is not None:
             self._cancel_eic_request(clear_current=False)
@@ -1048,6 +1059,13 @@ class ResultsPage(QtWidgets.QWidget):
         spectra = self.bundle.spectra(key)
         self.spectrum_choice.blockSignals(True)
         self.spectrum_choice.clear()
+        if self.bundle.path is None or self.bundle.path.parent.name != "audit":
+            self.spectrum_choice.addItem("特征汇总（同名最佳记录）", None)
+            difference_count = len(self.bundle.annotations.loc[
+                self.bundle.annotations._key.eq(key)
+                & self.bundle.annotations.feature_result_role.eq("sample_difference")])
+            if difference_count:
+                self.spectrum_choice.addItem(f"高置信差异（{difference_count}）", "__differences__")
         for _, spectrum in spectra.iterrows():
             name = Path(text(spectrum["_source"])).name
             self.spectrum_choice.addItem(f"{name} / {spectrum['_scan']}", spectrum["_spectrum"])
@@ -1089,7 +1107,10 @@ class ResultsPage(QtWidgets.QWidget):
                 if column in {"final_score", "ppm_error"}:
                     value = f"{number(value):.2f}"
                 if column == "_rank":
-                    value = str(int(row["_rank"]))
+                    value = str(int(row.get("_display_rank", row["_rank"])))
+                    scope = text(row.get("_candidate_scope"))
+                    if scope in {"fa", "nae"}:
+                        value = f"{scope.upper()} {value}"
                 if column == "_ecn":
                     value = ecn_display(value)
                 item = QtWidgets.QTableWidgetItem(text(value))
@@ -1121,6 +1142,9 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_candidate = row
         feature = self._feature
         evidence = evidence_for(row)
+        # Summary candidates can come from different spectra. Each candidate's
+        # evidence and intensity scale must stay bound to its own observation.
+        self._experimental = (evidence or {}).get("spectrum")
         def formatted(value, digits):
             value = number(value)
             return f"{value:.{digits}f}" if math.isfinite(value) else "—"
@@ -1136,6 +1160,8 @@ class ResultsPage(QtWidgets.QWidget):
             ),
             ("RT（原始中位数）" if math.isfinite(number(feature.get("_aligned_rt"))) else "RT", f"{feature['_rt']:.3f} min"),
             ("Score", formatted(row.get("final_score"), 2)),
+            ("合格 Top1 支持", f"{row.get('feature_support_count', 0)} / {row.get('feature_vote_sample_count', 0)} 个样本"),
+            ("汇总状态", feature.get("_annotation_status")),
             ("Confidence", confidence_display(row.get("_confidence"))),
             ("ECN", ecn_display(row.get("_ecn"))),
             ("MS1 feature", ms1_feature_display(row)),
@@ -1143,8 +1169,17 @@ class ResultsPage(QtWidgets.QWidget):
             ("MS1 检出样本数", 0 if text(feature.get("_key")).startswith("MS2|") else feature.get("_sample_count")),
             ("MS2 样本数", feature.get("_ms2_sample_count")),
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
+            ("争议样本", feature.get("feature_ambiguous_samples")),
+            ("最佳记录来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
+        self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
+        differences = self.bundle.annotations.loc[
+            self.bundle.annotations._key.eq(feature.get("_key"))
+            & self.bundle.annotations.feature_result_role.eq("sample_difference")]
+        if not differences.empty:
+            values.append(("高置信差异注释", "；".join(
+                f"{item.matched_name}（{item.feature_result_samples}）" for item in differences.itertuples())))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))
         if math.isfinite(number(feature.get("_aligned_rt"))):

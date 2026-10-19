@@ -85,8 +85,8 @@ def test_empty_export_has_usable_workbook(tmp_path, use_ecn, use_score):
         pd.DataFrame(), tmp_path, use_ecn=use_ecn, use_score=use_score
     )
     wb = load_workbook(result.xlsx_path)
-    assert wb.sheetnames == ["最终鉴定", "逐谱证据", "RT未判定"]
-    assert wb["最终鉴定"].max_column == 17
+    assert wb.sheetnames == ["最终鉴定", "特征候选", "逐谱证据", "RT未判定"]
+    assert wb["最终鉴定"].max_column == 18
     assert len(result.data) == 0
     wb.close()
 
@@ -172,8 +172,9 @@ def test_plain_workbook_preserves_numeric_values_and_literal_strings(tmp_path):
 
 
 @pytest.mark.parametrize("project_format", ["legacy", "modern"])
+@pytest.mark.parametrize('with_ms2_only_file', [False, True])
 def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
-    tmp_path, monkeypatch, project_format
+    tmp_path, monkeypatch, project_format, with_ms2_only_file
 ):
     import lipidgate.pipeline as pipeline
 
@@ -184,6 +185,11 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     project = (Project.create(tmp_path / "project/test.lipidgate") if project_format == "modern"
                else Project.open(tmp_path / "project"))
     project.add_files([source])
+    if with_ms2_only_file:
+        spectra_only = tmp_path/'spectra_only.mzML'
+        spectra_only.write_text('<mzML><cvParam accession="MS:1000129"/>'
+                                '<cvParam accession="MS:1000511" value="2"/></mzML>')
+        project.add_files([spectra_only])
     settings = {
         "ms1": {
             "enabled": True,
@@ -237,6 +243,9 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     assert (final.output_dir.parent / "provenance.json").exists()
     ms1_metadata = json.loads((final.output_dir.parent / "ms1/feature_table.json").read_text())
     assert ms1_metadata["algorithm"] == "xcms"
+    assert ms1_metadata['quantification_samples'] == ['sample.mzML']
+    gap_manifest = json.loads((final.output_dir.parent/'ms1/gap_filling/gap_filling.json').read_text())
+    assert set(gap_manifest['inputs']) == {str(source.resolve())}
     assert Path(ms1_metadata["table"]) == tmp_path / "features.csv"
     assert Path(ms1_metadata["native_table"]) == tmp_path / "native.csv"
     _, _, second = pipeline.run_project(project.root, settings)
@@ -323,6 +332,7 @@ def test_real_project_detection_search_and_export(tmp_path):
     from lipidgate.pipeline import run_project
 
     m = PositivePECer(18, 1, 16, 0)
+    sodium_mz = m.precursor_mz + 22.989220702 - 1.007276466621
     exp = oms.MSExperiment()
     for rt in range(100):
         sp = oms.MSSpectrum()
@@ -342,9 +352,12 @@ def test_real_project_detection_search_and_export(tmp_path):
                         m.precursor_mz,
                         m.precursor_mz + 1.00335,
                         m.precursor_mz + 2.0067,
+                        sodium_mz,
+                        sodium_mz + 1.00335,
+                        sodium_mz + 2.0067,
                     ]
                 ),
-                np.array([6000.0, y, 0.4 * y, 0.08 * y]),
+                np.array([6000.0, y, 0.4 * y, 0.08 * y, 0.95 * y, 0.38 * y, 0.076 * y]),
             )
         )
         exp.addSpectrum(sp)
@@ -404,3 +417,11 @@ def test_real_project_detection_search_and_export(tmp_path):
     assert result.passed_data.feature_rt.iloc[0] == pytest.approx(40 / 60, abs=0.05)
     assert result.xlsx_path is None
     assert result.csv_path.exists()
+    # A detected Na/H MS1 pair adds advisory evidence without changing the
+    # single H library candidate, its confidence, or the quantitation rows.
+    relations = pd.read_csv(result.csv_path.parent / "ion_relationships.csv")
+    assert len(relations) == 1 and 'status' not in relations
+    assert relations.iloc[0].ion_a == '[M+H]+'
+    assert relations.iloc[0].ion_b == '[M+Na]+'
+    audit = pd.read_csv(result.csv_path.parent / "audit/ion_relationships.csv")
+    assert audit.iloc[0].supported_samples == 1

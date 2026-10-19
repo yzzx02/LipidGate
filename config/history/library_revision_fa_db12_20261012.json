@@ -1,0 +1,104 @@
+{
+  "revision": "fa_db12_20261012",
+  "revision_kind": "library_content_only",
+  "created_at_utc": "2026-10-12T10:23:26.796867+00:00",
+  "base_release": "v1.0.3",
+  "base_commit": "d6e268bf0ff2ed39678158e20557db6e6b992e5f",
+  "previous_library_revision_sha256": "0713a8a6ae62c497895403e7b6b822d41cf960b99f107edb8f63af29ca290d1b",
+  "executable_status": "Source libraries and local indexes updated; released executable fingerprints retained",
+  "product_code_sha256": "dd2ab2ccfc5abc415fa13a1797af97c473e429e46b21f0e443d94cd209ee54bf",
+  "ms2_rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5",
+  "library_cache_version": 39,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "change_scope": {
+    "compound_class": "FA",
+    "maximum_double_bonds": 12,
+    "boundary_included": true,
+    "removed_source_records": 703,
+    "remaining_fa_records": 557,
+    "retained_db12_records": 38,
+    "positive_library_unchanged": true,
+    "scoring_and_gates_unchanged": true,
+    "retained_source_blocks_and_order_unchanged": true,
+    "predecessor_negative_snapshot_updated": true
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1255616,
+      "normalized_records": 1268036,
+      "source_gzip_sha256": "36d9f7efdcda2615c5cd5d812d0029b48f10254c6977aabcd539091070cc2b76",
+      "source_gzip_bytes": 24067242,
+      "index_sha256": "f88e362fb94f741858621c20b22582696155ca6d9c4a48f2114ec363932b435e",
+      "index_bytes": 60903424,
+      "generated_index_tracked_in_git": false
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "de3997cf108fa0c3008b9debf749d5e8e799dcb91299e0a64a1f28c450846d78",
+      "source_gzip_bytes": 39256555,
+      "index_sha256": "be82ab7cf00a1ef214373b239f7796b8a40206c0962bd675e6729ded63ad6648",
+      "index_bytes": 60219392,
+      "generated_index_tracked_in_git": false
+    }
+  },
+  "verification": {
+    "tests": {
+      "passed": 891,
+      "subtests_passed": 3118,
+      "passed_including_subtests": 4009,
+      "failures": 0,
+      "errors": 0,
+      "junit_sha256": "e40c15cf7eb2b9f38b72f391ef4c1653627f13ac217a6dde818f928c9c3fec4a"
+    },
+    "curation": {
+      "verified_retained_source_blocks": 1084079,
+      "audit_sha256": "c21ce9c436459a2835d68f25360ca3618de84aaff62a35da83941ba3bf091fee",
+      "previous_negative_source_sha256": "71e78b7a00e52abd255569387c4f97eb5760ecf39aa6917bd214a94be379ee61",
+      "negative_decompressed_source_sha256": "f4258bbbf5712292152df8c62e80d7d3f7a50dba238b8b44ea3a5153aac92453"
+    },
+    "standard_replay": {
+      "status": "verified",
+      "measured_spectra_checked": 1102,
+      "source_rows_before": 804,
+      "source_rows_after": 802,
+      "changed_spectra": [
+        "MSBNK-Antwerp_Univ-METOX_N108226_9CB7",
+        "MSBNK-Antwerp_Univ-METOX_N108226_B8BB"
+      ],
+      "removed_outputs": [
+        {
+          "query_id": "MSBNK-Antwerp_Univ-METOX_N108226_9CB7",
+          "name": "FA(50:19)",
+          "score": 100.0,
+          "native_scope": "fa"
+        },
+        {
+          "query_id": "MSBNK-Antwerp_Univ-METOX_N108226_B8BB",
+          "name": "FA(50:19)",
+          "score": 98.5296,
+          "native_scope": "fa"
+        }
+      ],
+      "retained_native_order_scores_gates_and_evidence_unchanged": true,
+      "main_top1_unchanged": true,
+      "seconds": 8.37133470000117,
+      "peak_rss_mib": 131.8046875,
+      "source_sha256": "de3997cf108fa0c3008b9debf749d5e8e799dcb91299e0a64a1f28c450846d78",
+      "index_sha256": "be82ab7cf00a1ef214373b239f7796b8a40206c0962bd675e6729ded63ad6648",
+      "rules_sha256": "5aec16564f5bd7739255f809e289be9d49706d868bb73c95fcbd21ca02053bb5"
+    },
+    "fresh_index_build": {
+      "seconds": 412.1,
+      "normalization": "fresh streaming source parse; disk sort; verified 1024-record blocks"
+    },
+    "sterol_nae_audit_sha256": "ece387fbd7e4b26178f29ab94dcde1a1307fd060243e8add56dd1e9cb4d68797"
+  },
+  "known_limitations": [
+    "Positive BRSE/CASE currently use an incorrect variable 84-by-84 sterol-part enumeration; fixed BRSE 28:2 / CASE 28:1 library repair is outside this FA deletion revision",
+    "NAE 20:4 in MC02_000242 passes the HG gate at 89.2334 but is excluded as a single-chain secondary candidate; output eligibility is unchanged in this library-only revision",
+    "Three other audited NAE spectra lack the required 62.0606 HG match; NAE records exist but score 12.5 or 25 and do not pass the current HG gate"
+  ]
+}

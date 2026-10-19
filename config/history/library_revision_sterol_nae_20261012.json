@@ -1,0 +1,70 @@
+{
+  "revision": "sterol_nae_20261012",
+  "revision_kind": "library_content_and_NAE_evidence_policy",
+  "preceding_revision": "fa_db12_20261012",
+  "base_source_commit": "d6e268bf0ff2ed39678158e20557db6e6b992e5f",
+  "ms2_rules_sha256": "63e644d1cef8da89bd99886f8dbbc4fd5ab549864668ef64d67023709834508b",
+  "product_code_sha256": "9a4e8f79aca19382ef049b670f01f6491e84fc5dd05da087705ffd6e7214bc1c",
+  "cache_version": 40,
+  "changes": {
+    "BRSE_fixed_core": "28:2",
+    "CASE_fixed_core": "28:1",
+    "acyl_carbon_inclusive": [
+      10,
+      26
+    ],
+    "acyl_double_bonds_inclusive": [
+      0,
+      6
+    ],
+    "records_per_sterol_class": 119,
+    "NAE": "single measured precursor match scores 100; no HG/water-loss support",
+    "NAE_ranking_scope": "nae",
+    "NAE_counts_toward_primary_TopN": false,
+    "NAE_primary_error_rate_inclusion": false,
+    "FA_DB_limit": 12,
+    "PE_scores_gates_weights_unchanged": true,
+    "MS1_and_confidence_rules_unchanged": true
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241742,
+      "normalized_records": 1254162,
+      "source_gzip_sha256": "4ba078d6c8d6060170ae1109dc7694cf5026340e4a41d262d884fc26a5d12633",
+      "source_gzip_bytes": 23888079,
+      "source_text_sha256": "9856aa6586d3f821afac9892e260b8e20a85dd3b766a0443971992c06dc99953",
+      "index_sha256": "a215480d942c9e6e2a51d64b8676d6aada5c5a9c9b13a7eecc329a133396746a",
+      "index_bytes": 60321792,
+      "curation_audit_sha256": "c793ad040771727db09c14dd91cd8d2aed3138280f10f42321e8cbd5bd7ec4a5",
+      "normalization": "fresh streaming MSP parse and verified 1024-record blocks",
+      "generated_index_tracked_in_git": false
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893,
+      "source_text_sha256": "5eee3a642496da6337c3eec727fbb323a0cb9dd574fd9de57463ca04fb5bf8a4",
+      "index_sha256": "2752e02ab358d850bcb805f3c1838d00f9a9d3dc681b5b326f46ff116d8eb043",
+      "index_bytes": 60219392,
+      "curation_audit_sha256": "36be966e719074b7c67a23b5cdb6fd7509cfbd83b79ed3b55421f860084d444e",
+      "normalization": "fresh streaming MSP parse and verified 1024-record blocks",
+      "generated_index_tracked_in_git": false
+    }
+  },
+  "verification": {
+    "tests_passed": 900,
+    "subtests_passed": 3118,
+    "junit_sha256": "f9147e34b9e60995772654b6861dbe6e3211475c9467a07365c5c3f6c97bcd24",
+    "measured_spectra_checked": 1102,
+    "native_python_outputs_equal": true,
+    "main_and_FA_outputs_equal_with_or_without_NAE": true,
+    "native_replay_sha256": "ee71feb2aaad30db0b146c86c3ee9b5eeac2b7af11e2231e552468ef5dfcf3cd",
+    "python_replay_sha256": "7d8865e7682b8c97f76be998d71af426b3449ec2ad3bc66d52a5e71fe5303eb0",
+    "changed_spectra": 66,
+    "NAE_independent_outputs": 39,
+    "selected_PE_scores_gates_unchanged": true
+  },
+  "primary_evaluation_policy": "Use main scope only; keep independent FA/NAE precursor hypotheses separate; do not rewrite external truth",
+  "rollback": "Original sources and indexes retained outside Git; previous release tags/manifests unchanged"
+}

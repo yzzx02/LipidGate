@@ -1,0 +1,61 @@
+{
+  "revision": "gap_filling_display_20261019",
+  "revision_date": "2026-10-19",
+  "preceding_revision": "gap_filling_20261019",
+  "preceding_manifest": "library_revision_gap_filling_20261019.json",
+  "base_source_commit": "48636290ec01c6efb4a3cf5b99508ed97f3a0f3b",
+  "development_branch": "codex/project-review-gates-20261013",
+  "release_kind": "development source; published Windows executable not rebuilt",
+  "gap_filling_method": "targeted_eic_v1",
+  "feature_selection_policy": "qualified_sample_top1_v2",
+  "product_code_sha256": "0e6baccc9496e33bc9fead6ee7042cca4258e384d9c548a3f9c552c3fb07d5ff",
+  "ms2_rules_sha256": "d557a69ffa74ea72724c63a3f6ac03d113499971763f45b6cbcf9e0f4f0bcfec",
+  "ms1_runtime_sha256": "4df6dfb0e1ae2b032bb8ffc5de3f6b6377b9bae3ae2d06a9069702e74544c7a6",
+  "gap_filling_code_sha256": "a84542b57dfae2cb4cfe14036532802499bb9d0f63143bdbe4ff724e34432d8a",
+  "cache_version": 42,
+  "index_format": 3,
+  "source_files_sha256": {
+    "src/lipidgate/feature_annotations.py": "d3b788d9c85921dd00473327d51aac038c901be5361ea5246407c63cca16648a",
+    "src/lipidgate/feature_areas.py": "9fbace1815b18f7cfce37e204e2b403266b7fa04a7dddf38d2a9fe02b016c1c2",
+    "src/lipidgate/gui/result_browser.py": "c30861199420448fa543c0a1f13cb928bc7c56c65ae83be9ffc59ff9779f5ccc",
+    "src/lipidgate/gui/result_export_data.py": "7aa9f3309b0cbfe8e9ddf2254ac7819000598344b6171ccaf432dd44ea8bdd7d"
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893
+    }
+  },
+  "changes": {
+    "gap_sample_list_and_count_omitted_from_normal_exports": true,
+    "gap_sample_list_and_count_omitted_from_browser_details": true,
+    "gap_provenance_preserved_in_project_audits": true,
+    "sample_area_matrix_values_preserved": true,
+    "sample_specific_eic_coordinates_preserved": true,
+    "gap_filling_algorithm_changed": false,
+    "ms1_runtime_changed": false,
+    "ms2_rules_changed": false,
+    "source_libraries_changed": false
+  },
+  "verification": {
+    "command": "python -m pytest -q --junitxml=.test_outputs/gap_filling_display_20261019/pytest.xml",
+    "tests_passed": 1010,
+    "subtests_passed": 3118,
+    "tests": 4128,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "b77a52b77552204deae065781b3544cdbf3d86e2dc9f282e997d81d432b33fa5",
+    "export_regression_scope": "Formal CSV/Excel and GUI CSV/Excel retain identical filled areas without public fill-label columns; internal fill metadata and measured EIC coordinates remain available.",
+    "prior_gap_filling_integration_checkpoint": "library_revision_gap_filling_20261019.json",
+    "repository_hygiene_problems": 0
+  }
+}

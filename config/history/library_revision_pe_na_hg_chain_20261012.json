@@ -1,0 +1,169 @@
+{
+  "revision": "pe_na_hg_chain_20261012",
+  "preceding_revision": "sterol_nae_20261012",
+  "base_source_commit": "0f21fa8897a4294fdeec2215c0f5dd4620936971",
+  "local_working_revision": true,
+  "ms2_rules_sha256": "a34eb218f161664fad9a10d49ab34154e123166ef62102a1deca995bd4c8fa4c",
+  "product_code_sha256": "c968e37310a45c3fc011f56bea487218d8b846e16de4896f5b26b9941c7736bb",
+  "cache_version": 41,
+  "changes": {
+    "scope": "diacyl PE [M+Na]+ only",
+    "RCO_role": "FA_Frag / FAH chain evidence",
+    "RCO_roles_changed": 7735,
+    "NL43_roles_changed": 3907,
+    "PE_sodium_records": 3907,
+    "HG_required": [
+      "NL43",
+      "NL141"
+    ],
+    "HG_both_must_match": true,
+    "missing_HG_fallback_disabled": true,
+    "confirmed_PE_precedes_failed_chain_competing_adduct": true,
+    "symmetric_chain_gate": "one measured chain ion covers two identical chain positions",
+    "unequal_chain_gate": "two physical chain peaks; single-chain coverage warning retained",
+    "primary_and_secondary_chain_gate_consistent": true,
+    "weights": {
+      "HG": 60,
+      "FAH": 20,
+      "Other": 20
+    },
+    "no_peak_or_intensity_duplication": true,
+    "all_source_masses_labels_formulas_and_order_unchanged": true,
+    "negative_source_and_outputs_unchanged": true,
+    "PE_P_and_NAE_policies_unchanged": true
+  },
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241742,
+      "normalized_records": 1254162,
+      "source_gzip_sha256": "1802e2158ef7ce57e40e3230ad7be243961631ee2d6195a5015f9aa144f4ca1f",
+      "source_gzip_bytes": 23888246,
+      "index_sha256": "d9aaef9ddbad11077fec5bb25e2043c7dec09c82ce05940e8502ac1b938299cb",
+      "index_bytes": 60301312,
+      "normalization": "fresh streaming source parse and verified blocks",
+      "generated_index_tracked_in_git": false
+    },
+    "negative": {
+      "raw_source_records": 1084079,
+      "normalized_records": 1084079,
+      "source_gzip_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+      "source_gzip_bytes": 39255893,
+      "index_sha256": "2a6de4434e0733367a3080ef744177a0c4c75b374af73020bad779a07aafc2d6",
+      "index_bytes": 60219392,
+      "normalization": "fresh streaming source parse and verified blocks",
+      "generated_index_tracked_in_git": false
+    }
+  },
+  "verification": {
+    "tests_passed": 908,
+    "subtests_passed": 3118,
+    "junit_sha256": "80ab757c03d57d4f0cc9d94e7a356337bb5303ac72d0d28acc9b68a431d34ebb",
+    "measured_spectra_checked": 1102,
+    "unchanged_spectra": 1092,
+    "changed_spectra": 10,
+    "native_python_outputs_equal": true,
+    "negative_outputs_unchanged": true,
+    "independent_NAE_and_FA_outputs_unchanged": true,
+    "source_audit_sha256": "f3f928f2a8034c7ca85b99fd0b8f21280c6d2b154657a3519bbea5e7b2f2f432",
+    "native_replay_sha256": "b342174ff5aaa28cad83dde24e16033e24c43c066dbf91c4db46c5ffc51e7abb",
+    "python_replay_sha256": "f53328ea29b1128b8922812d29802eb2c2db22171508592d00492af0174e386f",
+    "selected_PE_examples": {
+      "A": {
+        "query_id": "MSBNK-Antwerp_Univ-METOX_N107919_CC60",
+        "before": [
+          {
+            "compound_class": "PE",
+            "matched_name": "PE(34:3)",
+            "adduct": "[M+H]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 81.1226,
+            "passed_required_gates": false,
+            "resolution_level": "tentative_species_level",
+            "downgrade_reason": "insufficient_independent_chain_evidence",
+            "fah_score": 8.652581748049442,
+            "hg_score": 52.46996974050189,
+            "other_score": 20.0,
+            "matched_fragment_count": 3
+          }
+        ],
+        "after": [
+          {
+            "compound_class": "PE",
+            "matched_name": "PE(16:0_16:0)",
+            "adduct": "[M+Na]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 74.4559,
+            "passed_required_gates": true,
+            "resolution_level": "chain_level",
+            "downgrade_reason": "",
+            "fah_score": 8.652581748049442,
+            "hg_score": 52.46996974050189,
+            "other_score": 13.333333333333332,
+            "matched_fragment_count": 5
+          }
+        ]
+      },
+      "B": {
+        "query_id": "MSBNK-mFam-MC02_000101",
+        "before": [
+          {
+            "compound_class": "PE",
+            "matched_name": "PE(34:1)",
+            "adduct": "[M+Na]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 80.1303,
+            "passed_required_gates": false,
+            "resolution_level": "tentative_species_level",
+            "downgrade_reason": "insufficient_independent_chain_evidence",
+            "fah_score": 13.463660834454913,
+            "hg_score": 60.0,
+            "other_score": 6.666666666666666,
+            "matched_fragment_count": 3
+          }
+        ],
+        "after": [
+          {
+            "compound_class": "PE",
+            "matched_name": "PE(36:4)",
+            "adduct": "[M+H]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 80.0,
+            "passed_required_gates": true,
+            "resolution_level": "tentative_species_level",
+            "downgrade_reason": "low_confidence_hg_only",
+            "fah_score": 0.0,
+            "hg_score": 60.0,
+            "other_score": 20.0,
+            "matched_fragment_count": 2
+          }
+        ]
+      },
+      "C": {
+        "query_id": "MSBNK-mFam-MC02_000109",
+        "before": [
+          {
+            "compound_class": "PE",
+            "matched_name": "PE(36:1)",
+            "adduct": "[M+Na]+",
+            "result_rank": 1,
+            "result_rank_scope": "main",
+            "final_score": 79.118,
+            "passed_required_gates": false,
+            "resolution_level": "tentative_species_level",
+            "downgrade_reason": "insufficient_independent_chain_evidence",
+            "fah_score": 12.451321708053484,
+            "hg_score": 60.0,
+            "other_score": 6.666666666666666,
+            "matched_fragment_count": 3
+          }
+        ],
+        "after": []
+      }
+    }
+  },
+  "Cer_NAE_note": "Two source Cer(d18:1/2:0) [M+H-H2O]+ spectra have the same precursor ion formula as independent NAE(18:2) [M+H]+; original Cer truth remains unchanged"
+}

@@ -97,6 +97,17 @@ def test_gui_main_window_instantiates() -> None:
         assert window.feature_page.ms1_min_samples.value() == 1
         assert window.feature_page.ms1_min_fwhm.value() == 5.0
         assert window.feature_page.ms1_min_fraction.value() == 0.20
+        assert window.feature_page.gap_enabled.isChecked()
+        assert window.analysis_settings()['ms1']['gap_filling']['rt_tolerance_sec'] == 10.
+        window.feature_page.gap_enabled.setChecked(False)
+        assert not window.feature_page.gap_rt.isEnabled()
+        window.load_project_settings({'ms1': {'gap_filling': dict(enabled=True, mz_ppm=8.,
+                                      rt_tolerance_sec=12., min_snr=4., min_fwhm_sec=2.)}})
+        assert window.feature_page.gap_rt.isEnabled()
+        assert window.analysis_settings()['ms1']['gap_filling'] == dict(enabled=True, mz_ppm=8.,
+                           rt_tolerance_sec=12.)
+        window.load_project_settings({})
+        assert window.feature_page.gap_ppm.value() == 5.
         window.feature_page.algo.setCurrentText('pyopenms')
         assert 'FWHM' in window.feature_page.min_width_field.layout().itemAt(0).widget().text()
         window.feature_page.algo.setCurrentText('xcms')
