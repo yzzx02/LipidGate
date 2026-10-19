@@ -1170,9 +1170,6 @@ class ResultsPage(QtWidgets.QWidget):
             ("最佳记录来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
         ]
-        if number(feature.get('gap_filled_count')) > 0:
-            values.extend([('补峰样本数', feature.get('gap_filled_count')),
-                           ('补峰样本', feature.get('gap_filled_samples'))])
         self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
         differences = self.bundle.annotations.loc[
             self.bundle.annotations._key.eq(feature.get("_key"))

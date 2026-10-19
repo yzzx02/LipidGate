@@ -13,15 +13,6 @@ from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
 NATIVE_AREA_COLUMNS = ('ms1_feature_area', 'intensity', 'Area', 'peak_area', 'into')
 
 
-def gap_filling_export_fields(features):
-    """Keep filled sample labels beside the matrix, never in candidate tables."""
-    result = pd.DataFrame(index=features.index)
-    if 'gap_filled_samples' in features:
-        result['补峰样本'] = features.gap_filled_samples.fillna('')
-        result['补峰样本数'] = features.gap_filled_count.fillna(0).astype(int)
-    return result
-
-
 def _text_column(features, column):
     return features.get(column, pd.Series('', index=features.index, dtype=object)).fillna('').astype(str).str.strip()
 

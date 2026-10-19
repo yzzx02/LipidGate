@@ -13,7 +13,8 @@
   检出峰边界的分位数构成；采用校正后的扫描时间进行区域提取。
 - [MS-DIAL LC-MS gap filler](https://github.com/systemsomicslab/MsdialWorkbench/blob/349d7ef6edbd09e34c0eb38b849bd9fd8af79e7e/src/MSDIAL5/MsdialLcMsApi/Algorithm/Alignment/LcmsGapFiller.cs#L42)：
   根据已有峰确定目标质量、时间和宽度；逆变换到原始时间后寻找附近的峰顶和边界，
-  对边界内信号积分，保留补峰状态；另有可选的强制插入分支。
+  对边界内信号积分，保留补峰状态；另有强制插入分支。该提交的
+  [`IsForceInsertForGapFilling` 默认值为 true](https://github.com/systemsomicslab/MsdialWorkbench/blob/349d7ef6edbd09e34c0eb38b849bd9fd8af79e7e/src/MSDIAL5/MsdialCore/Parameter/ParameterBase.cs#L1383)。
 
 LipidGate 的 `targeted_eic_v1` 是参考上述思路的独立实现，复用本项目已有的 EIC
 分峰算法，没有复制第三方代码，也不声称与 XCMS 或 MS-DIAL 的数值完全相同：
@@ -34,6 +35,11 @@ LipidGate 的 `targeted_eic_v1` 是参考上述思路的独立实现，复用本
 这一步只恢复 MS1 定量。它不生成原生 Feature ID，不改变检测峰边界、MS2 关联、
 分数、gate、候选顺序、逐谱置信度或合格 Top1 的样本投票。只有某张 MS2 自身具有
 对应证据时，它才可能支持鉴定；补出的面积不能独立证明某样本已经鉴定该脂质。
+
+这里的 S/N、FWHM、峰形支持及必须具有 RT 映射等硬条件，是 LipidGate 这版额外
+采用的限制。XCMS 的窗口积分不要求再次通过这些找峰条件；MS-DIAL 的强制插入
+也可能在没有找到合格局部峰顶时给出积分。因此本版可能把经典方法会积分的弱信号
+保留为缺失，不能把它视作 XCMS 窗口积分或 MS-DIAL 默认补峰的等价实现。
 
 ## 参数与后端
 
@@ -80,10 +86,11 @@ Asari 或外部 MS-DIAL 表如果未提供可靠的原始 RT 映射，缺失单�
 - `filled_peaks.csv`：仅成功补峰的实测记录，供 EIC 按需读取。
 - `gap_filling.json`：方法、参数、参考源码、文件身份和表/映射/审计 SHA-256。
 
-正式 CSV / Excel 和 GUI 导出在原有样本列中使用补回的面积，并增加「补峰样本」和
-「补峰样本数」。仍为一行一个特征，候选表不复制面积矩阵。GUI 详情区显示补峰来源，
-选择补峰样本查看 EIC 时使用其实际峰顶和边界。MS1 检出样本数仍只按原始检测矩阵
-统计，加合物关系与 MS2 关联继续读取原始检测表。
+正式 CSV / Excel 和 GUI 导出只在原有样本列中使用补回的面积，主表不增加补峰样本
+列表或计数；GUI 详情也不额外列出这些字段。补峰来源、状态和坐标保留在上述项目
+内部文件中。仍为一行一个特征，候选表不复制面积矩阵。选择相应样本查看 EIC 时
+使用其实际峰顶和边界。MS1 检出样本数仍只按原始检测矩阵统计，加合物关系与
+MS2 关联继续读取原始检测表。
 
 每个原始文件流式读取一次，只保留仍处于提取窗口内的紧凑 EIC 数组，不将整个
 项目的扫描数组载入内存。提取窗口结束便释放 EIC；审计表、目标列表和输出矩阵

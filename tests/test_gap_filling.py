@@ -250,8 +250,7 @@ def test_formal_and_gui_export_share_fill_overlay_without_changing_detection_or_
         assert len(table) == 1
         assert table['b.mzML'].item() > 3700
         assert table['a.mzML'].item() == 12345.
-        assert table['补峰样本'].item() == 'b.mzML'
-        assert table['补峰样本数'].item() == 1
+        assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(table.columns)
         assert table.final_score.item() == 85.
     bundle = load_result_bundle(result.csv_path)
     assert bundle.features._sample_count.item() == 1
@@ -259,6 +258,8 @@ def test_formal_and_gui_export_share_fill_overlay_without_changing_detection_or_
     assert bundle.features.feature_support_count.item() == 1
     assert bundle.features._ms2_sample_count.item() == 1
     assert bundle.features._linked_ms2_scans.item() == 1
+    assert bundle.features.gap_filled_count.item() == 1
+    assert bundle.features.gap_filled_samples.item() == 'b.mzML'
     assert bundle.candidates._source.tolist() == ['a.mzML']
     assert bundle.candidates._confidence.tolist() == ['高']
     from lipidgate.ms1.gap_filling_workflow import gap_filled_peak
@@ -268,8 +269,11 @@ def test_formal_and_gui_export_share_fill_overlay_without_changing_detection_or_
     export_browser_results(bundle, tmp_path/'export', xlsx=True)
     gui = pd.read_csv(tmp_path/'export/feature_results.csv')
     assert gui['b.mzML'].item() == pytest.approx(formal['b.mzML'].item())
-    assert gui['补峰样本'].item() == 'b.mzML'
-    assert gui['面积状态'].item() == '含定向补峰面积'
+    assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(gui.columns)
+    assert gui['面积状态'].item() == '已有 MS1 面积'
+    gui_excel = pd.read_excel(tmp_path/'export/LipidGate_results.xlsx', sheet_name='特征结果')
+    assert gui_excel['b.mzML'].item() == pytest.approx(formal['b.mzML'].item())
+    assert not {'补峰样本', '补峰样本数', 'gap_filled_samples', 'gap_filled_count'}.intersection(gui_excel.columns)
     assert not {'a.mzML', 'b.mzML', '补峰样本'}.intersection(pd.read_csv(run/'results/feature_candidates.csv').columns)
     assert all(path.read_bytes() == contents for path, contents in originals.items())
     pd.testing.assert_frame_equal(records, original_records)
