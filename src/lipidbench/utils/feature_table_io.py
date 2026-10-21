@@ -161,7 +161,7 @@ def build_feature_view_table(df_raw: pd.DataFrame, algorithm: str) -> pd.DataFra
 
     - Single-sample style: Feature_ID, mz, RT, RTmin, RTmax, PeakArea
     - Multi-sample style (>=2 *.mzML columns): Feature_ID, mz, RT, *.mzML columns
-      (drop RTmin/RTmax/PeakArea as requested)
+      (omit per-file peak boundaries and the aggregate area column)
     """
 
     df = standardize_rt_columns_for_display(df_raw, algorithm)

@@ -8,7 +8,7 @@ Every existing MSP block is preserved verbatim.
 ## Exact compositions and evidence pools
 
 For `PE(P-18:0/18:1)`, neutral formula C41H80NO7P gives `[M+Na]+`
-**752.5564616**. The requested pools contain nine ions:
+**752.5564616**. The library template contains nine ions:
 
 | Pool | Net composition / library label | Calculated m/z |
 | --- | --- | --- |
@@ -39,13 +39,13 @@ Observed values around 339.2900 and 307.3001 are not the library's
 formula-calculated exact masses.
 
 `[C2H8NO4PNa]+` at 164.0083 can be present in the measured PE-P sodium
-spectrum, but is not included in the user's current nine-ion template.
+spectrum, but is not included in the nine-ion library template.
 No RCO+ acylium ion is added to either PE-P template. Protonated PE-P Other
 still contains only precursor and its P-chain-dependent Common support.
 
 ## Scoring weights and evidence policy
 
-PE-P `[M+Na]+` now uses HG/FAH/Other **60/20/20** as requested. Other
+PE-P `[M+Na]+` uses HG/FAH/Other **60/20/20**. Other
 PE-P adducts retain their prior weights. The nine fragments, intensity-quality
 functions, Other saturation and ranking policy retain their definitions.
 The current positive PE-P gate requires HG plus at least half of its
@@ -81,7 +81,7 @@ ion must not be replaced with a fabricated observation.
 
 An additional 361.2753 peak matches the sodium-retaining NL123 plus whole
 vinyl-chain target, 361.2713, in both scans. It is preserved in the raw data
-but is not added to the requested four-channel template.
+but is not added to the four-channel library template.
 One P-18:0/22:6-associated scan (8932) has a 184.0739 base peak and weak
 PE sodium signals. This flags a possible choline-lipid contribution; its
 exact origin is unconfirmed. It remains visible in the validation and is

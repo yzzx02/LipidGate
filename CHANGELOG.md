@@ -1,46 +1,47 @@
 # Changelog
 
-## Unreleased — 2026-10-13
+## Unreleased
 
-- Restrict library index/cache decoding to supported data types; reject
-  executable pickle globals. Keep non-finite or invalid stored scores Low.
-- Centralize generic and sphingolipid required evidence in `gate_policy.py`,
-  share fragment routing in `evidence_policy.py` and chain-position counts in
-  `chain_utils.py`, retaining scores, candidate order and compatibility exports.
-- Use one native policy module registry for loading and compilation. Add a
-  repository hygiene CI check, consolidate configuration documentation and
-  preserve prior release/rule fingerprints under `config/history/`.
-- Remove the unused retired YAML loader and empty parser package. Keep local
-  raw data, user projects, build outputs and release archives out of Git.
+### Added
 
-- Add 77 MG and 77 single-acyl NAGly `[M+H]+` records on the explicit
-  C10–C26/DB0–6 single-chain whitelist. MG requires its dehydration HG peak;
-  NAGly requires either protonated glycine or glycine loss. Both use HG/Other
-  75/25 with the requested ordinary support; retain existing ammonium MG and
-  two-chain NAGly definitions. Refresh imports, cache identities and indexes.
+- Add negative Glc-GP and 6-Ac-Glc-GP coverage on 65 allowed C14–C26 chains,
+  with 2,145 chain pairs per class. Both require one of two HG ions and every
+  distinct RCOO chain ion. Rename the historical PtdGlc class to Glc-GP.
+- Add 77 MG and 77 single-acyl NAGly `[M+H]+` records on the C10–C26/DB0–6
+  whitelist. Both use HG/Other weights of 75/25; existing ammonium MG and
+  two-chain NAGly definitions are retained.
 
-- Require both NL43 and NL141 HG peaks for diacyl PE sodium and disable its
-  missing-HG fallbacks. Prefer fully confirmed PE over a failed-chain tentative
-  PE in the competing H/Na adduct without altering the numeric score.
-- Treat diacyl PE sodium RCO+ as FAH chain evidence. A symmetric-chain match
-  covers both identical positions and passes chain confirmation without
-  duplicating a measured ion or its intensity. Keep HG/FAH/Other at 60/20/20.
-- Refresh existing PE sodium records in place and normalize legacy Common
-  RCO+ imports consistently; preserve all unrelated records and source order.
-- Rebuild BRSE with the fixed 28:2 sterol core and CASE with the fixed 28:1
-  core, each with 119 C10–C26/DB0–6 acyl compositions. Correct neutral ester
-  formulas and charged sterol fragment masses; remove the variable-core grid.
-- Retain only the NAE precursor peak in both polarities and legacy imports.
-  A measured precursor peak within both tolerances scores exactly 100; the
-  62.0606 headgroup and water-loss peaks do not contribute. Keep MS1-dependent
-  confidence and all other class scoring policies unchanged.
-- Rank NAE independently like FA without consuming main Top3 positions.
-  Preserve the independent scope in feature selection, display and exports.
-- Restrict the bundled FA library to at most 12 chain double bonds. Remove
-  703 source records, retain 557 FA records and all other source definitions,
-  and rebuild the negative mass index with new content fingerprints.
-- Add a streaming, repeatable FA curator with an exact before/after audit and
-  tests for the inclusive boundary and preservation of other lipid classes.
+### Changed
+
+- Select feature-level Top1 annotations by qualified sample support, retaining
+  per-spectrum evidence and high-confidence disagreements. Load detailed audit
+  evidence on demand in the result browser.
+- Require NL43 and NL141 for diacyl PE sodium. Treat RCO+ as FAH evidence;
+  symmetric chains share one measured ion without duplicating its intensity.
+  Preserve HG/FAH/Other weights of 60/20/20 and stable candidate ranking.
+- Rebuild BRSE and CASE with fixed sterol cores, each covering 119 allowed
+  acyl compositions. Correct neutral ester formulas and charged fragment masses.
+- Use only the NAE precursor ion for scoring and rank NAE independently of
+  the main Top3 candidates. Retain MS1-dependent confidence requirements.
+- Limit bundled FA compositions to 12 chain double bonds, retaining 557 records.
+- Centralize required evidence, fragment routing and chain-position counting.
+  Share the native policy module registry between loading and compilation.
+
+### Fixed
+
+- Reject executable pickle globals when reading library indexes and caches.
+- Keep non-finite and invalid stored scores Low while retaining audit evidence.
+
+### Maintenance
+
+- Document contribution, naming and source-control conventions. Use descriptive
+  maintenance script names and keep historical source reviews under `docs/history/`.
+- Read the package version from `lipidgate.__version__` and check it before
+  release packaging. Exclude local native binaries from Python package data.
+- Apply repository content checks to CI and Source ZIP packaging, including
+  vendor data, local environments, editor files and compiled build products.
+- Preserve library revisions and release fingerprints under `config/` and
+  `config/history/`. Remove the retired YAML loader and empty parser package.
 
 ## 1.0.3 — 2026-10-10
 

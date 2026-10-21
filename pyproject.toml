@@ -1,15 +1,22 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lipidgate"
-version = "1.0.3"
+dynamic = ["version"]
 description = "Lipid feature detection, MS2 identification and ordered ECN retention-time filtering."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{name = "yzzx02"}]
 requires-python = ">=3.10"
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
   "numpy",
   "pandas",
@@ -38,9 +45,16 @@ lipidgate = "lipidgate.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.dynamic]
+version = {attr = "lipidgate.__version__"}
+
 [tool.setuptools.package-data]
 lipidbench = ["runners/*.R"]
-"lipidgate.ms2" = ["native_backend/*.cpp", "native_backend/*.dll", "native_backend/*.so", "native_backend/*.dylib", "native_backend/*.json"]
+"lipidgate.ms2" = ["native_backend/*.cpp"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.dll", "*.pyd", "*.so", "*.dylib", "*.pyc", "*.pyo"]
+"lipidgate.ms2" = ["native_backend/*.json", "native_backend/policy/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

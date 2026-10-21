@@ -16,8 +16,10 @@ need the toolchain's DLLs on PATH.
 
 The commands below reproduce the tagged v1.0.3 build. For later source/library
 revisions, choose a new package version and output folder before packaging;
-do not overwrite a prior release manifest. The PE sodium branch currently has
-source/library validation only, documented in [validation](validation.md).
+do not overwrite a prior release manifest. Current source/library revisions are
+listed in [configuration notes](../config/README.md) and
+[the changelog](../CHANGELOG.md); their validation is separate from the
+published executable.
 
 ```powershell
 python -m venv .venv

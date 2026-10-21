@@ -40,7 +40,7 @@ Windows 包携带紧凑运行索引和已编译的检索扩展，索引按需还
 
 ## 从源码运行
 
-开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。
+开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。参与开发、文件命名和提交范围见 [贡献指南](CONTRIBUTING.md)。
 
 可下载 Release 中的 **LipidGate-v1.0.3-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
 
@@ -82,9 +82,19 @@ python -m pytest -q
 | `config/history/` | 历史版本及规则验证指纹，保留审计追溯 |
 | `assets/` | 字体及图标 |
 
+根目录的几个文件用于不同的开发环节：
+
+| 文件 | 用途 |
+| --- | --- |
+| `pyproject.toml` | Python 包信息、依赖、命令入口和测试配置 |
+| `CHANGELOG.md` | 已发布版本和待发布改动的记录 |
+| `LipidGate.spec` | PyInstaller 的 Windows 程序打包配置 |
+| `CONTRIBUTING.md` | 开发环境、命名约定、验证步骤和提交范围 |
+| `AGENTS.md` | 代码工具使用的项目约定，不参与程序运行 |
+
 Gate 判定集中在 `ms2/gate_policy.py`，碎片归类在 `ms2/evidence_policy.py`，
 数值评分在各 scorer 中；链证据计数共用 `ms2/chain_utils.py`。
-源码整理、已修复问题及上传范围见 [项目审查记录](docs/repository_review.md)。
+模块职责见 [架构说明](docs/architecture.md)，提交和上传范围见 [贡献指南](CONTRIBUTING.md)。
 提交前执行 `python scripts/check_repository_hygiene.py --include-untracked`；
 原始样本、分析结果、缓存、构建文件及历史安装包不进入 Git。
 

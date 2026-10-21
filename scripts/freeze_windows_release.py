@@ -2,16 +2,58 @@
 from __future__ import annotations
 
 import argparse
+import ast
 from datetime import datetime, timezone
 import gzip
 import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+
+from check_repository_hygiene import check, repository_paths
+
+
+SOURCE_DIRECTORIES = frozenset({
+    "src", "tests", "scripts", "docs", "config", "assets", "libraries", "licenses", ".github",
+})
+SOURCE_ROOT_FILES = frozenset({
+    "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md", "AGENTS.md",
+    "CONTRIBUTING.md", "pyproject.toml", "requirements-build.txt", "LipidGate.spec",
+    ".gitignore", ".gitattributes",
+})
+
+
+def source_files(root: Path) -> list[Path]:
+    """Select checked repository sources, including new production files."""
+    problems = check(root, include_untracked=True)
+    if problems:
+        raise ValueError("Source packaging blocked:\n" + "\n".join(problems))
+    return [
+        root / relative
+        for relative in repository_paths(root, include_untracked=True)
+        if (relative in SOURCE_ROOT_FILES or Path(relative).parts[0] in SOURCE_DIRECTORIES)
+        and (root / relative).is_file()
+    ]
+
+
+def validate_application_version(root: Path, version: str) -> None:
+    """Keep package metadata, executable sources and release names aligned."""
+    version_path = root / "src" / "lipidgate" / "__init__.py"
+    for node in ast.parse(version_path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets
+        ):
+            actual = ast.literal_eval(node.value)
+            if actual != version:
+                raise ValueError(
+                    f"Release version {version} differs from application version {actual}; "
+                    f"update {version_path} first"
+                )
+            return
+    raise ValueError(f"Missing literal __version__ in {version_path}")
 
 
 def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
@@ -19,6 +61,8 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
     root = root.resolve()
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a numeric major.minor.patch version")
+    validate_application_version(root, version)
+    source_files(root)
     sys.path.insert(0, str(root / "src"))
     from lipidgate.ms2.indexed_library import INDEX_FORMAT_VERSION, RECORD_ENCODING, MAX_CACHED_BLOCKS, BLOCK_SIZE
     from lipidgate.ms2.library import LIBRARY_CACHE_VERSION
@@ -108,17 +152,9 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
         if archive.testzip() is not None or hashlib.sha256(archive.read("LipidGate.exe")).hexdigest() != digest:
             raise ValueError("Windows archive verification failed")
     source_zip = dist / f"LipidGate-v{version}-Source.zip"
-    tracked = subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z"],cwd=root).decode().split("\0")
-    directories = {"src","tests","scripts","docs","config","assets","libraries","licenses",".github"}
-    root_files = {"README.md","LICENSE","THIRD_PARTY_NOTICES.md","CHANGELOG.md","AGENTS.md","pyproject.toml",
-                  "requirements-build.txt","LipidGate.spec",".gitignore",".gitattributes"}
     with zipfile.ZipFile(source_zip,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
-        for relative in sorted(set(tracked)):
-            path = root / relative
-            if not relative or not path.is_file() or (relative not in root_files and Path(relative).parts[0] not in directories):
-                continue
-            if "__pycache__" in path.parts or path.suffix == ".pyc":
-                continue
+        for path in source_files(root):
+            relative = path.relative_to(root).as_posix()
             archive.write(path,f"LipidGate-v{version}/{relative}")
     with zipfile.ZipFile(source_zip) as archive:
         if archive.testzip() is not None:

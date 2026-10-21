@@ -14,7 +14,7 @@ from lipidgate.ms2.search import LipidMS2Searcher
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from curate_negative_hexcer_library import curate_block
-from curate_user_requested_lipid_updates import rebuild_block
+from curate_lipid_annotations import rebuild_block
 
 
 class NegativeHexCerTests(unittest.TestCase):

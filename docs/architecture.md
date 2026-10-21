@@ -79,7 +79,8 @@ Fragment routing belongs to `ms2/evidence_policy.py`; mandatory class gates and
 their shared evaluation belong to `ms2/gate_policy.py`. Generic and sphingolipid
 scorers consume those decisions, keeping numeric score calculation separate.
 Both gate coverage and resolution use the chain-position counter in
-`ms2/chain_utils.py`. See the [source review](repository_review.md).
+`ms2/chain_utils.py`. Development and change-scope conventions are in
+the [contribution guide](../CONTRIBUTING.md).
 
 All index blocks and earlier record caches use `ms2/safe_pickle.py` to restrict
 decoding to the supported data types. Hash metadata records content identity;

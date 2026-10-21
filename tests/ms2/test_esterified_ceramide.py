@@ -13,7 +13,7 @@ from lipidgate.ms2.search import LipidMS2Searcher
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from curate_esterified_ceramide_library import curate_eo, repair_interleaved_hexcer, repair_known_peak_typo, validate_block
-from curate_user_requested_lipid_updates import curate_block
+from curate_lipid_annotations import curate_block
 from collections import Counter
 
 

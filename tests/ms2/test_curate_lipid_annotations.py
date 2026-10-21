@@ -9,15 +9,15 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
-SCRIPT_PATH = SCRIPTS_DIR / "curate_user_requested_lipid_updates.py"
-SPEC = importlib.util.spec_from_file_location("curate_user_requested_lipid_updates", SCRIPT_PATH)
+SCRIPT_PATH = SCRIPTS_DIR / "curate_lipid_annotations.py"
+SPEC = importlib.util.spec_from_file_location("curate_lipid_annotations", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 CURATOR = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = CURATOR
 SPEC.loader.exec_module(CURATOR)
 
 
-class RequestedLibraryCurationTests(unittest.TestCase):
+class LipidAnnotationCurationTests(unittest.TestCase):
     def test_negative_ahexcer_keeps_only_three_fah_and_two_hg_fragments(self) -> None:
         block = """Name: AHexCer d18:1(O-16:0)/22:0(OH)
 PrecursorMZ: 1096.8972

@@ -1,5 +1,9 @@
 # Project review and repository scope (2026-10-13)
 
+This records the 2026-10-13 source checkpoint. Use the
+[contribution guide](../../CONTRIBUTING.md) for current development conventions
+and [configuration notes](../../config/README.md) for current fingerprints.
+
 ## Findings addressed
 
 1. Library SQLite blocks and legacy caches used unrestricted pickle loading.
@@ -52,7 +56,7 @@ scores, gates, resolution, fragment and pool data, candidate order, ranks and
 exported audit fields byte for byte. These synthetic scenarios verify preserved
 software behavior; they are not independent identification accuracy or FDR
 validation. Current verification and payload hashes are in
-[`the development manifest`](../config/library_revision_gate_cleanup_20261013.json).
+[`the checkpoint manifest`](../../config/library_revision_gate_cleanup_20261013.json).
 
 After cleanup, both the compiled policy suite and the Python fallback suite
 passed 936 tests and 3,118 subtests each. All 2,338,395 normalized library records

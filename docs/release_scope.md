@@ -12,3 +12,7 @@ Reproducibility materials are locally archived outside the project.
 
 Git history is retained. Removing a file from the current tree does not remove
 it from older commits; each published tag identifies the exact released tree.
+
+Current submission rules are in [CONTRIBUTING.md](../CONTRIBUTING.md). The
+[2026-10-13 source review](history/source_review_20261013.md) records an earlier
+checkpoint rather than the current release state.

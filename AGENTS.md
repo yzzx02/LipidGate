@@ -1,4 +1,7 @@
-# Development guidance
+# Repository instructions
+
+Follow `CONTRIBUTING.md` for setup, naming, change scope and source-control
+contents. Keep application and library changes independently traceable.
 
 Production entry points are `lipidgate gui`, `lipidgate project-run`,
 `src/lipidgate/pipeline.py` and `src/lipidgate/final_results.py`.

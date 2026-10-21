@@ -1,3 +1,4 @@
+"""Normalize lipid identities and fragment annotations in legacy MSP libraries."""
 from __future__ import annotations
 
 import argparse
@@ -574,7 +575,7 @@ def verify(path: Path, mode: str) -> Counter[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Apply the requested lipid naming and strict gate library updates.")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--mode", choices=("positive", "negative"), required=True)

@@ -12,7 +12,7 @@ promotion. PE-P `[M+H]+` and its locked Other policy remain unchanged.
 The final source passed **850 tests and 3,118 subtests** in both fresh policy
 processes (compiled and Python), with no failures, errors or skips. Fresh MSP
 parsing rebuilt both indexed libraries. Full comparison of all 2,350,846
-normalized records verified exactly the requested Common additions in the
+normalized records verified exactly the specified Common additions in the
 3,907 sodium PE records: every other record/field, numeric type, record ID and
 precursor ordering is unchanged. The original source blocks outside PE sodium
 were verified by the curator.

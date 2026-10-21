@@ -30,7 +30,7 @@ jobs:
           python -m pip install -r requirements-build.txt
           python -m pip install --no-deps -e .
       - name: Check repository contents
-        run: python scripts/check_repository_hygiene.py
+        run: python scripts/check_repository_hygiene.py --include-untracked
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64

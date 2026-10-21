@@ -14,7 +14,7 @@ from lipidgate.ms2.search import LipidMS2Searcher
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from curate_negative_gm3_lcb_library import chain_block, core_block
-from curate_user_requested_lipid_updates import header_value
+from curate_lipid_annotations import header_value
 
 
 class NegativeGm3Tests(unittest.TestCase):

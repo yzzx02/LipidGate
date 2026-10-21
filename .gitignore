@@ -10,10 +10,21 @@ src/lipidgate/ms2/*.pyd
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
 .venv/
 venv/
 env/
 *.egg-info/
+*.whl
+*.egg
+*.obj
+*.o
+*.a
+*.lib
 build/
 dist/
 
@@ -32,6 +43,7 @@ libraries/ms2/.library_cache/
 *.mzXML
 *.raw
 *.wiff
+*.wiff2
 *.scan
 
 # Intermediate library sources/results. Final MSP libraries are tracked via LFS.
@@ -39,18 +51,22 @@ libraries/ms2/.library_cache/
 *.xls
 *.csv
 !examples/**/*.csv
-!configs/**/*.csv
 !config/single_chain_whitelist.csv
 
 # Local editor state
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
 .cache/
 .codex_worktrees/
+.artifact_work/
+node_modules/
 tmp/
 libraries/ms2/*.msp
 
-# Local research, raw data and historical agent notes
+# Local research and archived working notes
 /data/
 /archive/
 /models/
