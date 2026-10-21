@@ -291,6 +291,17 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         negative_require_all_fah=True,
         score_profile=default_profile,
     )
+    # At least one HG and every distinct RCOO ion are mandatory. In the
+    # acetylated class, measured glycerophosphate can supply HG without the
+    # theoretical glycosyl-loss ion. Neutral losses only support Other.
+    for lipid_class in ("Glc-GP", "6-Ac-Glc-GP", "PtdGlc"):
+        by_class[lipid_class] = ClassRule(
+            lipid_class=lipid_class,
+            chain_level_min_fah=2,
+            negative_hg_min_matches=1,
+            negative_require_all_fah=True,
+            score_profile=default_profile,
+        )
     by_class["ADGGA"] = ClassRule(
         lipid_class="ADGGA",
         required_groups={},

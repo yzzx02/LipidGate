@@ -3,7 +3,20 @@
 `current_positive.msp.gz` and `current_negative.msp.gz` are the source MSP
 libraries, compressed losslessly and tracked with Git LFS. Run `git lfs pull`
 after cloning; the provided Source release ZIP already contains their payloads.
-The current raw source record counts are 1,241,896 and 1,084,079, respectively.
+The active source-library revision is `glc_gp_20261021`, recorded in
+[`library_revision_glc_gp_20261021.json`](../../config/library_revision_glc_gp_20261021.json).
+Glc-GP and 6-Ac-Glc-GP are integrated into `current_negative.msp.gz` and its
+versioned search index. Asp-PG and PAsp retain their distinct class identities.
+The current raw source record counts are 1,241,896 and 1,088,179, respectively.
+The 2026-10-21 revision names the former PtdGlc class Glc-GP and adds
+6-Ac-Glc-GP (glucose 6-O-acetylation, +C2H2O). Each has 2,145 unordered
+chain pairs on 65 explicitly allowed C14–C26 chains. Glc-GP HG is
+`[C3H6O5P]-` and `[M-C6H10O5-H]-`; 6-Ac-Glc-GP HG contains `[C3H6O5P]-` and the
+theoretical `[M-C8H12O6-H]-`. Require at least one HG and all distinct
+RCOO chain ions, with 60/20/20 FAH/HG/Other weights. Supporting losses
+use the existing production `ROOH`, `R=O` and headgroup-formula comments. See
+[`ptdglc_fragments.md`](../../docs/ptdglc_fragments.md).
+PGlu remains the separate glutamate-containing class, not a glucose alias.
 The 2026-10-13 revision adds 77 protonated MG and 77 single-acyl protonated
 NAGly records on the explicit C10–C26/DB0–6 single-chain whitelist. Both use
 HG/Other 75/25; see [the evidence policy](../../docs/ms2_final_policy.md).
@@ -20,7 +33,7 @@ no missing-HG fallback is used for this adduct.
 Windows users receive indexed versions automatically and need not import MSP.
 Developers build versioned indexes with `python scripts/build_prebuilt_libraries.py`.
 Normalization/expansion can make runtime counts differ from raw counts. The
-current development libraries have 1,254,316 positive and 1,084,079 negative
+current development libraries have 1,254,316 positive and 1,088,179 negative
 runtime records; v1.0.0 through v1.0.3 have 1,262,157 positive runtime records.
 
 The 2026-10-12 FA revision removes 703 `CompoundClass: FA` records with more
@@ -39,7 +52,9 @@ All 138 NAE compositions per polarity retain exactly one precursor peak.
 62.0606 and dehydration support are removed. See
 `scripts/rebuild_sterol_nae_library.py` for the repeatable curator.
 
-Current development code/source/index hashes and regression checks are recorded in
+The preceding PtdGlc source/index checkpoint is recorded in
+[`config/history/library_revision_ptdglc_20261021.json`](../../config/history/library_revision_ptdglc_20261021.json).
+The preceding gate/storage checkpoint remains in
 [`config/library_revision_gate_cleanup_20261013.json`](../../config/library_revision_gate_cleanup_20261013.json).
 The preceding MG/NAGly content revision remains recorded in
 [`config/history/library_revision_mg_nagly_h_20261013.json`](../../config/history/library_revision_mg_nagly_h_20261013.json).

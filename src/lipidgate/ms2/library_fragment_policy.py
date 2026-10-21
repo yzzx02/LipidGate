@@ -562,6 +562,11 @@ def normalize_special_aminophospholipid_fragments(
     class_name = str(compound_class or "").strip()
     adduct_text = str(adduct or "").strip()
     source = list(fragments)
+    if class_name in {"PtdGlc", "Glc-GP", "6-Ac-Glc-GP"} and adduct_text == "[M-H]-":
+        from .negative_ptdglc import chain_pair, negative_glc_gp_fragments
+
+        if chain_pair(lipid_chain_name) is not None:
+            return negative_glc_gp_fragments(lipid_chain_name, precursor_mz=precursor_mz)[2]
     if class_name == "LNAPE" and adduct_text.endswith("-"):
         return [
             replace(fragment, name=fragment.name.strip(), fragment_type="Diagnostic_HG", required_group="hg")

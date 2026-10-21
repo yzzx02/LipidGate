@@ -24,6 +24,7 @@ from .negative_cer_hsu2016 import normalize_negative_cer_hsu2016_fragments
 
 from .import_msdial_sphingo_positive import annotate_positive_sl_fragments
 from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name
+from .negative_ptdglc import canonicalize_glc_gp_identity
 from .library_fragment_policy import (
     CARBON_MONOISOTOPIC_MASS,
     HYDROGEN_MONOISOTOPIC_MASS,
@@ -937,6 +938,9 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
                 lipid_name,
                 lipid_chain_name,
             )
+            main_class, lipid_name, lipid_chain_name = canonicalize_glc_gp_identity(
+                main_class, lipid_name, lipid_chain_name,
+            )
             lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, main_class)
             lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(
                 lipid_chain_name,
@@ -1163,6 +1167,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
         current.get("compoundclass", ""),
         current.get("ms1_name", current.get("name", "")),
         current.get("name", ""),
+    )
+    compound_class, lipid_name, lipid_chain_name = canonicalize_glc_gp_identity(
+        compound_class, lipid_name, lipid_chain_name,
     )
     lipid_name = canonicalize_n_acyl_glycerophospholipid_name(lipid_name, compound_class)
     lipid_chain_name = canonicalize_n_acyl_glycerophospholipid_name(

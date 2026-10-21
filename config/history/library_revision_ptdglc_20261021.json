@@ -1,0 +1,377 @@
+{
+  "revision": "ptdglc_20261021",
+  "revision_date": "2026-10-21",
+  "preceding_revision": "feature_consensus_20261018",
+  "preceding_manifest": "library_revision_feature_consensus_20261018.json",
+  "base_source_commit": "deb9200cca6dde5e534342003664a42c627e0716",
+  "development_branch": "codex/ptdglc-library-20261021",
+  "release_kind": "development source and local indexes; published Windows executable not rebuilt",
+  "ms2_rules_sha256": "a62f9e141640b98d69dd6c504620839325835e31894a39610f3bb2ae4883d1fb",
+  "product_code_sha256": "0a4153bbeffdbc010cf31dee8824cef6abc00f9edd201db5ec6351cd4e100853",
+  "cache_version": 42,
+  "index_format": 3,
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916,
+      "index_sha256": "44a4e859ed2daad0c89dd3c7ee3e52cbc13976d9d2350c9407b54823988de346",
+      "index_bytes": 60317696
+    },
+    "negative": {
+      "raw_source_records": 1086034,
+      "normalized_records": 1086034,
+      "source_gzip_sha256": "d3de2103d3499166e345885c1ba63feada28d73ebfdb5a0638c0814202815e55",
+      "source_gzip_bytes": 39320023,
+      "index_sha256": "8f85574d5e232a79627123672e8ecebc384807dede6200a93be53f9c0962507a",
+      "index_bytes": 60436480
+    }
+  },
+  "curation": {
+    "status": "verified",
+    "source_sha256": "3d55d31ba8bd67723210d5d5b1b9b364a86d22c4be717d6a7f3fa4bd3e0b568e",
+    "output_sha256": "d3de2103d3499166e345885c1ba63feada28d73ebfdb5a0638c0814202815e55",
+    "whitelist_sha256": "0887380afa365926ea62f15d119b3d364de2f69a124a05c78adb7933f817cda3",
+    "permitted_chains": [
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        16,
+        0
+      ],
+      [
+        16,
+        1
+      ],
+      [
+        16,
+        2
+      ],
+      [
+        16,
+        3
+      ],
+      [
+        17,
+        0
+      ],
+      [
+        17,
+        1
+      ],
+      [
+        17,
+        2
+      ],
+      [
+        18,
+        0
+      ],
+      [
+        18,
+        1
+      ],
+      [
+        18,
+        2
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        18,
+        5
+      ],
+      [
+        19,
+        0
+      ],
+      [
+        19,
+        1
+      ],
+      [
+        19,
+        2
+      ],
+      [
+        19,
+        3
+      ],
+      [
+        19,
+        4
+      ],
+      [
+        20,
+        0
+      ],
+      [
+        20,
+        1
+      ],
+      [
+        20,
+        2
+      ],
+      [
+        20,
+        3
+      ],
+      [
+        20,
+        4
+      ],
+      [
+        20,
+        5
+      ],
+      [
+        21,
+        0
+      ],
+      [
+        21,
+        1
+      ],
+      [
+        21,
+        2
+      ],
+      [
+        21,
+        3
+      ],
+      [
+        22,
+        0
+      ],
+      [
+        22,
+        1
+      ],
+      [
+        22,
+        2
+      ],
+      [
+        22,
+        3
+      ],
+      [
+        22,
+        4
+      ],
+      [
+        22,
+        5
+      ],
+      [
+        22,
+        6
+      ],
+      [
+        23,
+        0
+      ],
+      [
+        23,
+        1
+      ],
+      [
+        23,
+        2
+      ],
+      [
+        23,
+        3
+      ],
+      [
+        23,
+        4
+      ],
+      [
+        23,
+        5
+      ],
+      [
+        24,
+        0
+      ],
+      [
+        24,
+        1
+      ],
+      [
+        24,
+        2
+      ],
+      [
+        24,
+        3
+      ],
+      [
+        24,
+        4
+      ],
+      [
+        24,
+        5
+      ],
+      [
+        24,
+        6
+      ],
+      [
+        25,
+        0
+      ],
+      [
+        25,
+        1
+      ],
+      [
+        25,
+        2
+      ],
+      [
+        26,
+        0
+      ],
+      [
+        26,
+        1
+      ],
+      [
+        26,
+        2
+      ],
+      [
+        26,
+        3
+      ],
+      [
+        26,
+        4
+      ],
+      [
+        26,
+        5
+      ],
+      [
+        26,
+        6
+      ]
+    ],
+    "chain_range": "explicit production whitelist intersected with C14-C26/DB0-6",
+    "source_ptdglc_records": 190,
+    "final_ptdglc_records": 2145,
+    "preserved_records": 1083889,
+    "final_raw_records": 1086034,
+    "unrelated_blocks_sha256": "1a62e6c1d739f4e29daf0b3e15c44cbd8959647f22b68a2b680afa592858d41a",
+    "unrelated_source_blocks_preserved": true,
+    "reference_title": "Quantitative analysis of a novel glucosylated phospholipid by liquid chromatography–mass spectrometry",
+    "reference_doi": "10.1016/j.ab.2008.02.007",
+    "reference_pmid": "18342611",
+    "hg": "[M-H-Glc]-; Glc=C6H10O5",
+    "fah": "every distinct RCOO- chain; one physical peak for repeated chains",
+    "other": "M-H-Glc-RCOOH; M-H-(RCOOH-H2O); precursor"
+  },
+  "curation_script_sha256": "a423f761bff772c4fbea7afcb22169db577b81813ee0ce9a3b121819beae7567",
+  "verification": {
+    "tests": 4081,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests_passed": 963,
+    "subtests_passed": 3118,
+    "command": "python -m pytest -q",
+    "junit_sha256": "bba242de94a4962f80221b1cb924b1dba64ad3025971ee12e62a1f415d30d61d",
+    "repository_hygiene_problems": 0,
+    "production_index_sample_search_passed": true,
+    "production_index_missing_hg_rejected": true,
+    "positive_source_unchanged": true,
+    "every_unrelated_negative_block_and_order_preserved": true,
+    "PGlu_records_unchanged": true
+  },
+  "example": {
+    "name": "PtdGlc(18:0_20:0)",
+    "precursor_mz": 893.612453519139,
+    "formula": "C47H91O13P",
+    "fragments": [
+      {
+        "name": "[RCOO]-(18:0)",
+        "mz": 283.26425393279897,
+        "pool": "FAH"
+      },
+      {
+        "name": "[RCOO]-(20:0)",
+        "mz": 311.295554061719,
+        "pool": "FAH"
+      },
+      {
+        "name": "[M-H-Glc-RCOOH]-(20:0)",
+        "mz": 419.2567995706489,
+        "pool": "Other"
+      },
+      {
+        "name": "[M-H-Glc-RCOOH]-(18:0)",
+        "mz": 447.28809969956893,
+        "pool": "Other"
+      },
+      {
+        "name": "[M-H-(RCOOH-H2O)]-(20:0)",
+        "mz": 599.320187674829,
+        "pool": "Other"
+      },
+      {
+        "name": "[M-H-(RCOOH-H2O)]-(18:0)",
+        "mz": 627.351487803749,
+        "pool": "Other"
+      },
+      {
+        "name": "[M-H-Glc]-",
+        "mz": 731.5596300989889,
+        "pool": "HG"
+      },
+      {
+        "name": "[M-H]-",
+        "mz": 893.612453519139,
+        "pool": "Other"
+      }
+    ]
+  },
+  "exported_class_library_sha256": "a52d25d765b4f0cbe7392263f4f7ffe93f153c5ca77c64cb8ac7a7be936b802b"
+}

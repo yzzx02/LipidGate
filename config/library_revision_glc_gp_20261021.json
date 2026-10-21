@@ -1,0 +1,523 @@
+{
+  "revision": "glc_gp_20261021",
+  "revision_date": "2026-10-21",
+  "preceding_revision": "ptdglc_20261021",
+  "preceding_manifest": "history/library_revision_ptdglc_20261021.json",
+  "base_source_commit": "deb9200cca6dde5e534342003664a42c627e0716",
+  "development_branch": "codex/ptdglc-library-20261021",
+  "release_kind": "development source and local indexes; published Windows executable not rebuilt",
+  "ms2_rules_sha256": "38b4053e19472a5a90c76a471877f01ae84431f37569c6b3aa9e085985deb594",
+  "product_code_sha256": "f535c97cf937584cfdc407ef753bf398dc68095318a5d34e176b16f474951bb0",
+  "cache_version": 42,
+  "index_format": 3,
+  "raw_total_records": 2330075,
+  "runtime_total_records": 2342495,
+  "compound_classes": 166,
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241896,
+      "normalized_records": 1254316,
+      "source_gzip_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "source_gzip_bytes": 23892916,
+      "index_sha256": "fdad9a76efadb7ae43988955d2bec4496ea29aa092263c6257b1324821bc6c19",
+      "index_bytes": 60317696
+    },
+    "negative": {
+      "raw_source_records": 1088179,
+      "normalized_records": 1088179,
+      "source_gzip_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "source_gzip_bytes": 39395074,
+      "index_sha256": "b111d1c49fa246ecfba5dc37c0714d32921f6786bc16ffabd135bbb0b2b0bb45",
+      "index_bytes": 60600320
+    }
+  },
+  "curation": {
+    "status": "verified",
+    "source_sha256": "d3de2103d3499166e345885c1ba63feada28d73ebfdb5a0638c0814202815e55",
+    "output_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+    "whitelist_sha256": "0887380afa365926ea62f15d119b3d364de2f69a124a05c78adb7933f817cda3",
+    "permitted_chains": [
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        16,
+        0
+      ],
+      [
+        16,
+        1
+      ],
+      [
+        16,
+        2
+      ],
+      [
+        16,
+        3
+      ],
+      [
+        17,
+        0
+      ],
+      [
+        17,
+        1
+      ],
+      [
+        17,
+        2
+      ],
+      [
+        18,
+        0
+      ],
+      [
+        18,
+        1
+      ],
+      [
+        18,
+        2
+      ],
+      [
+        18,
+        3
+      ],
+      [
+        18,
+        4
+      ],
+      [
+        18,
+        5
+      ],
+      [
+        19,
+        0
+      ],
+      [
+        19,
+        1
+      ],
+      [
+        19,
+        2
+      ],
+      [
+        19,
+        3
+      ],
+      [
+        19,
+        4
+      ],
+      [
+        20,
+        0
+      ],
+      [
+        20,
+        1
+      ],
+      [
+        20,
+        2
+      ],
+      [
+        20,
+        3
+      ],
+      [
+        20,
+        4
+      ],
+      [
+        20,
+        5
+      ],
+      [
+        21,
+        0
+      ],
+      [
+        21,
+        1
+      ],
+      [
+        21,
+        2
+      ],
+      [
+        21,
+        3
+      ],
+      [
+        22,
+        0
+      ],
+      [
+        22,
+        1
+      ],
+      [
+        22,
+        2
+      ],
+      [
+        22,
+        3
+      ],
+      [
+        22,
+        4
+      ],
+      [
+        22,
+        5
+      ],
+      [
+        22,
+        6
+      ],
+      [
+        23,
+        0
+      ],
+      [
+        23,
+        1
+      ],
+      [
+        23,
+        2
+      ],
+      [
+        23,
+        3
+      ],
+      [
+        23,
+        4
+      ],
+      [
+        23,
+        5
+      ],
+      [
+        24,
+        0
+      ],
+      [
+        24,
+        1
+      ],
+      [
+        24,
+        2
+      ],
+      [
+        24,
+        3
+      ],
+      [
+        24,
+        4
+      ],
+      [
+        24,
+        5
+      ],
+      [
+        24,
+        6
+      ],
+      [
+        25,
+        0
+      ],
+      [
+        25,
+        1
+      ],
+      [
+        25,
+        2
+      ],
+      [
+        26,
+        0
+      ],
+      [
+        26,
+        1
+      ],
+      [
+        26,
+        2
+      ],
+      [
+        26,
+        3
+      ],
+      [
+        26,
+        4
+      ],
+      [
+        26,
+        5
+      ],
+      [
+        26,
+        6
+      ]
+    ],
+    "chain_range": "explicit production whitelist intersected with C14-C26/DB0-6",
+    "source_target_records": {
+      "PtdGlc": 2145
+    },
+    "final_class_records": {
+      "Glc-GP": 2145,
+      "6-Ac-Glc-GP": 2145
+    },
+    "preserved_records": 1083889,
+    "final_raw_records": 1088179,
+    "unrelated_blocks_sha256": "1a62e6c1d739f4e29daf0b3e15c44cbd8959647f22b68a2b680afa592858d41a",
+    "unrelated_source_blocks_preserved": true,
+    "reference_title": "Quantitative analysis of a novel glucosylated phospholipid by liquid chromatography–mass spectrometry",
+    "reference_doi": "10.1016/j.ab.2008.02.007",
+    "reference_pmid": "18342611",
+    "hg": {
+      "Glc-GP": "[C3H6O5P]-; [M-C6H10O5-H]-",
+      "6-Ac-Glc-GP": "[C3H6O5P]-; [M-C8H12O6-H]- (theoretical)"
+    },
+    "fah": "every distinct RCOO- chain; one physical peak for repeated chains",
+    "other": {
+      "Glc-GP": "[M-(ROOH)-C6H10O5-H]-(chain); [M-(R=O)-H]-(chain); [M-H]-",
+      "6-Ac-Glc-GP": "[M-(ROOH)-C8H12O6-H]-(chain); [M-H]-"
+    },
+    "acetylation": "glucose 6-O-acetylation; increment C2H2O",
+    "acetylated_evidence": "user-supplied 18:0/20:0 peaks; glycosyl-loss HG is theoretical; all other chain pairs are theoretical expansion",
+    "negative_hg_min_matches": 1,
+    "negative_require_all_fah": true
+  },
+  "curation_script_sha256": "0bffb809f5c27b274a7fa1fa3cfefd148dfbadf27a2c2cb8ac28341d7e3ecff8",
+  "structural_reference": "https://www.lipidmaps.org/databases/lmsd/LMGP14010004",
+  "verification": {
+    "test_counts": {
+      "tests": 4089,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "tests_passed": 971,
+    "subtests_passed": 3118,
+    "command": "python -m pytest -q",
+    "junit_sha256": "8fdd948a17ffa2fbb5854a3b7d131df055a0aa2b8231c7be2fca6c0c38ceee01",
+    "export_all_4290_fragments_verified": true,
+    "production_index_search_cases": [
+      {
+        "compound_class": "Glc-GP",
+        "case": "all",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "Glc-GP",
+        "case": "153_hg_only",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "Glc-GP",
+        "case": "loss_hg_only",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "Glc-GP",
+        "case": "missing_hg",
+        "passed_required_gates": false
+      },
+      {
+        "compound_class": "Glc-GP",
+        "case": "missing_20_0_fah",
+        "passed_required_gates": false
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "all",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "153_hg_only",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "loss_hg_only",
+        "passed_required_gates": true
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "missing_hg",
+        "passed_required_gates": false
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "missing_20_0_fah",
+        "passed_required_gates": false
+      },
+      {
+        "compound_class": "6-Ac-Glc-GP",
+        "case": "user_measured_only",
+        "passed_required_gates": true
+      }
+    ],
+    "every_unrelated_negative_block_and_order_preserved": true,
+    "PGlu_records_unchanged": 630,
+    "positive_source_unchanged": true,
+    "headgroup_threshold": "1 of 2 HG ions (at least half)",
+    "both_distinct_fah_required": true,
+    "workbooks": {
+      "status": "verified",
+      "outputs": {
+        "catalog": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\library_statistics_20261020\\LipidGate_Supplementary_Data_1.xlsx",
+        "heads": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\phospholipid_headgroups_20261021\\LipidGate_phospholipid_headgroup_SMILES_corrected_20261021.xlsx"
+      },
+      "classes": 166,
+      "headgroup_classes": 89,
+      "filled": 60,
+      "blank": 29,
+      "unique_heads": 23,
+      "content_and_style_preserved": true,
+      "no_fills_or_stripes": true,
+      "chemical_checks_passed": true
+    }
+  },
+  "examples": [
+    {
+      "name": "Glc-GP(18:0_20:0)",
+      "precursor_mz": 893.612453519139,
+      "formula": "C47H91O13P",
+      "fragments": [
+        {
+          "name": "[C3H6O5P]-",
+          "mz": 152.995833855259,
+          "pool": "HG"
+        },
+        {
+          "name": "[RCOO]-(18:0)",
+          "mz": 283.26425393279897,
+          "pool": "FAH"
+        },
+        {
+          "name": "[RCOO]-(20:0)",
+          "mz": 311.295554061719,
+          "pool": "FAH"
+        },
+        {
+          "name": "[M-(ROOH)-C6H10O5-H]-(20:0)",
+          "mz": 419.2567995706489,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-(ROOH)-C6H10O5-H]-(18:0)",
+          "mz": 447.28809969956893,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-(R=O)-H]-(20:0)",
+          "mz": 599.320187674829,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-(R=O)-H]-(18:0)",
+          "mz": 627.351487803749,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-C6H10O5-H]-",
+          "mz": 731.5596300989889,
+          "pool": "HG"
+        },
+        {
+          "name": "[M-H]-",
+          "mz": 893.612453519139,
+          "pool": "Other"
+        }
+      ]
+    },
+    {
+      "name": "6-Ac-Glc-GP(18:0_20:0)",
+      "precursor_mz": 935.6230182031691,
+      "formula": "C49H93O14P",
+      "fragments": [
+        {
+          "name": "[C3H6O5P]-",
+          "mz": 152.995833855259,
+          "pool": "HG"
+        },
+        {
+          "name": "[RCOO]-(18:0)",
+          "mz": 283.26425393279897,
+          "pool": "FAH"
+        },
+        {
+          "name": "[RCOO]-(20:0)",
+          "mz": 311.295554061719,
+          "pool": "FAH"
+        },
+        {
+          "name": "[M-(ROOH)-C8H12O6-H]-(20:0)",
+          "mz": 419.25679957064915,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-(ROOH)-C8H12O6-H]-(18:0)",
+          "mz": 447.28809969956916,
+          "pool": "Other"
+        },
+        {
+          "name": "[M-C8H12O6-H]-",
+          "mz": 731.5596300989891,
+          "pool": "HG"
+        },
+        {
+          "name": "[M-H]-",
+          "mz": 935.6230182031691,
+          "pool": "Other"
+        }
+      ]
+    }
+  ],
+  "exported_library": {
+    "path": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\glc_gp_library_20261021\\Glc_GP_and_6_Ac_Glc_GP_negative_C14-C26.msp",
+    "sha256": "8ca58b750807b3196f3dd51ae439c323aa362003a819a6b0970c3056aac69a79",
+    "records": 4290
+  }
+}
