@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Sequence, Dict, List
 from .chain_utils import extract_chain_tokens, extract_fragment_chain_token
 from .evidence_policy import (
@@ -60,6 +60,7 @@ from .resolution_policy import (
     PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON,
 )
 from .rules import ClassRule
+from .record_facts import cached_rule_fact, cached_record_fact, cached_fragment_fact, _current_facts
 from .scoring_policy import (
     FAH_ONLY_FALLBACK_HG_DOMINANT_MIN_POOL_SCORE,
     FAH_ONLY_FALLBACK_MIN_MATCHES,
@@ -87,6 +88,20 @@ def candidate_passes_evidence_gate(result: CandidateScore) -> bool:
     )
 
 
+def sodium_phospholipid_missing_hg(
+    record: LibraryRecord, matches: Sequence[FragmentMatch],
+) -> bool:
+    """Share the existing mandatory PE/PC sodium HG checks with search routing."""
+    if is_positive_pe_sodium(record):
+        names = {m.fragment.name for m in matches if m.fragment.fragment_type == "Diagnostic_HG"}
+        return not PE_SODIUM_HG_NAMES.issubset(names)
+    if is_positive_pc_sodium(record):
+        peaks = {float(m.experimental_peak.mz) for m in matches
+                 if m.fragment.fragment_type == "Diagnostic_HG" and m.fragment.name in PC_SODIUM_HG_NAMES}
+        return len(peaks) < 2
+    return False
+
+
 def positive_pep_chain_gate_counts(
     record: LibraryRecord, matches: Sequence[FragmentMatch],
 ) -> tuple[int, int]:
@@ -109,6 +124,7 @@ def is_positive_three_substituent_glyceride(record: LibraryRecord) -> bool:
     return is_positive_class(record, POSITIVE_THREE_SUBSTITUENT_GLYCERIDE_CLASSES)
 
 
+@cached_fragment_fact
 def glyceride_substituent_evidence_group(
     record: LibraryRecord,
     fragment: FragmentRecord,
@@ -143,6 +159,7 @@ def glyceride_substituent_evidence_group(
     return None
 
 
+@cached_record_fact
 def glyceride_substituent_group_multiplicity(record: LibraryRecord) -> Counter[str]:
     """Derive three structural positions while retaining repeated groups."""
 
@@ -353,6 +370,7 @@ def required_fractional_hits(total_count: int, min_fraction: float, min_matches:
     return min(required_hits, total_count)
 
 
+@cached_rule_fact
 def derive_required_groups(
     record: LibraryRecord,
     rule: ClassRule,
@@ -493,8 +511,7 @@ def missing_required_groups(
 ) -> List[str]:
     missing = []
     if is_positive_pe_sodium(record):
-        hg_names = {m.fragment.name for m in matches if m.fragment.fragment_type == "Diagnostic_HG"}
-        if not PE_SODIUM_HG_NAMES.issubset(hg_names):
+        if sodium_phospholipid_missing_hg(record, matches):
             missing.append("hg")
         return missing
     if is_positive_pep(record):
@@ -510,19 +527,15 @@ def missing_required_groups(
             missing.append("hg")
         return missing + oxidized_chain_missing_groups(record, matches)
     if is_positive_pc_sodium(record):
-        hg_peaks = {float(m.experimental_peak.mz) for m in matches
-                    if m.fragment.fragment_type == "Diagnostic_HG" and m.fragment.name in PC_SODIUM_HG_NAMES}
         chain_peaks = {float(m.experimental_peak.mz) for m in matches
                        if fragment_is_chain_evidence(record, m.fragment)}
-        if len(hg_peaks) < 2:
+        if sodium_phospholipid_missing_hg(record, matches):
             missing.append("hg")
         if len(chain_peaks) < 2:
             missing.append("fah")
         return missing
     if is_positive_mode:
         matched_hg_count = _matched_hg_fragment_count(record, matches)
-        matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
-        matched_fa_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_fa_loss_gate)
 
         if _requires_precursor_fragment(record) and _matched_precursor_ion_fragment_count(matches) < 1:
             missing.append("precursor")
@@ -565,6 +578,7 @@ def missing_required_groups(
         if hg_fragment_count == 0 and loss_fragment_count > 0:
             # Loss-only positive records require chain-count-consistent coverage.
             required_loss_hits = _positive_required_loss_hits(chain_tokens, fa_loss_fragment_count)
+            matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
             if matched_loss_count < required_loss_hits:
                 missing.append("loss")
 
@@ -575,9 +589,11 @@ def missing_required_groups(
                 min_fraction=float(getattr(rule, "positive_loss_min_fraction", 0.0)),
                 min_matches=int(getattr(rule, "positive_loss_min_matches", 0)),
             )
-            matched_loss_for_ratio = matched_fa_loss_count if fa_loss_fragment_count > 0 else matched_loss_count
-            if ratio_required_loss_hits > 0 and matched_loss_for_ratio < ratio_required_loss_hits:
-                missing.append("loss")
+            if ratio_required_loss_hits > 0:
+                predicate = _fragment_counts_as_fa_loss_gate if fa_loss_fragment_count > 0 else _fragment_counts_as_effective_loss
+                matched_loss_for_ratio = _chain_evidence_count_for_matches(record, matches, predicate)
+                if matched_loss_for_ratio < ratio_required_loss_hits:
+                    missing.append("loss")
 
         if hg_fragment_count == 0 and loss_fragment_count == 0 and expected_fah_tokens:
             required_fah_hits = required_fah_gate_hits(record, expected_fah_tokens)
@@ -642,6 +658,24 @@ class SphingolipidGateEvidence:
     has_negative_chain_evidence: bool
 
 
+@cached_record_fact
+def _sphingolipid_library_evidence(record):
+    types = {id(f): frozenset(sphingolipid_fragment_types(record, f)) for f in record.fragments}
+    library_types = frozenset().union(*types.values())
+    adduct = str(record.adduct or "").strip()
+    class_key = normalized_class_key(record.compound_class)
+    tiered = ((adduct == "[M-H]-" and class_key in {"CER1P", "CERP"})
+              or (adduct in {"[M+CH3COO]-", "[M+HCOO]-"} and class_key == "SM"))
+    identity_valid = True
+    if is_positive_pe_cer(record.compound_class, record.adduct):
+        identity_valid = pe_cer_from_name(record.lipid_chain_name) is not None
+    if is_positive_gm3(record.compound_class, record.adduct):
+        identity_valid = identity_valid and re.fullmatch(
+            r"GM3\(d\d+:\d+/\d+:\d+\)", record.lipid_chain_name) is not None
+    hg_count = sum(f.fragment_type == "Diagnostic_HG" for f in record.fragments)
+    return types, library_types, adduct, class_key, tiered, identity_valid, hg_count
+
+
 def evaluate_sphingolipid_gate(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -649,26 +683,21 @@ def evaluate_sphingolipid_gate(
     series: str,
 ) -> SphingolipidGateEvidence:
     """Evaluate name/type gates without awarding scores or applying fallbacks."""
+    if validate_rule is _REFERENCE_VALIDATE_RULE:
+        compiled = _evaluate_compiled_sphingolipid_gate(record, matches, rule, series)
+        if compiled is not None:
+            return compiled
     matched_names = {match.fragment.name for match in matches}
     name_gate_passed = validate_rule(rule, matched_names, series)
-    if is_positive_pe_cer(record.compound_class, record.adduct):
-        name_gate_passed = name_gate_passed and pe_cer_from_name(record.lipid_chain_name) is not None
-    if is_positive_gm3(record.compound_class, record.adduct):
-        name_gate_passed = name_gate_passed and re.fullmatch(
-            r"GM3\(d\d+:\d+/\d+:\d+\)", record.lipid_chain_name
-        ) is not None
+    (types_by_id, library_types, adduct, class_key, uses_negative_hg_fah_tiered_gate,
+     identity_valid, hg_total_count) = _sphingolipid_library_evidence(record)
+    name_gate_passed = name_gate_passed and identity_valid
 
     def evidence_types(fragment: FragmentRecord) -> set[str]:
-        return sphingolipid_fragment_types(record, fragment)
+        found = types_by_id.get(id(fragment))
+        return found if found is not None else sphingolipid_fragment_types(record, fragment)
 
-    library_types = set().union(*(evidence_types(f) for f in record.fragments))
     matched_types = set().union(*(evidence_types(m.fragment) for m in matches))
-    adduct = str(record.adduct or "").strip()
-    class_key = normalized_class_key(record.compound_class)
-    uses_negative_hg_fah_tiered_gate = (
-        (adduct == "[M-H]-" and class_key in {"CER1P", "CERP"})
-        or (adduct in {"[M+CH3COO]-", "[M+HCOO]-"} and class_key == "SM")
-    )
     def matched_type_count(type_group: set[str]) -> int:
         return sum(1 for match in matches if evidence_types(match.fragment) & type_group)
 
@@ -721,9 +750,6 @@ def evaluate_sphingolipid_gate(
                 type_gate_passed = False
                 break
     if uses_negative_hg_fah_tiered_gate:
-        hg_total_count = sum(
-            1 for fragment in record.fragments if fragment.fragment_type == "Diagnostic_HG"
-        )
         hg_matched_count = matched_type_count({"Diagnostic_HG"})
         if hg_total_count <= 0 or hg_matched_count * 2 < hg_total_count:
             type_gate_passed = False
@@ -745,3 +771,70 @@ def evaluate_sphingolipid_gate(
         has_negative_chain_evidence=(uses_negative_hg_fah_tiered_gate
                                      and matched_type_count({"Diagnostic_FA", "Diagnostic_FA_Loss"}) >= 1),
     )
+
+
+_REFERENCE_VALIDATE_RULE = validate_rule
+
+
+@cached_record_fact
+def _supports_compiled_sphingolipid_gate(record):
+    return (len(record.fragments)<=64
+            and len({id(f) for f in record.fragments})==len(record.fragments))
+
+
+def _evaluate_compiled_sphingolipid_gate(record, matches, rule, series):
+    current = _current_facts.get()
+    if (current is None or current[0] is not record or not _supports_compiled_sphingolipid_gate(record)
+            # A str subclass can compare equal to an earlier name while having
+            # different conversion behavior. Keep this admission check fresh.
+            or any(type(f.name) is not str for f in record.fragments)):
+        return None
+    from .equivalent_candidates import _sphingo_revision, _REFERENCE_SPHINGO_REVISION
+    from .sphingolipid_rules import _series_key
+    from .native_bridge import load_bridge
+    last_key=(_evaluate_compiled_sphingolipid_gate,series)
+    last=current[1].get(last_key)
+    revision=None
+    prepared=None
+    if last is not None and last[0]==id(rule):
+        bridge=load_bridge()
+        unchanged=(bridge.sphingo_rule_unchanged(rule,last[1])
+                   if bridge is not None and hasattr(bridge,'sphingo_rule_unchanged')
+                   and _sphingo_revision is _REFERENCE_SPHINGO_REVISION else None)
+        if unchanged is True:
+            prepared=last[2]
+        elif unchanged is None:
+            revision=_sphingo_revision(rule)
+            if revision==last[1]:
+                prepared=last[2]
+    if prepared is None:
+        if revision is None:
+            revision=_sphingo_revision(rule)
+        key=(_evaluate_compiled_sphingolipid_gate,revision,series)
+        prepared=current[1].get(key)
+    if prepared is None:
+        from .search_plan import _sphingo_program
+        (types, library_types, adduct, class_key, tiered, identity_valid, hg_total) = _sphingolipid_library_evidence(record)
+        groups = list(rule.required_any_groups)
+        groups.extend(names for name,names in rule.required_any_by_series.items() if name==_series_key(series))
+        exact_rule = replace(rule,required_any_groups=groups,required_any_by_series={},
+                             allow_hg_only_fallback=False,allow_fah_only_fallback=False)
+        program = _sphingo_program(record,exact_rule)
+        routes = {id(f):(1 << i,types[id(f)]) for i,f in enumerate(record.fragments)}
+        chain_mask = sum(1 << i for i,f in enumerate(record.fragments)
+                         if types[id(f)] & {'Diagnostic_FA','Diagnostic_FA_Loss'})
+        prepared = (program,routes,library_types,adduct,class_key,tiered,identity_valid,chain_mask)
+        current[1][key] = prepared
+    if revision is not None:
+        current[1][last_key]=(id(rule),revision,prepared)
+    program,routes,library_types,adduct,class_key,tiered,identity_valid,chain_mask = prepared
+    mask, matched_types = 0,set()
+    for match in matches:
+        found = routes.get(id(match.fragment))
+        if found is None or mask & found[0]:
+            return None
+        mask |= found[0]
+        matched_types.update(found[1])
+    passed = identity_valid and any(all((mask & bits).bit_count()>=minimum for bits,minimum in arm) for arm in program)
+    return SphingolipidGateEvidence(bool(passed),frozenset(library_types),frozenset(matched_types),
+                                   adduct,class_key,tiered,bool(tiered and mask & chain_mask))

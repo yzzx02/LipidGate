@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import bisect
+import builtins
+import math
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
@@ -24,13 +27,14 @@ from .fragment_labels import canonical_fragment_label
 from .library import load_library
 from .indexed_library import open_indexed_library, validate_precursor_range
 from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name, canonicalize_single_chain_name
-from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord
+from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, PoolScore, FragmentRecord, ExperimentalPeak
 from .ranking_policy import (
     build_original_rank_tiers,
     multiplicity_adjusted_fragment_count,
 )
 from .resolution_policy import fragment_is_chain_evidence, normalized_class_key
 from .rules import DEFAULT_RULES, RuleSet
+from .record_facts import with_search_facts, with_result_facts, with_output_facts, with_record_facts, cached_record_fact, enable_spectrum_facts
 from .sphingolipid_naming import (
     canonicalize_multichain_sphingolipid_name,
     has_complete_multichain_sphingolipid_identity,
@@ -39,6 +43,7 @@ from .scoring_policy import (
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY as POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY,
     HG_ONLY_FALLBACK_REASON as POLICY_HG_ONLY_FALLBACK_REASON,
     SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE,
+    SPHINGO_HG_ONLY_FALLBACK_CLASS_KEYS,
 )
 from .scoring import (
     LOSS_FRAGMENT_TYPES,
@@ -57,7 +62,15 @@ from .scoring import (
 )
 from .sphingolipid_scoring import score_sphingolipid_candidate
 from .sphingolipid_rules import SPHINGOLIPID_RULEBOOK
+from . import native_engine as _native_engine, scoring as _scoring, prepared_scoring as _prepared_scoring
 
+_PRODUCTION_SCORE_CANDIDATE = score_candidate
+_PRODUCTION_SPHINGO_SCORER = score_sphingolipid_candidate
+_PRODUCTION_EVIDENCE_GATE = candidate_passes_evidence_gate
+_PRODUCTION_PREPARED_SCORER = _prepared_scoring.score_prepared
+_PRODUCTION_INDEX_SCORER = _prepared_scoring.score_indexes
+_PRODUCTION_BUILD_TIERS = build_original_rank_tiers
+_PRODUCTION_MATERIALIZER = _native_engine.materialize_matches
 
 
 try:
@@ -76,19 +89,7 @@ class LipidMS2Searcher:
     DEFAULT_MIN_TOTAL_SCORE = 50.0
     SHARED_CHAIN_PEAK_INTENSITY_FACTOR = 0.5
     TENTATIVE_MISSING_HG_CLASSES = {"PC", "PE", "PG", "PI", "PS", "PA"}
-    SPHINGO_HG_ONLY_FALLBACK_CLASSES = {
-        "HEXCER",
-        "AHEXCER",
-        "LACCER",
-        "HEX2CER",
-        "HEX3CER",
-        "SHEXCER",
-        "SHEXCERO",
-        "SM",
-        "LSM",
-        "CER1P",
-        "CERP",
-    }
+    SPHINGO_HG_ONLY_FALLBACK_CLASSES = set(SPHINGO_HG_ONLY_FALLBACK_CLASS_KEYS)
     HG_ONLY_FALLBACK_REASON = POLICY_HG_ONLY_FALLBACK_REASON
     HG_ONLY_FALLBACK_MIN_HG_SCORE = SPHINGO_HG_ONLY_FALLBACK_MIN_HG_SCORE
     HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY = POLICY_HG_ONLY_FALLBACK_MIN_RELATIVE_INTENSITY
@@ -130,6 +131,7 @@ class LipidMS2Searcher:
         precursor_mz_max: float | None = None,
         use_native_engine: bool = True,
         native_min_candidates: int = 128,
+        use_score_prefilter: bool = True,
     ) -> None:
         self.precursor_mz_min, self.precursor_mz_max = validate_precursor_range(precursor_mz_min, precursor_mz_max)
         # Keep theoretical candidates just outside the boundary when they can
@@ -193,10 +195,28 @@ class LipidMS2Searcher:
         self.use_fragment_index = bool(use_fragment_index)
         self.use_native_engine = bool(use_native_engine)
         self.native_min_candidates = max(0, int(native_min_candidates))
+        self.use_score_prefilter = bool(use_score_prefilter)
         self.fragment_prefilter_min_candidates = max(0, int(fragment_prefilter_min_candidates))
         self.last_output_path: Path | None = None
+        self._native_search_plan = None
+        self._library_fact_cache = None
+        if (self.use_native_engine and self.use_score_prefilter and self.rules is DEFAULT_RULES
+                and type(self) is LipidMS2Searcher
+                and score_candidate is _PRODUCTION_SCORE_CANDIDATE
+                and score_sphingolipid_candidate is _PRODUCTION_SPHINGO_SCORER
+                and candidate_passes_evidence_gate is _PRODUCTION_EVIDENCE_GATE):
+            from .native_plan import load_native_search_plan
+            self._native_search_plan = load_native_search_plan(self.library)
+            if self._native_search_plan is not None:
+                from .record_facts import LibraryFactCache
+                self._library_fact_cache = LibraryFactCache()
 
     def close(self) -> None:
+        self._native_search_plan = None
+        cache = getattr(self, "_library_fact_cache", None)
+        if cache is not None:
+            cache.clear()
+        self._library_fact_cache = None
         close = getattr(self.library, "close", None)
         if close is not None:
             close()
@@ -222,11 +242,7 @@ class LipidMS2Searcher:
 
     @staticmethod
     def _adduct_charge(adduct: object) -> int | None:
-        matched = re.search(r"\](\d*)([+-])$", str(adduct or "").strip())
-        if matched is None:
-            return None
-        magnitude = int(matched.group(1) or "1")
-        return magnitude if matched.group(2) == "+" else -magnitude
+        return _cached_adduct_charge(str(adduct or "").strip())
 
     @classmethod
     def _candidate_charge_is_compatible(
@@ -377,6 +393,7 @@ class LipidMS2Searcher:
         ]
         return max(relevant, default=0.0)
 
+    @with_output_facts
     def _qualifies_secondary_result(self, result) -> bool:
         record = result.record
         if self._is_single_chain_record(record):
@@ -621,6 +638,17 @@ class LipidMS2Searcher:
         """Resolve d/h versus t/non-hydroxy pairs with the t-LCB water-loss ion."""
 
         result_list = list(results)
+        if (cls is LipidMS2Searcher
+                and cls._trihydroxy_t_counterpart is _PRODUCTION_TRIHYDROXY_COUNTERPART
+                and cls._normal_class_key.__func__ is _PRODUCTION_NORMAL_CLASS_KEY
+                and all(type(r.record.lipid_chain_name) is str
+                        and '/h' not in r.record.lipid_chain_name and '/H' not in r.record.lipid_chain_name
+                        and type(r.record.lipid_name) is str and type(r.record.adduct) is str
+                        and type(r.record.compound_class) is str and type(r.record.precursor_mz) in (float,int)
+                        for r in result_list)):
+            # A d/h-versus-t pair requires the literal /h (case insensitive).
+            # With no such name, constructing every full identity is unused.
+            return result_list
         by_identity: Dict[tuple[str, str, str, str, float], list[CandidateScore]] = {}
         for result in result_list:
             record = result.record
@@ -734,6 +762,7 @@ class LipidMS2Searcher:
             if cls._is_chain_evidence_match(result.record, match)
         }
 
+    @with_result_facts
     def _rescore_with_shared_chain_peak_penalty(
         self,
         spectrum: ExperimentalSpectrum,
@@ -808,8 +837,18 @@ class LipidMS2Searcher:
         ordered = list(results)
         if not ordered:
             return []
-        original_metrics = self._compute_rank_metrics(ordered)
-        self._sort_by_rank_metrics(ordered, original_metrics)
+        if (len(ordered)==1 and type(self) is LipidMS2Searcher
+                and build_original_rank_tiers is _PRODUCTION_BUILD_TIERS
+                and self._scores_tied is _PRODUCTION_SCORES_TIED
+                and self._normal_class_key.__func__ is _PRODUCTION_NORMAL_CLASS_KEY
+                and self._compute_rank_metrics.__func__ is _PRODUCTION_RANK_METRICS
+                and self._sort_by_rank_metrics.__func__ is _PRODUCTION_SORT_METRICS
+                and _scoring.get_native_query(spectrum) is not None):
+            # One candidate cannot lose a same-class fragment-count tie. Keep
+            # the provenance flag, without deriving unused library counts.
+            ordered[0]._demoted_from_top1_by_fragment_count = False
+            return ordered
+        self._sort_reranking_candidates(spectrum, ordered)
 
         original_rank_tiers = build_original_rank_tiers(
             ordered,
@@ -829,6 +868,17 @@ class LipidMS2Searcher:
             for tier in original_rank_tiers[1:]
             for result in tier
         ]
+        if (type(self) is LipidMS2Searcher
+                and getattr(self._rescore_with_shared_chain_peak_penalty, "__func__", None) is _PRODUCTION_RESCORE
+                and self._is_chain_evidence_match is _PRODUCTION_CHAIN_MATCH
+                and getattr(self._chain_evidence_peak_ids, "__func__", None) is _PRODUCTION_CHAIN_PEAK_IDS
+                and getattr(self._compute_rank_metrics, "__func__", None) is _PRODUCTION_RANK_METRICS
+                and getattr(self._sort_by_rank_metrics, "__func__", None) is _PRODUCTION_SORT_METRICS
+                and getattr(self._passes_min_total_score, "__func__", None) is _PRODUCTION_MIN_SCORE
+                and self._scores_tied is _PRODUCTION_SCORES_TIED
+                and _calculate_pool_scores is _PRODUCTION_POOL_SCORES
+                and _non_precursor_quality_overrides is _PRODUCTION_QUALITY_OVERRIDES):
+            return self._rerank_affected_candidates(spectrum, selected, remaining)
         selected_chain_peak_groups: list[set[int]] = []
         for result in selected:
             peak_ids = self._chain_evidence_peak_ids(result)
@@ -871,6 +921,165 @@ class LipidMS2Searcher:
                 if peak_ids:
                     selected_chain_peak_groups.append(peak_ids)
         return selected
+
+    @with_result_facts
+    def _prepare_penalty_state(self, spectrum, result):
+        matches = tuple(m for m in result.matched_fragments
+                        if self._is_chain_evidence_match(result.record, m))
+        return [matches, frozenset(id(m.experimental_peak) for m in matches), None, {}]
+
+    @with_result_facts
+    def _apply_new_penalty_groups(self, spectrum, result, state, groups):
+        chain_matches, peak_ids, base_overrides, counts = state
+        if base_overrides is None:
+            base_overrides = _non_precursor_quality_overrides(spectrum, result.record, result.matched_fragments)
+            state[2] = base_overrides
+
+        def intensity(match):
+            return float(base_overrides.get(id(match), match.experimental_peak.relative_intensity))
+
+        for group in groups:
+            if peak_ids.isdisjoint(group):
+                continue
+            shared = [m for m in chain_matches if id(m.experimental_peak) in group]
+            strongest = max(shared, key=intensity)
+            match_id = id(strongest)
+            counts[match_id] = counts.get(match_id, 0) + 1
+        if not counts:
+            return
+        adjusted = dict(base_overrides)
+        for match in chain_matches:
+            count = counts.get(id(match), 0)
+            if count:
+                adjusted[id(match)] = intensity(match) * (self.SHARED_CHAIN_PEAK_INTENSITY_FACTOR ** count)
+        pool_scores = _calculate_pool_scores(
+            result.matched_fragments, result.record, self.rules.get(result.record.compound_class),
+            quality_relative_intensity_overrides=adjusted)
+        result.pool_scores = pool_scores
+        result.total_score = round(_with_negative_cer_match_bonus(
+            result.record, result.matched_fragments, _total_score_from_pool_scores(pool_scores)), 4)
+
+    def _rerank_affected_candidates(self, spectrum, selected, remaining):
+        # This is the same greedy selection as the reference loop. A newly
+        # selected group can change only candidates sharing one of its peaks.
+        # Track cumulative per-match penalties; never rescore unrelated records
+        # or recount an already selected group.
+        if not remaining:
+            return selected
+        native = self._try_native_pool_rerank(spectrum, selected, remaining)
+        if native is not None:
+            return native
+        states, by_peak = {}, {}
+        for result in remaining:
+            state = self._prepare_penalty_state(spectrum, result)
+            identity = id(result)
+            states[identity] = state
+            for peak_id in state[1]:
+                by_peak.setdefault(peak_id, set()).add(identity)
+        groups = [self._chain_evidence_peak_ids(r) for r in selected]
+        groups = [g for g in groups if g]
+        while remaining:
+            affected = set()
+            for group in groups:
+                for peak_id in group:
+                    affected.update(by_peak.get(peak_id, ()))
+            for result in remaining:
+                if id(result) in affected:
+                    self._apply_new_penalty_groups(spectrum, result, states[id(result)], groups)
+            remaining = [r for r in remaining if self._passes_min_total_score(r)]
+            if not remaining:
+                break
+            self._sort_reranking_candidates(spectrum, remaining)
+            score = remaining[0].total_score
+            tier = [r for r in remaining if self._scores_tied(r.total_score, score)]
+            tier_ids = {id(r) for r in tier}
+            remaining = [r for r in remaining if id(r) not in tier_ids]
+            selected.extend(tier)
+            groups = [states[id(r)][1] for r in tier if states[id(r)][1]]
+        return selected
+
+    def _try_native_pool_rerank(self, spectrum, selected, remaining):
+        """Execute the unchanged greedy loop once on query-local numeric state."""
+        query = _scoring.get_native_query(spectrum)
+        bridge = _scoring.native_bridge.load_bridge()
+        if (query is None or bridge is None or not hasattr(bridge, 'rerank_pool_candidates')
+                or self.rules is not DEFAULT_RULES
+                or type(self).__getattribute__ is not object.__getattribute__
+                or CandidateScore.__getattribute__ is not object.__getattribute__
+                or CandidateScore.__setattr__ is not object.__setattr__
+                or any(hasattr(vars(CandidateScore).get(name), '__set__')
+                       for name in ('record','total_score','ppm_error','matched_fragments','pool_scores'))
+                or _scoring.PoolScore is not PoolScore or PoolScore.__init__ is not _RERANK_POOL_INITIALIZER
+                or PoolScore.__init__.__code__ is not _RERANK_POOL_CODE
+                or _total_score_from_pool_scores is not _RERANK_TOTAL_SCORE
+                or _with_negative_cer_match_bonus is not _RERANK_CER_BONUS
+                or _scoring._saturation_fragment_quality is not _scoring._PRODUCTION_SATURATION
+                or _scoring._match_relative_intensity is not _scoring._PRODUCTION_MATCH_INTENSITY
+                or _scoring._positive_three_substituent_top_half_quality is not _scoring._PRODUCTION_TRIPLE_QUALITY
+                or _scoring._top_two_fragment_quality is not _scoring._PRODUCTION_TOP_TWO
+                or fragment_is_chain_evidence is not _RERANK_CHAIN_CLASSIFIER
+                or _scoring.SCORE_MIN != 0.0 or _scoring.SCORE_MAX != 100.0):
+            return None
+        for name, reference in _RERANK_BUILTINS:
+            if (getattr(builtins, name) is not reference
+                    or globals().get(name, reference) is not reference
+                    or getattr(_scoring, name, reference) is not reference):
+                return None
+        factor = self.SHARED_CHAIN_PEAK_INTENSITY_FACTOR
+        limit = type(self).RANK_PPM_FULL_SCORE
+        threshold = self.__dict__.get('min_total_score', self.DEFAULT_MIN_TOTAL_SCORE)
+        if not all(type(v) in (float, int) and abs(v) <= 2**53 and math.isfinite(v)
+                   for v in (factor, limit, threshold)) or not 0 <= factor <= 1 or limit <= 0:
+            return None
+        if not bridge.indexed_scoring_compatible(_native_engine.FragmentMatch):
+            return None
+        specifications = []
+        for result in remaining:
+            if (type(result) is not CandidateScore or type(result.total_score) is not float
+                    or type(result.ppm_error) is not float or type(result.record) is not LibraryRecord
+                    or type(result.matched_fragments) not in (list, tuple)):
+                return None
+            prepared = _prepare_shared_pool_candidate(spectrum, result.record, self.rules.get(result.record.compound_class),
+                                                      result.matched_fragments)
+            if prepared is None:
+                return None
+            prepare_arguments, normalize, chains, bonus = prepared
+            specifications.append((result.matched_fragments, prepare_arguments, normalize, chains,
+                                   result.total_score, result.ppm_error, bonus))
+        groups = tuple(tuple(self._chain_evidence_peak_ids(result)) for result in selected)
+        answer = bridge.rerank_pool_candidates(tuple(specifications), query, groups, _prepare_shared_pool_plan,
+            float(factor), max(0.0, float(threshold)), float(limit), 0.0, 100.0)
+        if answer is None:
+            return None
+        order, changes = answer
+        # A rejected native admission never mutates a result. On success, only
+        # candidates actually rescored by the reference loop receive new pools.
+        for index, configuration, metrics, score in changes:
+            result = remaining[index]
+            result.pool_scores = {item[0]: PoolScore(item[0], values[0], item[1], values[1], values[2], 0.0, values[3])
+                                  for item, values in zip(configuration, metrics)}
+            result.total_score = score
+        return selected + [remaining[index] for index in order]
+
+    def _sort_reranking_candidates(self, spectrum, results):
+        # The canonical ranking key needs no intermediate per-candidate metric
+        # dictionaries. Public/custom arithmetic and ranking helpers retain the
+        # original calls; exported metrics are still produced at the boundary.
+        if (type(self) is LipidMS2Searcher
+                and getattr(self._compute_rank_metrics,'__func__',None) is _PRODUCTION_RANK_METRICS
+                and getattr(self._sort_by_rank_metrics,'__func__',None) is _PRODUCTION_SORT_METRICS
+                and _scoring.get_native_query(spectrum) is not None
+                and type(type(self).RANK_PPM_FULL_SCORE) in (float,int)
+                and all(type(r) is CandidateScore and type(r.total_score) in (float,int)
+                        and type(r.ppm_error) in (float,int)
+                        and type(r.matched_fragments) in (list,tuple) for r in results)):
+            def key(item):
+                normalized=max(0.0,min(item.total_score/100.0,1.0))
+                ppm=max(0.0,1.0-min(abs(item.ppm_error),type(self).RANK_PPM_FULL_SCORE)/type(self).RANK_PPM_FULL_SCORE)
+                return normalized,normalized,len(item.matched_fragments),ppm,item.total_score
+            results.sort(key=key,reverse=True)
+        else:
+            self._sort_by_rank_metrics(results,self._compute_rank_metrics(results))
 
     @classmethod
     def _compute_rank_metrics(cls, passed_results) -> Dict[int, Dict[str, float]]:
@@ -925,21 +1134,40 @@ class LipidMS2Searcher:
                 parts.append(f"{match.experimental_peak.mz:.4f}")
         return "; ".join(parts)
 
+    @with_search_facts
     def score_spectrum(self, spectrum: ExperimentalSpectrum, top_n: int = DEFAULT_SEARCH_CONFIG.top_n) -> List[Dict[str, object]]:
-        from .evidence_export import evidence_json
         left, right = self._find_candidate_index_range(spectrum.precursor_mz)
         native_matches = None
+        evidence_prechecked = False
         # Custom searcher overrides retain their Python matching behavior.
-        if (left < right and right-left >= getattr(self, "native_min_candidates", 128)
+        canonical_native = (left < right
                 and getattr(self, "use_native_engine", True) and type(self) is LipidMS2Searcher
                 and getattr(self._fragment_window_da, "__func__", None) is LipidMS2Searcher._fragment_window_da
                 and getattr(self._candidate_indexes_with_fragment_overlap, "__func__", None)
                     is LipidMS2Searcher._candidate_indexes_with_fragment_overlap
                 and getattr(self._match_fragments_for_record, "__func__", None)
                     is LipidMS2Searcher._match_fragments_for_record
-                and getattr(self._score_sphingo_candidate, "__func__", None) is LipidMS2Searcher._score_sphingo_candidate):
-            from .native_engine import prepare_indexed_matches
-            native_matches = prepare_indexed_matches(
+                and getattr(self._score_sphingo_candidate, "__func__", None) is LipidMS2Searcher._score_sphingo_candidate)
+        plan = getattr(self, "_native_search_plan", None)
+        if (canonical_native and plan is not None and getattr(self, "use_score_prefilter", True)
+                and self.rules is DEFAULT_RULES and score_candidate is _PRODUCTION_SCORE_CANDIDATE
+                and score_sphingolipid_candidate is _PRODUCTION_SPHINGO_SCORER
+                and candidate_passes_evidence_gate is _PRODUCTION_EVIDENCE_GATE
+                and self.SPHINGO_HG_ONLY_FALLBACK_CLASSES == SPHINGO_HG_ONLY_FALLBACK_CLASS_KEYS):
+            enable_spectrum_facts(spectrum)
+            native_matches = plan.match(
+                spectrum, left, right, tolerance_da=self.fragment_tolerance_da,
+                tolerance_ppm=getattr(self, "fragment_tolerance_ppm", None),
+                prefilter=self.use_fragment_index and right-left > self.fragment_prefilter_min_candidates,
+                collapse_equivalent=(
+                    getattr(self._collapse_report_equivalent_results, "__func__", None) is _PRODUCTION_REPORT_COLLAPSE
+                    and LipidMS2Searcher._reported_name.__func__ is _PRODUCTION_REPORTED_NAME
+                    and LipidMS2Searcher._normal_class_key.__func__ is _PRODUCTION_NORMAL_CLASS_KEY),
+            )
+            evidence_prechecked = native_matches is not None
+        if (canonical_native and native_matches is None
+                and right-left >= getattr(self, "native_min_candidates", 128)):
+            native_matches = _native_engine.prepare_indexed_matches(
                 self.library, spectrum, left, right,
                 tolerance_da=self.fragment_tolerance_da,
                 tolerance_ppm=getattr(self, "fragment_tolerance_ppm", None),
@@ -949,21 +1177,58 @@ class LipidMS2Searcher:
             )
         candidate_indexes = (list(native_matches) if native_matches is not None else
                              self._candidate_indexes_with_fragment_overlap(spectrum, left, right))
-        experimental_mz = [peak.mz for peak in spectrum.peaks]
+        if (not candidate_indexes and type(self) is LipidMS2Searcher and
+                getattr(self._select_tentative_missing_hg_fallback, '__func__', None) is _PRODUCTION_EMPTY_SELECTOR):
+            return []
+        lazy_masses = (evidence_prechecked and _scoring.get_native_query(spectrum) is not None
+                       and _native_engine.materialize_matches is _PRODUCTION_MATERIALIZER)
+        experimental_mz = None if lazy_masses else [peak.mz for peak in spectrum.peaks] if candidate_indexes else ()
         scored = []
         for record_index in candidate_indexes:
             record = self.library[record_index]
             if not self._candidate_charge_is_compatible(spectrum, record):
                 continue
-            match_options = {}
-            if native_matches is not None:
-                from .native_engine import materialize_matches
-                match_options["precomputed_matches"] = materialize_matches(spectrum, record, native_matches[record_index])
             sphingo_key = self._sphingo_rule_key(record)
+            if (evidence_prechecked and native_matches[record_index] is not None
+                    and sphingo_key not in SPHINGOLIPID_RULEBOOK
+                    and _prepared_scoring.score_prepared is _PRODUCTION_PREPARED_SCORER
+                    and _prepared_scoring.score_indexes is _PRODUCTION_INDEX_SCORER
+                    and _native_engine.materialize_matches is _PRODUCTION_MATERIALIZER
+                    and _prepared_scoring.supports_index_scoring(record)):
+                candidate_score = _prepared_scoring.score_indexes(
+                    spectrum,record,self.rules.get(record.compound_class),native_matches[record_index],
+                    self.precursor_tolerance_da,self.precursor_tolerance_ppm)
+                if candidate_score is not NotImplemented:
+                    if candidate_score is not None:
+                        scored.append(candidate_score)
+                    continue
+            match_options = {}
+            if native_matches is not None and native_matches[record_index] is not None:
+                match_options["precomputed_matches"] = tuple(_native_engine.materialize_matches(spectrum, record, native_matches[record_index]))
+            if (lazy_masses and experimental_mz is None and
+                    (native_matches[record_index] is None or self._normal_class_key(record.compound_class)=='NAE')):
+                experimental_mz = [peak.mz for peak in spectrum.peaks]
             if sphingo_key in SPHINGOLIPID_RULEBOOK:
                 candidate_score = self._score_sphingo_candidate(spectrum, record, experimental_mz=experimental_mz, **match_options)
+            elif evidence_prechecked and match_options and score_candidate is _PRODUCTION_SCORE_CANDIDATE:
+                # The canonical scorer accepts these positional arguments. Keep
+                # custom scorers on the keyword interface below, without making
+                # a second per-candidate dictionary to forward the same values.
+                candidate_score = score_candidate(
+                    spectrum, record, self.rules.get(record.compound_class),
+                    self.precursor_tolerance_ppm, self.precursor_tolerance_da,
+                    self.fragment_tolerance_da, getattr(self, 'fragment_tolerance_ppm', None),
+                    experimental_mz, match_options['precomputed_matches'], True,
+                    _scoring._NATIVE_EVIDENCE_PRECHECK if len(record.fragments)<=64 else None,
+                )
             else:
                 rule = self.rules.get(record.compound_class)
+                if (getattr(self, "use_score_prefilter", True)
+                        and type(self) is LipidMS2Searcher
+                        and score_candidate is _PRODUCTION_SCORE_CANDIDATE):
+                    match_options["_search_only"] = True
+                    if evidence_prechecked and len(record.fragments) <= 64:
+                        match_options["_native_evidence_checked"] = _scoring._NATIVE_EVIDENCE_PRECHECK
                 candidate_score = score_candidate(
                     spectrum=spectrum,
                     record=record,
@@ -976,8 +1241,12 @@ class LipidMS2Searcher:
                     **match_options,
                 )
 
-            scored.append(candidate_score)
+            if candidate_score is not None:
+                scored.append(candidate_score)
         eligible_results = [item for item in scored if self._passes_min_total_score(item)]
+        if (not eligible_results and type(self) is LipidMS2Searcher and
+                getattr(self._select_tentative_missing_hg_fallback, '__func__', None) is _PRODUCTION_EMPTY_SELECTOR):
+            return []
         # Partial phospholipid chains remain low-confidence sum composition.
         # Keep the failed confirmation gate intact in the audit and display.
         passed_results = [item for item in eligible_results if candidate_passes_evidence_gate(item)]
@@ -1039,6 +1308,7 @@ class LipidMS2Searcher:
             selected_results = self._select_tentative_missing_hg_fallback(eligible_results)
             rank_metrics = self._compute_tentative_rank_metrics(selected_results)
             scoped_results.extend((item, "main", True) for item in selected_results)
+        from .evidence_export import evidence_json
         rows = []
         scope_ranks = {"main": 0, "fa": 0, "nae": 0}
         scope_previous_results: dict[str, CandidateScore] = {}
@@ -1106,6 +1376,15 @@ class LipidMS2Searcher:
 
     @staticmethod
     def _canonicalize_chain_name(lipid_chain_name: str, compound_class: str | None = None) -> str:
+        if (type(lipid_chain_name) is str and type(compound_class) in (str, type(None))
+                and _NAME_NORMALIZERS == (canonicalize_single_chain_name, canonicalize_multichain_sphingolipid_name,
+                                          has_complete_multichain_sphingolipid_identity,
+                                          canonicalize_n_acyl_glycerophospholipid_name)):
+            return _cached_chain_name(lipid_chain_name, compound_class)
+        return LipidMS2Searcher._canonicalize_chain_name_uncached(lipid_chain_name, compound_class)
+
+    @staticmethod
+    def _canonicalize_chain_name_uncached(lipid_chain_name: str, compound_class: str | None = None) -> str:
         lipid_chain_name = canonicalize_single_chain_name(lipid_chain_name, compound_class)
         canonical_sphingolipid_name = canonicalize_multichain_sphingolipid_name(
             lipid_chain_name,
@@ -1250,6 +1529,85 @@ class LipidMS2Searcher:
         if output_path and not combined.empty:
             self.last_output_path = self._write_result_workbook(Path(output_path), combined)
         return combined
+
+
+_PRODUCTION_REPORT_COLLAPSE = LipidMS2Searcher._collapse_report_equivalent_results.__func__
+_PRODUCTION_RESCORE = LipidMS2Searcher._rescore_with_shared_chain_peak_penalty
+_PRODUCTION_CHAIN_MATCH = LipidMS2Searcher._is_chain_evidence_match
+_PRODUCTION_CHAIN_PEAK_IDS = LipidMS2Searcher._chain_evidence_peak_ids.__func__
+_PRODUCTION_RANK_METRICS = LipidMS2Searcher._compute_rank_metrics.__func__
+_PRODUCTION_SORT_METRICS = LipidMS2Searcher._sort_by_rank_metrics.__func__
+_PRODUCTION_MIN_SCORE = LipidMS2Searcher._passes_min_total_score
+_PRODUCTION_SCORES_TIED = LipidMS2Searcher._scores_tied
+_PRODUCTION_POOL_SCORES = _calculate_pool_scores
+_PRODUCTION_QUALITY_OVERRIDES = _non_precursor_quality_overrides
+_PRODUCTION_EMPTY_SELECTOR = LipidMS2Searcher._select_tentative_missing_hg_fallback.__func__
+_RERANK_POOL_INITIALIZER = PoolScore.__init__
+_RERANK_POOL_CODE = PoolScore.__init__.__code__
+_RERANK_TOTAL_SCORE = _total_score_from_pool_scores
+_RERANK_CER_BONUS = _with_negative_cer_match_bonus
+_RERANK_CHAIN_CLASSIFIER = fragment_is_chain_evidence
+_RERANK_BUILTINS = tuple((name, getattr(builtins, name)) for name in ('sum','round','min','max'))
+_NAME_NORMALIZERS = (canonicalize_single_chain_name, canonicalize_multichain_sphingolipid_name,
+                    has_complete_multichain_sphingolipid_identity, canonicalize_n_acyl_glycerophospholipid_name)
+
+
+@with_record_facts
+def _prepare_shared_pool_candidate(spectrum, record, rule, matches):
+    # Type checks are fresh: an equal-valued str subclass can change routing
+    # without changing the older record revision's value equality.
+    if (len(record.fragments)>64 or type(record.compound_class) is not str
+            or type(record.adduct) is not str or type(record.lipid_chain_name) is not str
+            or any(type(f) is not FragmentRecord or type(f.name) is not str
+                   or type(f.fragment_type) is not str for f in record.fragments)
+            or any(type(m) is not FragmentMatch or type(m.fragment) is not FragmentRecord
+                   or type(m.experimental_peak) is not ExperimentalPeak for m in matches)):
+        return None
+    roles = _shared_chain_fragment_roles(record)
+    chains = []
+    for i, match in enumerate(matches):
+        role = roles.get(id(match.fragment))
+        if role is None:
+            return None
+        if role:
+            chains.append(i)
+    chains = tuple(chains)
+    if not chains:
+        return None, False, (), False
+    if _scoring._normalized_class_key(record.compound_class) == 'NAE':
+        return None
+    normalize = _scoring._normalized_class_key(record.compound_class) not in _scoring.NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS
+    bonus = (_scoring._normalized_class_key(record.compound_class) == 'CER'
+             and not _scoring._is_positive_adduct(record.adduct) and len(matches)>=10)
+    return (spectrum, record, rule), normalize, chains, bonus
+
+
+@cached_record_fact
+def _shared_chain_fragment_roles(record):
+    return {id(fragment): fragment_is_chain_evidence(record, fragment) for fragment in record.fragments}
+
+
+@with_record_facts
+def _prepare_shared_pool_plan(spectrum, record, rule):
+    prepared = _scoring._prepared_numeric_pool_plan(record, rule)
+    return None if prepared is None else (prepared[0], prepared[1])
+
+
+@lru_cache(maxsize=128)
+def _cached_adduct_charge(text):
+    matched = re.search(r"\](\d*)([+-])$", text)
+    if matched is None:
+        return None
+    magnitude = int(matched.group(1) or "1")
+    return magnitude if matched.group(2) == "+" else -magnitude
+
+
+@lru_cache(maxsize=4096)
+def _cached_chain_name(name, lipid_class):
+    return LipidMS2Searcher._canonicalize_chain_name_uncached(name, lipid_class)
+_PRODUCTION_REPORTED_NAME = LipidMS2Searcher._reported_name.__func__
+_PRODUCTION_NORMAL_CLASS_KEY = LipidMS2Searcher._normal_class_key.__func__
+_PRODUCTION_TRIHYDROXY_COUNTERPART = LipidMS2Searcher._trihydroxy_t_counterpart
 
 
 def deduplicate_fa_results(results: pd.DataFrame) -> pd.DataFrame:

@@ -1,0 +1,258 @@
+{
+  "kind": "development compact search index; no scientific rule or library revision",
+  "date": "2026-10-22",
+  "parent_commit": "3719a62ce6c83622afdd7eaf5f6d541ad7a7a827",
+  "branch": "codex/search-scoring-20261022",
+  "code_fingerprint": "9e4cf41b14cce989d21539d01cf6094bf545b570f89ea7ddba805dda73806d42",
+  "previous_execution_checkpoint_sha256": "2da6eb1025dcda5737fa37e51ec8ecb048849dc1980942697571476cd5f27be6",
+  "source_sha256": {
+    "src/lipidgate/ms2/chain_utils.py": "fe9981c0cc9b21d04905bc36d5815fb871e26cc78e957d06512d6d1962691509",
+    "src/lipidgate/ms2/evidence_policy.py": "4fcc9ce769bc5476f44f0f48d919ef21993dd909be36f720cd9f727e8fee915e",
+    "src/lipidgate/ms2/gate_policy.py": "6375b61b9b6c909f03097f506efecd015565add4b2052e4ff4f909988e755565",
+    "src/lipidgate/ms2/indexed_library.py": "e8f29a03290b5e7b07b054bec0cc994ad908c5243ae67d3ca6d5dae55b2dbbed",
+    "src/lipidgate/ms2/native_backend/search_core.cpp": "7ccc8032d93363501d5be2e5ffacf36713fccd09062775106f1281f863dae3ea",
+    "src/lipidgate/ms2/native_plan.py": "fcf4e00ee7f5e1839bae6f69abddd366e15e0e93d1f1b1e86170f5d019659453",
+    "src/lipidgate/ms2/native_policy.py": "cd5a1ab5c9b143364799ff4adaaaf2e6426d34ebded0164beaa33014ee10689a",
+    "src/lipidgate/ms2/record_facts.py": "076e908ae4c3d55afc94d47d628bc4db4952dbd1c546c4529770ff220bb5f475",
+    "src/lipidgate/ms2/resolution_policy.py": "48a3421b0b1860e57aabbc0f28bbb10e5f0d3c38bde07716eb06141126a6268e",
+    "src/lipidgate/ms2/scoring.py": "dcd45a6dbe7e17224a6dee3698de6ce5beebcd73732aafc7d1b4c2006c6a76fc",
+    "src/lipidgate/ms2/scoring_policy.py": "608265cbd698d0be144de444839e07669baca05fd6098a35108001fe6abcb3ab",
+    "src/lipidgate/ms2/search.py": "f6da94fd30f6cf16f797ee29ab9e7c98b6709b80d58cce3028a035183dfc4990",
+    "src/lipidgate/ms2/search_plan.py": "abbecc23f97b19636899e716d4632982c4218d4a229d9aaae4a286238344af92",
+    "src/lipidgate/ms2/sphingolipid_scoring.py": "ba2c640ad71908941c59ca00854c1ceadbea1242b4ae7e7ca30a3a480b6a8aea"
+  },
+  "library_content_and_scientific_rules_changed": false,
+  "libraries": [
+    {
+      "mode": "positive",
+      "records": 1254316,
+      "old_index_sha256": "466b456e310490fa844d069a36fa4e3eeacc41ee608ef6f67f45f6b79a7b02bb",
+      "index_sha256": "b50fe38311617f342c73256a01ecc298150f3bbbb0b8c009351c7d07dd40a05d",
+      "all_normalized_entry_and_block_bytes_identical": true,
+      "source_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "repack_seconds": 2.0280421000024944
+    },
+    {
+      "mode": "negative",
+      "records": 1088179,
+      "old_index_sha256": "46630b0964ac1b50689ef57cf23f63795bae0bec05fdb5098824278dc17e999a",
+      "index_sha256": "68929f290a41e9a141c4adbb728fbf836b9315cc841758225e6b15b108d88481",
+      "all_normalized_entry_and_block_bytes_identical": true,
+      "source_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "repack_seconds": 1.8422700999981316
+    }
+  ],
+  "equivalence": {
+    "real_query_spectra": 2000,
+    "external_standard_spectra": 1197,
+    "complete_export_fields_exact": true,
+    "all_200_top20_timing_digests_identical": true
+  },
+  "necessary_condition_admission_audit": [
+    {
+      "mode": "positive",
+      "distinct_class_adduct_plan_representatives": 341,
+      "synthetic_spectra": 7212,
+      "source_admissible_cases": 4594,
+      "no_admissible_case_pruned": true,
+      "seconds": 1.2290285999988555
+    },
+    {
+      "mode": "negative",
+      "distinct_class_adduct_plan_representatives": 3461,
+      "synthetic_spectra": 107160,
+      "source_admissible_cases": 82626,
+      "no_admissible_case_pruned": true,
+      "seconds": 24.451123499999085
+    }
+  ],
+  "tests": {
+    "pytest_passed": 1010,
+    "warnings": 1673,
+    "subtests_passed": 3118,
+    "seconds": 78.54588650000005
+  },
+  "decoded_block_cache_limit": 4,
+  "numeric_plan_limit_MiB": 256,
+  "benchmark": [
+    {
+      "mode": "positive",
+      "median_us": 931.0368,
+      "q1_us": 909.410425,
+      "q3_us": 947.4957250000001,
+      "batches": 100,
+      "query_count": 1000,
+      "top20_digest_identical_to_original": true,
+      "original_median_us": 4789.14875,
+      "previous_optimization_median_us": 2313.3832,
+      "peak_RSS_MiB": 653.953125,
+      "OS_peak_wset_MiB": 653.953125,
+      "query_RSS_MiB": 653.9375,
+      "native_min_candidates": 128,
+      "production_code_fingerprint": "9e4cf41b14cce989d21539d01cf6094bf545b570f89ea7ddba805dda73806d42",
+      "decoded_block_cache_limit": 4,
+      "numeric_plan_MiB": 92.33637046813965,
+      "clock": "Windows QPC",
+      "CPU": 0,
+      "threads": 1,
+      "load_seconds": 0.07017199999972945,
+      "index_seconds": 1.4495077999999921,
+      "calibration": [
+        {
+          "numeric_plan": true,
+          "native_min_candidates": 128,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.062329300000000004,
+            0.0618131,
+            0.0694923,
+            0.06961110000000001,
+            0.0672529,
+            0.0635938,
+            0.0932101
+          ],
+          "median_seconds": 0.0672529
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 0,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.197137,
+            0.19745200000000002,
+            0.19873760000000001,
+            0.20452120000000001,
+            0.20678870000000002,
+            0.251334,
+            0.20896900000000002
+          ],
+          "median_seconds": 0.20452120000000001
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 128,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.205068,
+            0.2114752,
+            0.1960927,
+            0.24136950000000001,
+            0.19264150000000002,
+            0.19742430000000002,
+            0.20871800000000001
+          ],
+          "median_seconds": 0.205068
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 256,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.1970299,
+            0.19350520000000002,
+            0.2222307,
+            0.19147250000000002,
+            0.19464160000000003,
+            0.190557,
+            0.1896322
+          ],
+          "median_seconds": 0.19350520000000002
+        }
+      ],
+      "timing_boundary_unchanged": true,
+      "all_original_inputs_and_library_records_retained": true,
+      "speedup": 5.143887706694301,
+      "additional_speedup": 2.4847387342798912
+    },
+    {
+      "mode": "negative",
+      "median_us": 546.8608,
+      "q1_us": 520.085975,
+      "q3_us": 568.884775,
+      "batches": 100,
+      "query_count": 1000,
+      "top20_digest_identical_to_original": true,
+      "original_median_us": 4641.208450000001,
+      "previous_optimization_median_us": 1879.37295,
+      "peak_RSS_MiB": 698.9140625,
+      "OS_peak_wset_MiB": 698.9140625,
+      "query_RSS_MiB": 698.68359375,
+      "native_min_candidates": 128,
+      "production_code_fingerprint": "9e4cf41b14cce989d21539d01cf6094bf545b570f89ea7ddba805dda73806d42",
+      "decoded_block_cache_limit": 4,
+      "numeric_plan_MiB": 105.82983493804932,
+      "clock": "Windows QPC",
+      "CPU": 0,
+      "threads": 1,
+      "load_seconds": 0.08280400000148802,
+      "index_seconds": 1.4335074999980861,
+      "calibration": [
+        {
+          "numeric_plan": true,
+          "native_min_candidates": 128,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.0353466,
+            0.07686230000000001,
+            0.03517,
+            0.036218900000000005,
+            0.036953200000000005,
+            0.037253800000000004,
+            0.0362361
+          ],
+          "median_seconds": 0.0362361
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 0,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.120117,
+            0.1185786,
+            0.15777090000000002,
+            0.1287522,
+            0.1282275,
+            0.12336680000000001,
+            0.12481180000000001
+          ],
+          "median_seconds": 0.12481180000000001
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 128,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.1525119,
+            0.10854180000000001,
+            0.1098301,
+            0.11184880000000001,
+            0.1190501,
+            0.1114677,
+            0.1527413
+          ],
+          "median_seconds": 0.11184880000000001
+        },
+        {
+          "numeric_plan": false,
+          "native_min_candidates": 256,
+          "independent_calibration_queries": 48,
+          "trial_seconds": [
+            0.1122847,
+            0.11306350000000001,
+            0.11094480000000001,
+            0.10785080000000001,
+            0.15106350000000002,
+            0.1135889,
+            0.11108130000000001
+          ],
+          "median_seconds": 0.1122847
+        }
+      ],
+      "timing_boundary_unchanged": true,
+      "all_original_inputs_and_library_records_retained": true,
+      "speedup": 8.487001536771333,
+      "additional_speedup": 3.436656915251559
+    }
+  ],
+  "native_policy_manifest_sha256": "eab79e971d796ba6f606a4e5cf59a6e13d84a28d90ed8063c788171588d8bfb6"
+}

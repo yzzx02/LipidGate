@@ -1,0 +1,65 @@
+{
+  "checkpoint": "ms1_peak_context_correction_20261028",
+  "date": "2026-10-28",
+  "release_kind": "Unreleased source correction; local v1.0.7 executable unchanged; no GitHub publication",
+  "preceding_library_manifest": "library_revision_lpc_na_20261028.json",
+  "scientific_library_revision": "lpc_na_20261028",
+  "preceding_code": {
+    "ms2_rules_sha256": "80706606939590f79e53774e106c34a6a8cfbf1ebb700951f21fedd498b64477",
+    "product_code_sha256": "01f86efadaefc99a23551c941e68d4a8febb7e76d99c97152835bd3259195024",
+    "ms1_runtime_sha256": "4b70197b18fe7ff8eaf85f198a4d9af9cb68c9446f2f87f8196330f04cb8717f"
+  },
+  "ms2_rules_sha256": "c67a147cf7fc5bf8164abcf3f7eecae5467d37f9e73de2613b09074d1815a1ab",
+  "product_code_sha256": "f9014a5e879c19e077dc0fa608f1df1ae9b6401644bfb354892bc786ece6327c",
+  "ms1_runtime_sha256": "2033c6d03e62078f22aa94e2690fc3413a555a769904176570e9a9998e9cd5fa",
+  "peak_boundary_version": 6,
+  "chromatographic_membership_version": 5,
+  "library_cache_version": 43,
+  "index_format": 3,
+  "changes": [
+    "Only real native neighbors, including successful local OpenMS redetections, may split a native integration interval",
+    "Read complete same-mass native intervals and one adjacent native peak per side for membership context; quantitative bounds are unchanged by association",
+    "Remove positive EIC signal-status hint; nonzero raw MS1 intensity is not a detected chromatographic feature"
+  ],
+  "preserved": [
+    "Native IDs, parent references, detector m/z, RT, FWHM, original area and original bounds",
+    "Per-spectrum candidate order, scores and evidence gates",
+    "Source library payloads, every normalized record, precursor index and search-plan row"
+  ],
+  "indexes_verified_by": "Pinned preceding code and source hashes; all other MS2 modules identical; byte-for-byte row comparison of every data table after an atomic index metadata refresh",
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "records": 1254393,
+      "index_sha256": "53b11992486dd675c7c30694d2fedc5a0e9b7139bfc4c8982e9b5baededc13f0",
+      "index_bytes": 74473472,
+      "normalized_records_and_search_plans_unchanged": true,
+      "prior_index_sha256": "6d635e9196416377ffdf919afafbe76b6df6fccdf064ef8377bd197500cf4007"
+    },
+    "negative": {
+      "source_gzip_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "source_gzip_bytes": 39395074,
+      "records": 1088179,
+      "index_sha256": "8f4807fcb7976ca72474d9139f7b55e1e6f75679dcf2ff76430d705045898ba0",
+      "index_bytes": 79130624,
+      "normalized_records_and_search_plans_unchanged": true,
+      "prior_index_sha256": "f26be7426830050d9d323c8f7afd7e32d984a3167a25365024605936e8967f9d"
+    }
+  },
+  "verification": {
+    "pytest_test_functions": 1343,
+    "pytest_subtests": 3118,
+    "junit_test_cases": 4461,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "production_entry_point_rerun_verified": true,
+    "late_ms2_association_restored": true,
+    "adjacent_native_peaks_remain_separate": true,
+    "background_eic_no_feature_or_area_invented": true,
+    "all_per_spectrum_scores_gates_and_order_preserved": true,
+    "gui_measured_shading_and_no_positive_signal_hint_verified": true,
+    "gui_pyopenms_import_absent": true
+  }
+}

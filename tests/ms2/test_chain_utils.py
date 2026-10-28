@@ -48,3 +48,13 @@ def test_text_caches_remain_bounded_for_large_custom_libraries():
         extract_fragment_chain_token(f"RCO({index}:0)")
     assert chain_utils._chain_tokens_text.cache_info().currsize <= 4096
     assert chain_utils._fragment_chain_token_text.cache_info().currsize <= 4096
+
+
+def test_chain_counts_refresh_after_record_edits_and_keep_duplicate_positions():
+    record = LibraryRecord(1, "TG", "TG", "TG(18:2_18:2_8:0)", 700, "[M+H]+")
+    counts = chain_utils.chain_token_counts(record)
+    counts["18:2"] = 10
+    assert chain_utils.chain_token_counts(record) == {"18:2": 2, "8:0": 1}
+    record.lipid_chain_name = "TG(16:0_18:1_18:1)"
+    assert chain_utils.chain_token_counts(record) == {"16:0": 1, "18:1": 2}
+    assert chain_utils.chain_token_multiplicity(record)["missing"] == 0

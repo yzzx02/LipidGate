@@ -198,7 +198,7 @@ def test_complete_scores_rank_and_audit_equal_python(tmp_path, native):
                     assert actual == []
                 else:
                     assert actual and actual[0]['passed_required_gates']
-                assert any(b.numeric_view is not None for b in cpp.library._blocks.values())
+                assert cpp._native_search_plan is not None or any(b.numeric_view is not None for b in cpp.library._blocks.values())
             finally:
                 python.close()
                 cpp.close()

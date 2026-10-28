@@ -81,6 +81,13 @@ class EICTrace:
         return max(0.0, self.center_rt - self.half_window_min), self.center_rt + self.half_window_min
 
 
+@dataclass(frozen=True)
+class MS1Spectrum:
+    identifier: object
+    rt: float
+    peaks: np.ndarray
+
+
 class _Cancelled(Exception):
     pass
 
@@ -94,6 +101,15 @@ def _check_cancel(cancelled):
 class _Scan:
     identifier: object
     rt: float
+    native_id: object = None
+    centroided: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _MS2Anchor:
+    rt: float
+    precursor: dict
+    previous: _Scan | None
 
 
 class _MzMLSource:
@@ -105,6 +121,9 @@ class _MzMLSource:
         self.path = Path(path)
         self._binary = None
         self.scans = []
+        self._previous_scan = None
+        self._ms2_by_ordinal = {}
+        self._ms2_by_native = {}
         self._read_count = 0
         self._count = self.reader.get_spectrum_count()
         self._index = None
@@ -122,12 +141,30 @@ class _MzMLSource:
                 break
             self._read_count += 1
             if spectrum.ms_level == 1:
+                self._previous_scan = None
                 native_id = spectrum.element.get("id")
                 offsets = self.reader.info["offset_dict"]
                 identifier = native_id if native_id in offsets else spectrum.ID
                 rt = float(spectrum.scan_time_in_minutes())
                 if np.isfinite(rt):
-                    self.scans.append(_Scan(identifier, rt))
+                    centroided = bool(spectrum.get("centroid spectrum")) if hasattr(spectrum, "get") else False
+                    self._previous_scan = _Scan(identifier, rt, native_id, centroided)
+                    self.scans.append(self._previous_scan)
+            elif spectrum.ms_level == 2:
+                # Keep only small acquisition metadata, never MS2 peak arrays.
+                # The predecessor is captured in file order, including surveys
+                # that share an RT; nearest-RT lookup can select the wrong scan.
+                try:
+                    rt = float(spectrum.scan_time_in_minutes())
+                    selected = spectrum.selected_precursors
+                    precursor = dict(selected[0]) if selected else {}
+                except (AttributeError, KeyError, TypeError, ValueError):
+                    rt, precursor = np.nan, {}
+                anchor = _MS2Anchor(rt, precursor, self._previous_scan)
+                self._ms2_by_ordinal[self._read_count] = anchor
+                native_id = spectrum.element.get("id")
+                if native_id:
+                    self._ms2_by_native[native_id] = anchor
             # pymzML retains the XML tree otherwise, including base64 text.
             spectrum.element.clear()
             self.reader.root.clear()
@@ -140,6 +177,23 @@ class _MzMLSource:
         left = np.searchsorted(times, lower, side="left")
         right = np.searchsorted(times, upper, side="right")
         return [self.scans[i] for i in indices[left:right]]
+
+    def nearest_scan(self, rt):
+        times, indices = self._index
+        if not len(times):
+            return None
+        after = int(np.searchsorted(times, rt))
+        candidates = {max(0, min(len(times) - 1, i)) for i in (after - 1, after)}
+        position = min(candidates, key=lambda i: (abs(times[i] - rt), times[i]))
+        return self.scans[indices[position]]
+
+    def ms2_anchor(self, identifier):
+        identifier = str(identifier)
+        if identifier in self._ms2_by_native:
+            return self._ms2_by_native[identifier]
+        if identifier.startswith("scan_") and identifier[5:].isdigit():
+            return self._ms2_by_ordinal.get(int(identifier[5:]))
+        return None
 
     def peaks(self, scan):
         # pymzML's StandardMzml random access measures the fragment in bytes,
@@ -254,6 +308,56 @@ class EICReader:
             _check_cancel(cancelled)
             return EICTrace(np.asarray(times, dtype=np.float64), np.asarray(values, dtype=np.float64),
                             center_rt, target_mz, ppm, half_window_min)
+        except _Cancelled:
+            return None
+
+    def read_spectrum(self, path, rt, *, cancelled=None):
+        """Decode the nearest actual MS1 survey, sharing the EIC's bounded cache.
+
+        Keep the complete mass range. Never substitute an MS2 spectrum for a
+        file without MS1 surveys. This reader is used serially by GUI workers.
+        """
+        if not np.isfinite(rt) or rt < 0:
+            raise ValueError("MS1 扫描时间必须为非负有限数值")
+        try:
+            signature, source = self._source(path, cancelled)
+            scan = source.nearest_scan(rt)
+            if scan is None:
+                return None
+            peaks = self._scan_peaks(signature, source, scan, cancelled)
+            _check_cancel(cancelled)
+            return MS1Spectrum(scan.native_id or scan.identifier, scan.rt, peaks)
+        except _Cancelled:
+            return None
+
+    def read_isotopes(self, path, scan_id, rt, target_mz, adduct, *, raw_mz=None, cancelled=None):
+        """One representative MS2's measured isotope snapshot, read on demand."""
+        from lipidgate.ms2.isotope_export import _charge, isotope_snapshot
+
+        def empty(status):
+            return dict(schema=1, status=status, peaks=[])
+
+        try:
+            signature, source = self._source(path, cancelled)
+            anchor = source.ms2_anchor(scan_id)
+            if anchor is None:
+                return empty("scan_not_found")
+            observed = anchor.precursor.get("mz")
+            expected = raw_mz if raw_mz is not None else target_mz
+            if (not np.isfinite(anchor.rt) or abs(anchor.rt - rt) > 1e-4 or observed is None
+                    or abs(float(observed) - expected) > abs(float(observed)) * 40e-6):
+                return empty("scan_metadata_mismatch")
+            scan = anchor.previous
+            if scan is None:
+                return empty("no_preceding_ms1")
+            charge, charge_source = _charge(anchor.precursor, adduct)
+            peaks = self._scan_peaks(signature, source, scan, cancelled)
+            result = isotope_snapshot(peaks[:, 0], peaks[:, 1], target_mz, charge,
+                                      centroided=scan.centroided)
+            result.update(rt_minutes=scan.rt, source_file=Path(path).name,
+                          native_id=scan.native_id, charge_source=charge_source)
+            _check_cancel(cancelled)
+            return result
         except _Cancelled:
             return None
 

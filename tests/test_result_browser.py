@@ -44,7 +44,9 @@ def test_old_audit_keeps_confirmed_ms1_evidence_without_fabricating_a_feature():
     assert candidate._rt == 2. and candidate._mz == 500.
 
 
-@pytest.mark.parametrize("lipid_class,family", [("SL", "SP"), ("BRSE", "ST")])
+@pytest.mark.parametrize("lipid_class,family", [("SL", "SP"), ("BRSE", "ST"),
+                                               ("NAGly", "FA"), ("NAGlySer", "FA"),
+                                               ("NAOrn", "FA"), ("NATau", "FA")])
 def test_requested_lipid_families_are_shared_with_library_selection(lipid_class, family):
     assert family_for(lipid_class) == family
 
@@ -498,7 +500,7 @@ def exercise_workbench(tmp_path, monkeypatch):
         assert len(page.bundle.features) == 4
         assert len(page.filtered) == 3
         assert page.display_buttons[0].text() == "已鉴定"
-        assert [page.plot_tabs.tabText(i) for i in range(2)] == ["MS1", "MS2"]
+        assert [page.plot_tabs.tabText(i) for i in range(2)] == ["MS1 EIC", "MS2"]
         assert page.plot_tabs.currentWidget() is page.ms2_tab and page.eic_source.count() == 0
         assert page.navigation.home_button.text() == "" and not page.navigation.home_button.icon().isNull()
         for button in (page.navigation.back_button, page.navigation.forward_button,
@@ -718,7 +720,11 @@ def exercise_workbench(tmp_path, monkeypatch):
         assert not page.current_key and page.model.rowCount() == 0
     finally:
         page.close()
-        app.processEvents()
+        deadline = time.monotonic() + 5
+        while any(thread is not None for thread in (page._eic_thread, page._survey_thread, page._isotope_thread)) and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.005)
+        assert page.shutdown_eic()
 
 
 def test_workbench_navigation_candidate_switch_export_and_async_load(tmp_path):
@@ -848,7 +854,7 @@ def exercise_eic_requests(tmp_path):
         plot.resize(450, 280)
         plot.set_eic(EICTrace(np.array([5.0]), np.array([100.0]), 5, 500, 10))
         assert plot._bounds()[:2] == (4, 6)
-        assert "MS1" in plot.toolTip()
+        assert not plot.toolTip()  # Only local data hover text, no axis instructions.
         assert not plot.grab().isNull()  # A single MS1 scan still produces a plot.
         plot.set_eic(EICTrace(np.array([]), np.array([]), 5, 500, 10))
         assert plot._bounds()[:2] == (4, 6) and "MS1" in plot.status
@@ -869,7 +875,7 @@ def exercise_eic_requests(tmp_path):
     finally:
         gate.set()
         page.close()
-        wait_for(lambda: page._eic_thread is None)
+        wait_for(lambda: all(thread is None for thread in (page._eic_thread, page._survey_thread, page._isotope_thread)))
 
 
 def test_eic_debounce_cancellation_generation_closing_and_sparse_render(tmp_path):
@@ -906,7 +912,8 @@ def exercise_unlinked_annotation_eic(tmp_path):
         # No detected feature table or linked peak is supplied.
         page.set_bundle(ResultBundle.from_frames(annotation, path=tmp_path / "runs" / "results.csv"))
         assert page.bundle.features.ms1_support_status.tolist() == ["MS2-only"]
-        assert ("MS1 feature", "Unlinked") in page.detail.rows
+        assert ("MS1 积分范围", "未确认") in page.detail.rows
+        assert not {"MS1 feature", "MS1 evidence"} & {key for key, _ in page.detail.rows}
         assert "未关联不代表没有 MS1 信号" in page.detail._full_html
         page.plot_tabs.setCurrentWidget(page.ms1_tab)
         deadline = time.monotonic() + 10
@@ -916,9 +923,9 @@ def exercise_unlinked_annotation_eic(tmp_path):
         np.testing.assert_allclose(page.eic_plot.times, [4, 5, 6])
         np.testing.assert_allclose(page.eic_plot.intensities, [10, 50, 20])
         assert page.eic_plot._bounds()[:2] == (4, 6)
-        assert page.eic_plot.mz == 500 and "MS1" in page.eic_plot.toolTip()
+        assert page.eic_plot.mz == 500 and not page.eic_plot.toolTip()
         assert page.eic_plot.peak_bounds is None
-        assert page.eic_plot.signal_status == "有 MS1 信号"
+        assert page.eic_plot.signal_status == ""
         page.plot_tabs.setCurrentWidget(page.ms2_tab)
         app.processEvents()
         assert [peak["mz"] for peak in page.spectrum.peaks] == [100, 200]
@@ -939,7 +946,11 @@ def exercise_unlinked_annotation_eic(tmp_path):
         assert page.eic_plot.peak_bounds == (4.85, 5.15)
     finally:
         page.close()
-        app.processEvents()
+        deadline = time.monotonic() + 5
+        while any(thread is not None for thread in (page._eic_thread, page._survey_thread, page._isotope_thread)) and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.005)
+        assert page.shutdown_eic()
 
 
 def test_unlinked_ms2_annotation_displays_raw_ms1_eic_and_ms2_mass_spectrum(tmp_path):

@@ -21,6 +21,52 @@ new benchmark explicitly justifies a change.
 - `search.py`: spectrum orchestration, shared-peak iteration, and result export.
 - `record_facts.py`: reuse read-only record facts during one candidate score;
   discard the cache on return or error, without changing gates or scores.
+- `search_plan.py` and `native_plan.py`: prepare and read optional numeric
+  occurrence columns and conservative necessary-evidence programs. They may
+  reject impossible candidates but never award scores or select a rank.
+
+## LPC sodium (2026-10-28)
+
+`positive_lpc_sodium.py` defines one mandatory NL C3H9N HG and four ordinary
+fragments: precursor, NL205.0479892, m/z104.1069905 and m/z86.0964258.
+HG/Other weights are75/25, with no FAH or sn-position claim. The source adds77
+C10-C26/DB0-6 whitelist entries while preserving all unrelated blocks and order.
+See [mass assignments and MS-DIAL comparison](lpc_sodium_fragments.md).
+
+## Equivalent search execution (2026-10-22)
+
+The canonical searcher can avoid complete scoring when unchanged evidence
+rules prove that a candidate cannot be emitted. It preserves precursor-as-HG,
+class-specific Common HG, FA/NAE precursor paths, and candidates without a
+declared mandatory group. Failed mandatory sodium HG, negative chain coverage,
+and unrecoverable TG/precursor/oxidized-chain groups can return early only in
+this internal search path. Existing HG/FAH tentative fallbacks remain eligible.
+The direct `score_candidate` API still computes complete failed-candidate
+scores and audit evidence by default. Custom searcher subclasses and replaced
+scorers retain their full scoring path; `use_score_prefilter=False` provides
+an explicit comparison path for standard searchers.
+
+New indexes optionally include compact numeric search columns. A C++ matcher
+keeps the same inclusive endpoints, highest-intensity tie handling and one-peak
+consumption per fragment occurrence. Small occurrence-mask programs test only
+necessary conditions, including existing strict TG coverage, sodium HG, PE-P
+coverage and sphingolipid standard/fallback alternatives. Passing a program
+still invokes the full reference evidence, scoring and ranking implementation.
+No query results or candidate scores are reused between spectra or repeats.
+
+Numeric columns have a 256 MiB ceiling per open library, honor class/adduct/mass
+filters and do not enlarge the four-block annotation cache. Unsupported numeric
+types, absent/incompatible derived columns, custom searchers/rules/scorers and
+edits to decoded records retain the compatible reference paths. The normalized
+source records, labels, fragment occurrences and compressed record blocks are
+unchanged. Index fingerprints include the implementation and native binaries.
+
+Fragment classifications explicitly declared independent of matched state
+share a candidate-local cache entry. Repeated fragment occurrences retain
+distinct identities. Chain-count text caches are bounded to 4,096 immutable
+entries, and callers receive independent mutable counts. Generic and
+sphingolipid scoring both restore their candidate-local caches on exit. No spectrum scores
+or candidates are cached across searches; edits to records remain effective.
 
 Library parsing must not contain class-specific scoring or ranking decisions.
 Passing a gate must not itself award a high score, and a high score must not
@@ -397,6 +443,61 @@ three evidence ions are phosphocholine m/z 184 (HG), the matching outer-FA
 - All precursor and fragment masses use a consistent neutral formula and
   proton/electron masses. For `Cerd18:0/16:0(O-15:0)`, formula `C49H97NO5`,
   positive precursor is 780.7440 and negative `[M-H]-` is 778.7294.
+
+### Execution-only reuse
+
+- Indexed search retains at most four annotation blocks, plus at most 4,096
+  selected records within a conservative 32 MiB allocation budget. Library-only
+  facts have an independent 4,096-record/64 MiB LRU limit. Closing a searcher
+  releases both caches. Direct public scoring calls keep fresh fact scopes.
+- Reuse checks every record/fragment input field and fragment occurrence
+  identity. Class rules include snapshots of their mutable dictionary fields.
+  Record edits invalidate the facts; edited visible records disable numerical
+  pruning. Experimental matches, scores, gates and rankings are recomputed.
+- Optional equivalence columns describe supported protonated phospholipids
+  (PC/PC-O/PC-P, PE/PE-O, PG/PG-O, PI/PI-O, PA/PA-O and PS/PS-O) and d/non-hydroxy
+  SM records that can only report species in the absence of chain ions.
+  Records with fractional loss gates, and hydroxylated/trihydroxy SM, retain
+  full evaluation. HG roles and chain losses follow each class's named-ion policy.
+  Records must have
+  identical species, pool counts/weights, HG gates and observed occurrence
+  roles. Any chain hit retains the full evaluation. Keep both the first and
+  best-ppm member in source order so the final reporting collapse preserves
+  insertion order, tie decisions and the selected record's audit provenance.
+- The surviving candidates run the reference scorer, final gates and ranking.
+  No peaks, source records or library fragment definitions are removed. Older
+  indexes and custom reporting methods retain the full evaluation path.
+- A verified optional CPython adapter invokes the same C++ matching kernel
+  directly on validated numeric columns and the original experimental peaks.
+  It preserves occurrence order, highest-intensity matching and first-on-tie
+  semantics. Unsupported numeric types retain the reference interface. Native
+  columns are bounds-checked and kept alive for the duration of each call.
+- Immutable match tuples can reuse chain/HG counts and resolution decisions
+  only inside one candidate's scoring invocation. This scratch data is discarded
+  before the next candidate; mutable public match lists retain reference behavior.
+  Persistent library facts never contain experimental matches or score results.
+- Canonical indexed scoring prepares ordinary phospholipid/TG branches from
+  library-only facts. A native pool plan evaluates the same count predicates,
+  physical-peak identities and pool formulas in one match traversal. Unsupported
+  classes, custom policies and unrecognized inputs retain the reference path.
+  The search-only precheck token is private to the validated numerical plan;
+  final mandatory gates, fallback intensities and resolution still execute.
+- Exact sphingolipid gates reuse the clause compiler with fallback alternatives
+  disabled. Identity checks, logical fragment types and tiered HG requirements
+  remain enforced. Rule snapshots invalidate prepared clauses after edits;
+  external/repeated fragment instances retain the reference evaluator.
+- Shared-chain reranking registers only newly selected groups and recomputes
+  affected candidates. It keeps the original Top1 tier, strongest shared match,
+  cumulative penalty, stable ties and minimum-score filtering. Custom method
+  overrides retain the reference greedy loop.
+- Experimental peaks, fragment matches and pool scores use slots; their fields
+  and numeric types remain unchanged, and old dict-backed pickle states remain
+  readable. Record validation checks every field and fragment occurrence before
+  reusing library facts. Canonical name text has a bounded 4,096-entry cache.
+- The matching kernel reuses at most 128 exact mass windows within one call.
+  Its cache never crosses queries or stores intensities, matches, scores or gate
+  results. Native plan allocations are charged conservatively to the bounded
+  library-fact budget; closing a searcher releases its plans.
 
 ### MSP structural validation
 

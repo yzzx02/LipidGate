@@ -43,6 +43,7 @@ from .library_fragment_policy import (
 from .models import FragmentRecord, LibraryRecord
 from .nae_precursor import normalize_nae_record
 from .positive_single_chain_h import normalize_protonated_single_chain_record
+from .positive_lpc_sodium import normalize_lpc_sodium
 from .chain_labels import annotate_record_chain_labels
 from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
@@ -51,7 +52,7 @@ from .sphingolipid_naming import (
 )
 
 
-LIBRARY_CACHE_VERSION = 42
+LIBRARY_CACHE_VERSION = 43
 
 TRIMETHYLAMINE_MONOISOTOPIC_MASS = 59.07349929
 PHOSPHORIC_ACID_MONOISOTOPIC_MASS = 97.97689557
@@ -1220,9 +1221,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
-    return normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+    return normalize_lpc_sodium(normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
-                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))))
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz))))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:

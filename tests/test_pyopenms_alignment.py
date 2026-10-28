@@ -9,12 +9,14 @@ from lipidbench.runners.run_pyopenms import _feature_rt_bounds
 from lipidbench.runners.run_pyopenms import single_feature_dataframe, detect_feature_map, PYOPENMS_FEATURE_DEFAULTS
 
 
-def test_feature_rt_bounds_fall_back_to_detected_feature_width() -> None:
+def test_feature_without_hull_does_not_turn_fwhm_into_integration_bounds() -> None:
+    import math
     feature = pyopenms.Feature()
     feature.setRT(300.0)
     feature.setWidth(12.0)
 
-    assert _feature_rt_bounds(feature) == (294.0, 306.0)
+    assert all(math.isnan(value) for value in _feature_rt_bounds(feature))
+    assert feature.getWidth() == 12.
 
 
 def test_single_file_export_keeps_hull_bounds_and_explicit_seconds():
@@ -82,6 +84,24 @@ def test_feature_postprocessing_updates_units_without_changing_native_bounds(tmp
     linked = link_ms2_to_features(first, pd.DataFrame([{"precursor_mz": 790.5398, "rt_minutes": 1.}]))
     assert linked.loc[0, "ms1_support_status"] == "MS1-supported"
     assert linked.loc[0, "feature_rt"] == 1.
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_legacy_table_missing_edges_never_uses_fwhm_settings_as_fake_bounds(tmp_path, force):
+    import pandas as pd
+    from lipidbench.utils.data_io import load_pyopenms_results
+
+    path = tmp_path / "native.csv"
+    pd.DataFrame([dict(Feature_ID="F1", mz=500., RT=60., RT_unit="seconds",
+                       FWHM=8., intensity=12345.)]).to_csv(path, index=False)
+    result = load_pyopenms_results(path, min_fwhm=10000., max_fwhm=20000.,
+                                   force_recompute_bounds=force)
+    assert result.Feature_ID.tolist() == ["F1"]
+    assert result.RT.tolist() == [1.]
+    assert result.FWHM.tolist() == [8.]
+    assert result.intensity.tolist() == [12345.]
+    assert result.RTmin.isna().all() and result.RTmax.isna().all()
+    assert result.peak_boundary_reason.tolist() == ["missing_detector_bounds"]
 
 
 def test_consensus_membership_survives_native_ms2_linking(tmp_path):
@@ -195,11 +215,21 @@ def test_refinement_keeps_detected_features_but_excludes_neighbor_area():
     feature.setConvexHulls([hull])
     fm = pyopenms.FeatureMap()
     fm.push_back(feature)
-    refined = refine_feature_map(exp, fm, oms=pyopenms, mz_tol=10,
-                                 min_fwhm=3, max_fwhm=30, min_peak_height=3000)
-    assert refined.size() == fm.size() == 1
+    # Both peaks were actually detected. An EIC-only split proposal is no
+    # longer sufficient to cut a detector interval or invent a second feature.
+    neighbor = pyopenms.Feature(feature)
+    neighbor.setRT(30.)
+    neighbor.setUniqueId(124)
+    neighbor.setIntensity(40000.)
+    neighbor_hull = pyopenms.ConvexHull2D()
+    neighbor_hull.setHullPoints(np.array([[25., 520.3392], [35., 520.3392]], dtype=np.float32))
+    neighbor.setConvexHulls([neighbor_hull])
+    fm.push_back(neighbor)
+    refined = refine_feature_map(exp, fm, oms=pyopenms, mz_tol=10)
+    assert refined.size() == fm.size() == 2
     result = refined[0]
     assert result.getRT() == 38. and result.getUniqueId() == 123
+    assert result.getWidth() == feature.getWidth() == 6.
     lower, upper = _feature_rt_bounds(result)
     assert 32 < lower < 36
     raw = np.asarray(values, dtype=np.float32)
@@ -207,8 +237,158 @@ def test_refinement_keeps_detected_features_but_excludes_neighbor_area():
     assert result.getIntensity() == pytest.approx(expected, rel=1e-6)
     assert result.getIntensity() < 80000
     exported = single_feature_dataframe(refined, "a.mzML")
+    exported = exported.loc[exported.native_uid.eq("123")].reset_index(drop=True)
     assert exported.loc[0, "area_method"] == "raw_eic_trapezoid"
     assert exported.loc[0, "detector_area"] == 100000
+    assert exported.loc[0, "peak_boundary_status"] == "confirmed"
+    assert exported.loc[0, "peak_left_boundary_type"] == "valley"
+    again = refine_feature_map(exp, refined, oms=pyopenms, mz_tol=10)
+    assert again[0].getIntensity() == result.getIntensity()
+    assert again[0].getMetaValue("detector_area") == 100000
+    assert again[0].getWidth() == 6.
+
+
+@pytest.mark.parametrize("detector_width", [.25, 120.])
+def test_boundary_correction_never_recalculates_or_filters_detector_width(detector_width):
+    import numpy as np
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    exp = pyopenms.MSExperiment()
+    for rt in range(100):
+        value = (10000 * np.exp(-.5 * ((rt - 36.) / 6.) ** 2)
+                 + 24000 * np.exp(-.5 * ((rt - 51.) / 3.) ** 2))
+        scan = pyopenms.MSSpectrum()
+        scan.setMSLevel(1)
+        scan.setRT(float(rt))
+        scan.set_peaks(([500.], [value]))
+        exp.addSpectrum(scan)
+    fm = pyopenms.FeatureMap()
+    for uid, rt in [(123, 36.), (456, 51.)]:
+        feature = pyopenms.Feature()
+        feature.setRT(rt)
+        feature.setMZ(500.)
+        feature.setWidth(detector_width)
+        feature.setIntensity(99999.)
+        feature.setUniqueId(uid)
+        hull = pyopenms.ConvexHull2D()
+        hull.setHullPoints(np.array([[15., 500.], [70., 500.]], dtype=np.float32))
+        feature.setConvexHulls([hull])
+        fm.push_back(feature)
+    result = refine_feature_map(exp, fm, oms=pyopenms, mz_tol=10.)
+    assert result.size() == fm.size() == 2
+    assert [f.getUniqueId() for f in result] == [123, 456]
+    assert [f.getRT() for f in result] == [36., 51.]
+    assert [f.getWidth() for f in result] == [detector_width, detector_width]
+    assert all(f.getMetaValue("peak_boundary_status") == "confirmed" for f in result)
+    left_bounds, right_bounds = [_feature_rt_bounds(f) for f in result]
+    assert left_bounds[1] == right_bounds[0]
+    assert 36. < left_bounds[1] < 51.
+    assert all(not f.metaValueExists("raw_fwhm_sec") for f in result)
+
+
+@pytest.mark.parametrize("case", ["unseparated_neighbor", "without_detector_hull"])
+def test_unresolved_peaks_and_missing_detector_bounds_keep_honest_provenance(case):
+    import numpy as np
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    exp = pyopenms.MSExperiment()
+    for rt in range(100):
+        scan = pyopenms.MSSpectrum()
+        scan.setMSLevel(1)
+        scan.setRT(float(rt))
+        scan.set_peaks(([500.], [10000 * np.exp(-.5 * ((rt - 40.) / 5.) ** 2)]))
+        exp.addSpectrum(scan)
+    fm = pyopenms.FeatureMap()
+    for index, rt in enumerate([40., 41.] if case == "unseparated_neighbor" else [40.]):
+        feature = pyopenms.Feature()
+        feature.setUniqueId(index + 1)
+        feature.setMZ(500.)
+        feature.setRT(rt)
+        feature.setWidth(6.)
+        feature.setIntensity(99999.)
+        if case == "unseparated_neighbor":
+            hull = pyopenms.ConvexHull2D()
+            hull.setHullPoints(np.array([[20., 500.], [60., 500.]], dtype=np.float32))
+            feature.setConvexHulls([hull])
+        fm.push_back(feature)
+    result = refine_feature_map(exp, fm, oms=pyopenms, mz_tol=10.)
+    assert result.size() == fm.size()
+    assert [f.getWidth() for f in result] == [6.] * fm.size()
+    if case == "unseparated_neighbor":
+        assert all(f.getMetaValue("peak_boundary_status") == "unresolved" for f in result)
+        assert all(f.getMetaValue("peak_boundary_reason") == "neighboring_detector_apex_not_separated" for f in result)
+        assert all(f.getIntensity() == 99999. for f in result)
+        assert all(_feature_rt_bounds(f) == (20., 60.) for f in result)
+    else:
+        again = refine_feature_map(exp, result, oms=pyopenms, mz_tol=10.)
+        assert again[0].getIntensity() == result[0].getIntensity()
+        assert not again[0].metaValueExists("detector_rt_left_sec")
+        assert not again[0].metaValueExists("detector_rt_right_sec")
+        assert again[0].getMetaValue("detector_area") == 99999.
+
+
+def test_refinement_preserves_mass_lookup_across_differently_ordered_features():
+    """A preceding mass's hull must not replace the native-neighbor index."""
+    import numpy as np
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    experiment = pyopenms.MSExperiment()
+    for rt in range(110):
+        close_peaks = (10000 * np.exp(-.5 * ((rt - 40.) / 4.2) ** 2)
+                       + 12000 * np.exp(-.5 * ((rt - 51.) / 4.2) ** 2))
+        unrelated = 20000 * np.exp(-.5 * ((rt - 50.) / 5.) ** 2)
+        scan = pyopenms.MSSpectrum()
+        scan.setMSLevel(1)
+        scan.setRT(float(rt))
+        scan.set_peaks(([500., 1000.], [close_peaks, unrelated]))
+        experiment.addSpectrum(scan)
+    features = pyopenms.FeatureMap()
+    for uid, mass, rt in [(1, 1000., 50.), (2, 500., 40.), (3, 500., 51.)]:
+        feature = pyopenms.Feature()
+        feature.setMZ(mass)
+        feature.setRT(rt)
+        feature.setUniqueId(uid)
+        hull = pyopenms.ConvexHull2D()
+        hull.setHullPoints(np.array([[20., mass], [80., mass]], dtype=np.float32))
+        feature.setConvexHulls([hull])
+        features.push_back(feature)
+    refined = refine_feature_map(experiment, features, oms=pyopenms, mz_tol=10.)
+    assert [f.getUniqueId() for f in refined] == [1, 2, 3]
+    assert all(f.getMetaValue("peak_boundary_status") == "confirmed" for f in refined)
+    left, right = [_feature_rt_bounds(refined[index]) for index in (1, 2)]
+    assert left[1] == right[0]
+    assert 40. < left[1] < 51.
+    assert refined[1].getIntensity() != refined[2].getIntensity()
+
+
+def test_refinement_reads_both_sides_of_a_neighbor_at_the_old_context_edge():
+    import numpy as np
+    from lipidbench.utils.feature_quantification import refine_feature_map
+
+    experiment = pyopenms.MSExperiment()
+    for rt in range(125):
+        value = (10000 * np.exp(-.5 * ((rt - 30.) / 8.) ** 2)
+                 + 25000 * np.exp(-.5 * ((rt - 60.) / 7.) ** 2))
+        scan = pyopenms.MSSpectrum()
+        scan.setMSLevel(1)
+        scan.setRT(float(rt))
+        scan.set_peaks(([500.], [value]))
+        experiment.addSpectrum(scan)
+    features = pyopenms.FeatureMap()
+    for uid, rt, lower, upper in [(1, 30., 20., 40.), (2, 60., 50., 80.)]:
+        feature = pyopenms.Feature()
+        feature.setMZ(500.)
+        feature.setRT(rt)
+        feature.setUniqueId(uid)
+        hull = pyopenms.ConvexHull2D()
+        hull.setHullPoints(np.array([[lower, 500.], [upper, 500.]], dtype=np.float32))
+        feature.setConvexHulls([hull])
+        features.push_back(feature)
+    refined = refine_feature_map(experiment, features, oms=pyopenms, mz_tol=10.)
+    assert all(f.getMetaValue("peak_boundary_status") == "confirmed" for f in refined)
+    left, right = [_feature_rt_bounds(f) for f in refined]
+    assert 30. < left[1] == right[0] < 60.
+    assert refined[1].getMetaValue("peak_left_boundary_type") == "valley"
 
 
 def test_grouping_keeps_close_isomers_separate_despite_intensity_changes():

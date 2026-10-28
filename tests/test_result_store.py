@@ -153,22 +153,31 @@ def exercise_consensus_browser(tmp_path):
         page.set_bundle(bundle)
         page.select_feature('ALIGN|aligned')
         app.processEvents()
-        assert page.spectrum_choice.currentData() is None
+        assert page.spectrum_choice.currentData() == 'b.mzML|b'
+        assert page.spectrum_choice.isVisible()  # Three distinct Top1 identities.
+        assert page.spectrum_choice.count() == 3
         assert len(page.model.rows) == 1 and page.candidates.rowCount() == 3
         assert page.current_candidate['matched_name'] == 'PC(16:0/18:1)'
         assert page._experimental == [[100, 1000.]]
         page.candidates.setCurrentCell(1, 0)
+        assert page.current_candidate['final_score'] == 80
+        assert page._experimental == [[100, 1000.]]
+        page.candidates.setCurrentCell(2, 0)
+        assert page.current_candidate['source_file'] == 'b.mzML'
+        assert page.current_candidate['final_score'] == 70
+        assert page._experimental == [[100, 1000.]]
+        page.spectrum_choice.setCurrentIndex(page.spectrum_choice.findData('a.mzML|a'))
         assert page.current_candidate['final_score'] == 99
         assert page._experimental == [[200, 1000.]]
-        page.candidates.setCurrentCell(2, 0)
-        assert page.current_candidate['source_file'] == 'c.mzML'
-        assert page._experimental == [[250, 1000.]]
-        page.spectrum_choice.setCurrentIndex(page.spectrum_choice.findData('__differences__'))
+        page.spectrum_choice.setCurrentIndex(page.spectrum_choice.findData('d.mzML|d'))
         assert page.current_candidate['matched_name'] == 'PC(14:1/20:0)'
         assert page._experimental == [[300, 1000.]]
         page.spectrum_choice.setCurrentIndex(page.spectrum_choice.findData('b.mzML|b'))
         assert all(row['source_file'] == 'b.mzML' for row in page._candidate_rows)
         assert page._experimental == [[100, 1000.]]
+        assert len(bundle.evidence_rows()) == len(data)
+        # The complete summary is still available for exports and audit.
+        assert 'c.mzML' in bundle.candidate_rows('ALIGN|aligned')._source.tolist()
         page.spectrum_choice.setCurrentIndex(0)
         page.candidates.setCurrentCell(0, 0)
         page.grab().save(str(tmp_path/'consensus-browser.png'))
@@ -178,7 +187,7 @@ def exercise_consensus_browser(tmp_path):
         app.processEvents()
 
 
-def test_consensus_browser_keeps_each_candidates_own_spectrum_in_summary_and_detail(tmp_path):
+def test_consensus_browser_uses_one_real_spectrum_and_keeps_top1_disagreements(tmp_path):
     import os
     from pathlib import Path
     import subprocess

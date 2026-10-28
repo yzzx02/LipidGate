@@ -1,0 +1,90 @@
+{
+  "kind": "development execution optimization; not a published release",
+  "date": "2026-10-22",
+  "parent_commit": "3719a62ce6c83622afdd7eaf5f6d541ad7a7a827",
+  "branch": "codex/search-scoring-20261022",
+  "code_fingerprint": "41077179e3bc8cf790d925ae6bba44e8e6e9488fe438d9b7bee1d69b4133a651",
+  "source_sha256": {
+    "src/lipidgate/ms2/chain_utils.py": "fe9981c0cc9b21d04905bc36d5815fb871e26cc78e957d06512d6d1962691509",
+    "src/lipidgate/ms2/evidence_policy.py": "95a117ae1ae462e23c4013b4066f0187efa40c592ad2a95b4b7944391e083165",
+    "src/lipidgate/ms2/gate_policy.py": "6375b61b9b6c909f03097f506efecd015565add4b2052e4ff4f909988e755565",
+    "src/lipidgate/ms2/record_facts.py": "076e908ae4c3d55afc94d47d628bc4db4952dbd1c546c4529770ff220bb5f475",
+    "src/lipidgate/ms2/scoring.py": "f3f94517d7316608694d3cd3bda325a6a3a422f9b3301977be7afdb1a140c141",
+    "src/lipidgate/ms2/search.py": "5f3aeea65f49866a4e5f705a4618437484f8273ab062fe57cf912622b4aefb9b"
+  },
+  "library_content_and_scientific_rules_changed": false,
+  "libraries": [
+    {
+      "mode": "positive",
+      "records": 1254316,
+      "source_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+      "index_sha256": "466b456e310490fa844d069a36fa4e3eeacc41ee608ef6f67f45f6b79a7b02bb",
+      "all_normalized_entry_and_block_bytes_identical": true
+    },
+    {
+      "mode": "negative",
+      "records": 1088179,
+      "source_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "index_sha256": "46630b0964ac1b50689ef57cf23f63795bae0bec05fdb5098824278dc17e999a",
+      "all_normalized_entry_and_block_bytes_identical": true
+    }
+  ],
+  "equivalence": {
+    "real_query_spectra": 2000,
+    "external_standard_spectra": 1197,
+    "complete_export_fields_exact": true,
+    "all_200_top20_timing_digests_identical": true
+  },
+  "tests": {
+    "pytest_passed": 996,
+    "subtests_passed": 3118
+  },
+  "decoded_block_cache_limit": 4,
+  "benchmark": [
+    {
+      "mode": "positive",
+      "median_us": 2313.3832,
+      "q1_us": 2273.6913750000003,
+      "q3_us": 2344.7033500000007,
+      "batches": 100,
+      "query_count": 1000,
+      "top20_digest_identical_to_original": true,
+      "original_median_us": 4789.14875,
+      "peak_RSS_MiB": 546.5,
+      "query_RSS_MiB": 546.5,
+      "native_min_candidates": 256,
+      "production_code_fingerprint": "41077179e3bc8cf790d925ae6bba44e8e6e9488fe438d9b7bee1d69b4133a651",
+      "decoded_block_cache_limit": 4,
+      "clock": "Windows QPC",
+      "CPU": 0,
+      "threads": 1,
+      "load_seconds": 0.0635245000012219,
+      "index_seconds": 0.9471976999993785,
+      "speedup": 2.0701925863384845,
+      "peak_memory_summary": "maximum of sequential end-of-run OS-peak and RSS samples; raw samples retained"
+    },
+    {
+      "mode": "negative",
+      "median_us": 1879.37295,
+      "q1_us": 1821.180175,
+      "q3_us": 1911.68175,
+      "batches": 100,
+      "query_count": 1000,
+      "top20_digest_identical_to_original": true,
+      "original_median_us": 4641.208450000001,
+      "peak_RSS_MiB": 570.859375,
+      "query_RSS_MiB": 570.7265625,
+      "native_min_candidates": 128,
+      "production_code_fingerprint": "41077179e3bc8cf790d925ae6bba44e8e6e9488fe438d9b7bee1d69b4133a651",
+      "decoded_block_cache_limit": 4,
+      "clock": "Windows QPC",
+      "CPU": 0,
+      "threads": 1,
+      "load_seconds": 0.2747237000003224,
+      "index_seconds": 0.926656900001035,
+      "speedup": 2.4695515863416047,
+      "peak_memory_summary": "maximum of sequential end-of-run OS-peak and RSS samples; raw samples retained"
+    }
+  ],
+  "native_policy_manifest_sha256": "fdcab7d2af613394d07d86b19d888957285b362b46ea93db1f44a56b76aa2831"
+}

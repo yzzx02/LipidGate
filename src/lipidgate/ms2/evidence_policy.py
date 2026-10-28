@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from typing import Callable, List, Sequence
-from .chain_utils import chain_token_multiplicity as _chain_token_multiplicity, extract_fragment_chain_token as _extract_fragment_chain_token, count_chain_evidence
+from .chain_utils import chain_token_counts as _chain_token_counts, extract_fragment_chain_token as _extract_fragment_chain_token, count_chain_evidence
 from .esterified_ceramide import is_esterified_ceramide
 from .models import FragmentMatch, FragmentRecord, LibraryRecord
 from .negative_cer_hsu2016 import is_simple_negative_cer, logical_negative_cer_fragment_types
@@ -13,7 +13,7 @@ from .negative_hexcer import is_negative_hexcer, logical_fragment_types
 from .oxidized_fragment_policy import parent_class_key, is_oxidized_precursor_water_loss
 from .positive_gm3 import is_positive_gm3
 from .positive_pe_cer import is_positive_pe_cer
-from .record_facts import cached_fragment_fact, cached_record_fact
+from .record_facts import cached_fragment_fact, cached_record_fact, cached_match_fact
 from .resolution_policy import (
     normalized_class_key,
     record_polarity,
@@ -140,6 +140,7 @@ def _is_fa_record(record: LibraryRecord) -> bool:
     return _normalized_compound_class(record.compound_class) == "FA"
 
 
+@cached_record_fact
 def _is_positive_hg_dominant_phospholipid(record: LibraryRecord) -> bool:
     return (
         _is_positive_adduct(record.adduct)
@@ -147,6 +148,7 @@ def _is_positive_hg_dominant_phospholipid(record: LibraryRecord) -> bool:
     )
 
 
+@cached_record_fact
 def _uses_positive_support_pool_scoring(record: LibraryRecord) -> bool:
     if not _is_positive_adduct(record.adduct):
         return False
@@ -162,6 +164,7 @@ def _uses_positive_support_pool_scoring(record: LibraryRecord) -> bool:
     )
 
 
+@cached_record_fact
 def _is_positive_glyceride_rco_gate_record(record: LibraryRecord) -> bool:
     cls = _normalized_class_key(record.compound_class)
     return _is_positive_adduct(record.adduct) and cls in POSITIVE_GLYCERIDE_RCO_GATE_CLASSES
@@ -207,6 +210,7 @@ def _positive_glyceride_chain_gate_group(record: LibraryRecord) -> str:
     return "rco"
 
 
+@cached_record_fact
 def _is_positive_mg_record(record: LibraryRecord) -> bool:
     return _is_positive_adduct(record.adduct) and _normalized_compound_class(record.compound_class) == "MG"
 
@@ -321,6 +325,7 @@ def _pool_for_fragment(record: LibraryRecord, fragment: FragmentRecord) -> str:
     return _pool_for_scoring_fragment(record, fragment, matched=False)
 
 
+@cached_record_fact
 def _is_negative_ahexcer_record(record: LibraryRecord) -> bool:
     return (
         not _is_positive_adduct(record.adduct)
@@ -335,7 +340,7 @@ def _is_ahexcer_overlapping_lcb_loss(fragment: FragmentRecord) -> bool:
     )
 
 
-@cached_fragment_fact
+@cached_fragment_fact(matched_independent=True)
 def _scoring_pools_for_fragment(
     record: LibraryRecord,
     fragment: FragmentRecord,
@@ -357,7 +362,7 @@ def _scoring_pools_for_fragment(
     return (primary_pool,)
 
 
-@cached_fragment_fact
+@cached_fragment_fact(matched_independent=True)
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
     if _normalized_class_key(record.compound_class).startswith("OX") and is_oxidized_precursor_water_loss(fragment):
         return "other"
@@ -426,6 +431,7 @@ def _chain_evidence_count_for_fragments(
     return count_chain_evidence(record, fragments, predicate)
 
 
+@cached_match_fact
 def _chain_evidence_count_for_matches(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -453,6 +459,7 @@ def _record_hg_fragment_count(record: LibraryRecord) -> int:
     return sum(1 for fragment in record.fragments if _fragment_counts_as_hg(record, fragment))
 
 
+@cached_match_fact
 def _matched_hg_fragment_count(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -497,6 +504,8 @@ def _record_fa_loss_fragment_count(record: LibraryRecord) -> int:
 
 @cached_record_fact
 def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
+    if not _is_positive_glyceride_rco_gate_record(record):
+        return 0
     return _chain_evidence_count_for_fragments(
         record,
         record.fragments,
@@ -504,10 +513,13 @@ def _record_positive_glyceride_rco_fragment_count(record: LibraryRecord) -> int:
     )
 
 
+@cached_match_fact
 def _matched_positive_glyceride_rco_fragment_count(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
 ) -> int:
+    if not _is_positive_glyceride_rco_gate_record(record):
+        return 0
     return _chain_evidence_count_for_matches(
         record,
         matches,
@@ -536,6 +548,7 @@ def _positive_required_loss_hits(chain_tokens: Sequence[str], fa_loss_fragment_c
     return expected
 
 
+@cached_match_fact
 def _matched_hg_max_relative_intensity(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -580,6 +593,7 @@ def _matched_cl_chain_info_fragment_count(record: LibraryRecord, matches: Sequen
     return sum(1 for match in matches if _is_cl_chain_info_fragment(record, match.fragment))
 
 
+@cached_match_fact
 def _matched_required_fah_count(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -587,7 +601,7 @@ def _matched_required_fah_count(
 ) -> int:
     matched_fah = set(_matched_fah_tokens(matches))
     expected_fah = set(expected_fah_tokens)
-    multiplicity = _chain_token_multiplicity(record)
+    multiplicity = _chain_token_counts(record)
     if expected_fah:
         matched_expected = matched_fah.intersection(expected_fah)
         if not _is_positive_adduct(record.adduct):
@@ -639,10 +653,12 @@ def is_positive_class(record: LibraryRecord, class_keys: frozenset[str]) -> bool
     ) in class_keys
 
 
+@cached_record_fact
 def is_positive_ps(record: LibraryRecord) -> bool:
     return is_positive_class(record, frozenset({"PS"}))
 
 
+@cached_record_fact
 def is_positive_pep(record: LibraryRecord) -> bool:
     return is_positive_class(record, frozenset({"PEP"}))
 

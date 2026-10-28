@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import math
 
+import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .plot_axes import MIN_VIEW_SPAN, axis_drag_factor, clamp_window, decimal_tick_step, intensity_tick_label, scaled_from_minimum, scaled_window, tick_label, tick_values
@@ -102,26 +103,31 @@ class _SpectrumCanvas(QtWidgets.QWidget):
         painter.drawText(QtCore.QRectF(-rect.height() / 2, -14, rect.height(), 28), QtCore.Qt.AlignmentFlag.AlignCenter, self.owner.y_axis_label)
         painter.restore()
 
-        if not self.owner.peaks:
+        if not self.owner.has_peaks:
             painter.setPen(QtGui.QColor("#75838e"))
             painter.setFont(self._font(10.5))
-            painter.drawText(rect, QtCore.Qt.AlignmentFlag.AlignCenter, "没有保存可显示的实验谱图")
+            painter.drawText(rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap,
+                             self.owner.status)
             return
 
         painter.save()
         painter.setClipRect(rect)
         baseline = self._pixel(x0, 0)[1]
         # Draw unassigned peaks first so a weak matched peak remains visible.
-        for matched in (False, True):
-            for peak in self.owner.peaks:
-                if bool(peak["fragment"]) != matched:
+        visible = self.owner.visible_peaks(max(1, int(rect.width())))
+        for emphasized in (False, True):
+            for peak in visible:
+                matched = bool(peak["fragment"])
+                precursor = self.owner.is_precursor_peak(peak)
+                if (matched or precursor) != emphasized:
                     continue
                 x, y = self._pixel(peak["mz"], peak["relative"])
                 if x < rect.left() or x > rect.right():
                     continue
                 role = display_role(peak["fragment"]) if matched else "unmatched"
-                color = QtGui.QColor(FRAGMENT_COLORS[role])
-                pen = QtGui.QPen(color, 2.1 if matched else 1.2)
+                color = QtGui.QColor(("#c55243" if precursor else "#525b62")
+                                     if self.owner.ms1_spectrum is not None else FRAGMENT_COLORS[role])
+                pen = QtGui.QPen(color, 2.1 if matched else 1.6 if precursor else 1.2)
                 pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
                 painter.setPen(pen)
                 painter.drawLine(QtCore.QPointF(x, baseline), QtCore.QPointF(x, y))
@@ -220,7 +226,9 @@ class _SpectrumCanvas(QtWidgets.QWidget):
             QtWidgets.QToolTip.hideText()
             return
         nearby = []
-        for peak in self.owner.peaks:
+        mz, _ = self._data(event.position())
+        tolerance = 6 / self.plot_rect().width() * (self.owner.limits[1] - self.owner.limits[0])
+        for peak in self.owner.nearby_peaks(mz, tolerance):
             x, y = self._pixel(peak["mz"], peak["relative"])
             dx = abs(x - event.position().x())
             if dx <= 6 and y - 6 <= event.position().y() <= self.plot_rect().bottom() + 5:
@@ -230,13 +238,15 @@ class _SpectrumCanvas(QtWidgets.QWidget):
             QtWidgets.QToolTip.hideText()
             return
         peak = min(nearby, key=lambda item: item[:3])[3]
-        if peak is self._hover_peak:
+        if peak == self._hover_peak:
             return
         self._hover_peak = peak
         parts = [
             f"实测 m/z：{peak['mz']:.4f}",
             f"相对强度：{peak['relative']:.2f}%",
         ]
+        if self.owner.ms1_spectrum is not None:
+            parts.insert(1, f"强度：{peak['intensity']:,.0f}")
         fragment = peak["fragment"]
         if fragment:
             parts.append(f"匹配碎片：{html.escape(str(fragment.get('name') or '—'))}")
@@ -244,7 +254,7 @@ class _SpectrumCanvas(QtWidgets.QWidget):
             if fragment.get("error_ppm") is not None:
                 parts.append(f"误差：{float(fragment['error_ppm']):+.2f} ppm")
             parts.append(f"类型：{FRAGMENT_LABELS[display_role(fragment)]}")
-        else:
+        elif self.owner.ms1_spectrum is None:
             parts.append("未匹配")
         QtWidgets.QToolTip.showText(event.globalPosition().toPoint(), "<br>".join(parts), self)
 
@@ -257,20 +267,106 @@ class SpectrumPlot(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.peaks = []
+        self.ms1_spectrum = None
+        self.target_mz = None
+        self.target_peak_mz = None
+        self.status = "没有保存可显示的实验谱图"
+        self._survey_base = 1.0
+        self._visible_cache = None
         self.limits = (0.0, 1.0, 0.0, 110.0)
         self.home_limits = self.limits
         self.canvas = _SpectrumCanvas(self)
-        self.canvas.setToolTip("轴上右键：右拖/上拖放大，左拖/下拖缩小；强度从 0 开始；左键拖动平移；图内滚轮缩放")
         self.reset_button = reset_view_button(self, self.reset_view)
         controls = QtWidgets.QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
         controls.addStretch(1)
         controls.addWidget(self.reset_button)
+        self.controls = controls
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
         layout.addLayout(controls)
         layout.addWidget(self.canvas, 1)
+
+    @property
+    def has_peaks(self):
+        return bool(self.peaks) or (self.ms1_spectrum is not None and bool(len(self.ms1_spectrum.peaks)))
+
+    def _survey_slice(self, lower, upper):
+        peaks = self.ms1_spectrum.peaks
+        start = int(np.searchsorted(peaks[:, 0], lower, side="left"))
+        stop = int(np.searchsorted(peaks[:, 0], upper, side="right"))
+        return peaks[start:stop]
+
+    def _survey_point(self, peak):
+        return dict(mz=float(peak[0]), intensity=float(peak[1]),
+                    relative=float(peak[1]) / self._survey_base * 100.0, fragment=None)
+
+    def visible_peaks(self, columns):
+        if self.ms1_spectrum is None:
+            return self.peaks
+        key = self.limits[:2], columns
+        if self._visible_cache is None or self._visible_cache[0] != key:
+            x0, x1 = self.limits[:2]
+            peaks = self._survey_slice(x0, x1)
+            if len(peaks) > columns * 2:
+                bins = np.clip(((peaks[:, 0] - x0) / (x1 - x0) * columns).astype(int), 0, columns - 1)
+                edges = np.r_[0, np.flatnonzero(np.diff(bins)) + 1, len(peaks)]
+                indices = [left + int(np.argmax(peaks[left:right, 1]))
+                           for left, right in zip(edges[:-1], edges[1:])]
+                # Retain the actual precursor even when a taller peak in its
+                # pixel column wins display thinning in the full-scan view.
+                if self.target_peak_mz is not None:
+                    target = int(np.searchsorted(peaks[:, 0], self.target_peak_mz))
+                    if target < len(peaks) and peaks[target, 0] == self.target_peak_mz:
+                        indices = np.unique(np.r_[indices, target])
+                peaks = peaks[indices]
+            self._visible_cache = key, [self._survey_point(peak) for peak in peaks]
+        return self._visible_cache[1]
+
+    def nearby_peaks(self, mz, tolerance):
+        if self.ms1_spectrum is None:
+            return self.peaks
+        return (self._survey_point(peak) for peak in self._survey_slice(mz - tolerance, mz + tolerance))
+
+    def set_status(self, message):
+        self.set_evidence(None)
+        self.status = message
+        self.canvas.update()
+
+    def is_precursor_peak(self, peak):
+        return (self.ms1_spectrum is not None and self.target_peak_mz is not None
+                and peak["mz"] == self.target_peak_mz)
+
+    def set_ms1_spectrum(self, spectrum, target_mz=None, *, tolerance_ppm=10.):
+        self.set_evidence(None)
+        self.ms1_spectrum = spectrum
+        self.target_mz = float(target_mz) if target_mz is not None and math.isfinite(target_mz) and target_mz > 0 else None
+        if spectrum is not None and len(spectrum.peaks):
+            peaks = spectrum.peaks
+            self._survey_base = float(peaks[:, 1].max()) or 1.0
+            left, right = float(peaks[0, 0]), float(peaks[-1, 0])
+            step = decimal_tick_step(left, right, 6) if right > left else 1.0
+            self.home_limits = (max(0.0, math.floor(left / step) * step),
+                                max(right + 1.0, math.ceil(right / step) * step), 0.0, 105.0)
+            if self.target_mz is not None:
+                tolerance = self.target_mz * tolerance_ppm * 1e-6
+                nearby = self._survey_slice(self.target_mz - tolerance, self.target_mz + tolerance)
+                nearby = nearby[nearby[:, 1] > 0]
+                if len(nearby):
+                    self.target_peak_mz = float(nearby[np.argmin(abs(nearby[:, 0] - self.target_mz)), 0])
+        else:
+            self.status = "所选时间没有可显示的 MS1 峰"
+        self.reset_view()
+        self.focus_precursor()
+
+    def focus_precursor(self):
+        if self.ms1_spectrum is None or self.target_mz is None:
+            return
+        lower, upper = self.target_mz - 3.0, self.target_mz + 3.0
+        peaks = self._survey_slice(lower, upper)
+        height = float(peaks[:, 1].max()) / self._survey_base * 100 if len(peaks) else 1.0
+        self.set_limits((lower, upper, 0.0, max(height * 1.08, MIN_VIEW_SPAN)))
 
     def set_limits(self, limits):
         x0, x1, y0, y1 = (float(value) for value in limits)
@@ -296,6 +392,11 @@ class SpectrumPlot(QtWidgets.QWidget):
         self.canvas.update()
 
     def set_evidence(self, evidence, experimental=None):
+        self.ms1_spectrum = None
+        self.target_mz = None
+        self.target_peak_mz = None
+        self._visible_cache = None
+        self.status = "没有保存可显示的实验谱图"
         fragments = evidence.get("fragments", []) if evidence else []
         spectrum = experimental if experimental is not None else (evidence or {}).get("spectrum", [])
         observed = {}

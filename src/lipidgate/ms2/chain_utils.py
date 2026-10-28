@@ -78,7 +78,20 @@ def chain_token_multiplicity(record_or_name: LibraryRecord | object) -> Counter[
         if isinstance(record_or_name, LibraryRecord)
         else record_or_name
     )
-    return Counter(extract_chain_tokens(name))
+    return Counter(dict(_chain_count_items_text(str(name or ""))))
+
+
+@lru_cache(maxsize=4096)
+def _chain_count_items_text(text: str) -> tuple[tuple[str, int], ...]:
+    counts: dict[str, int] = {}
+    for token in _chain_tokens_text(text):
+        counts[token] = counts.get(token, 0) + 1
+    return tuple(counts.items())
+
+
+def chain_token_counts(record: LibraryRecord) -> dict[str, int]:
+    """Return independent counts for read-only scoring, without Counter setup."""
+    return dict(_chain_count_items_text(str(record.lipid_chain_name or "")))
 
 
 def count_chain_evidence(
@@ -92,13 +105,15 @@ def count_chain_evidence(
     retain their multiplicity. Unlabelled qualifying ions retain the existing
     count, capped by the number of structural positions when known.
     """
-    multiplicity = chain_token_multiplicity(record)
+    multiplicity = None
     matched_tokens: set[str] = set()
     unassigned = 0
     for item in fragments_or_matches:
         fragment = item.fragment if isinstance(item, FragmentMatch) else item
         if not predicate(record, fragment):
             continue
+        if multiplicity is None:
+            multiplicity = chain_token_counts(record)
         token = extract_fragment_chain_token(fragment)
         if token is not None and token in multiplicity:
             matched_tokens.add(token)

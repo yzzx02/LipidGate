@@ -19,6 +19,7 @@ def check(executable: Path) -> dict:
     from lipidgate.ms2.provenance import sha256
     from lipidgate.ms2.positive_pe_cer import PositivePECer
     from lipidgate.project import Project
+    from lipidbench.utils.chromatographic_peaks import PEAK_BOUNDARY_VERSION
 
     executable = executable.resolve()
     with tempfile.TemporaryDirectory(prefix="lipidgate_release_check_") as directory:
@@ -117,7 +118,8 @@ def check(executable: Path) -> dict:
         restored = next((json.loads(line) for line in project_output.splitlines()
                          if line.startswith('{"project_file_verified":')), None)
         if restored is None or not all(restored.get(key) for key in
-                ("project_file_verified", "new_project_verified", "latest_result_restored", "isotope_export_verified")):
+                ("project_file_verified", "new_project_verified", "latest_result_restored", "isotope_export_verified",
+                 "isotope_detail_verified")):
             raise RuntimeError("Frozen named-project recovery/export verification did not succeed")
 
         # Encode all 31 surveys through a shared parameter group, retaining an
@@ -171,6 +173,10 @@ def check(executable: Path) -> dict:
         native = pd.read_csv(run_directory / "ms1" / metadata["native_table"])
         if not {source.name, referenced.name}.issubset(set(native.source_file)):
             raise RuntimeError("Shared-parameter input did not retain native MS1 detection")
+        if (native.empty or not {"peak_boundary_version", "peak_boundary_status"}.issubset(native)
+                or not native.peak_boundary_version.eq(PEAK_BOUNDARY_VERSION).all()
+                or not native.peak_boundary_status.eq("confirmed").any()):
+            raise RuntimeError("Frozen MS1 measured-boundary correction did not complete")
         # Identical samples may correctly collapse to a single final cohort row;
         # require both original per-spectrum audits instead of two display rows.
         audit = pd.read_csv(run_directory / "results/audit/evaluated.csv")
@@ -184,7 +190,9 @@ def check(executable: Path) -> dict:
                                       "--eic-rt",1,"--eic-left",.8,"--eic-right",1.2,"--plot-test"],
                                       extra_environment=unicode_environment)
         eic = next((json.loads(line) for line in eic_output.splitlines() if line.startswith('{"ms1_points":')), None)
-        if eic is None or eic["ms1_points"] < 10 or eic["peak_intensity"] < 1000 or not eic["plot_interactions_checked"]:
+        if (eic is None or eic["ms1_points"] < 10 or eic["peak_intensity"] < 1000
+                or not eic["plot_interactions_checked"] or not eic.get("ms1_survey_verified")
+                or eic.get("ms1_survey_points", 0) < 4):
             raise RuntimeError("Frozen EIC/plot verification did not succeed")
         return dict(executable_sha256=sha256(executable), libraries=libraries, library_check_seconds=seconds,
                     synthetic_project_rows=final["row_count"], backend_verified=True, worker_seconds=worker_seconds,
@@ -194,7 +202,9 @@ def check(executable: Path) -> dict:
                     parallel_ms2_samples=int(audit.source_file.nunique()),
                     parallel_native_features=len(native), parallel_check_seconds=parallel_seconds,
                     gui_verified=True, eic=eic, gui_check_seconds=eic_seconds,
-                    project_file_verified=True, isotope_export_verified=True,
+                    ms1_boundary_verified=True, ms1_boundary_version=PEAK_BOUNDARY_VERSION,
+                    ms1_survey_verified=True,
+                    project_file_verified=True, isotope_export_verified=True, isotope_detail_verified=True,
                     project=restored, project_check_seconds=project_seconds)
 
 

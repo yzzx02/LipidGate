@@ -21,6 +21,8 @@ import numpy as np
 
 from .indexed_library import IndexedLibrary
 from .models import FragmentMatch
+from . import native_bridge
+from .record_facts import get_native_query
 
 
 def _binary_path():
@@ -211,5 +213,15 @@ def prepare_indexed_matches(library, spectrum, left, right, *, tolerance_da, tol
 
 def materialize_matches(spectrum, record, peak_indexes):
     """Retain original fragment/peak objects and Python's exact error value."""
+    bridge = native_bridge.load_bridge()
+    query = get_native_query(spectrum)
+    if query is not None and bridge is not None and hasattr(bridge, 'materialize_query_matches'):
+        native = bridge.materialize_query_matches(query, record.fragments, peak_indexes, FragmentMatch)
+        if native is not None:
+            return native
+    if bridge is not None and hasattr(bridge, 'materialize_matches'):
+        native = bridge.materialize_matches(spectrum.peaks, record.fragments, peak_indexes, FragmentMatch)
+        if native is not None:
+            return native
     return [FragmentMatch(fragment, spectrum.peaks[index], abs(spectrum.peaks[index].mz - fragment.mz))
             for fragment, index in zip(record.fragments, peak_indexes) if index >= 0]

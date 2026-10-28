@@ -7,13 +7,17 @@ from lipidgate.gui.eic_trace import ByteLRU, EICReader, read_eic_window
 
 
 class _Spectrum:
-    def __init__(self, rt, level, peaks, precursors=()):
+    def __init__(self, rt, level, peaks, precursors=(), *, centroided=True):
         self.rt = rt
         self.ms_level = level
         self._peaks = peaks
         self.selected_precursors = [{"mz": mz} for mz in precursors]
         self.ID = 1  # Some SCIEX native IDs all reduce to 1 in pymzML.
         self.element = Element("spectrum")
+        self.centroided = centroided
+
+    def get(self, name):
+        return self.centroided if name == "centroid spectrum" else None
 
     def scan_time_in_minutes(self):
         return self.rt
@@ -65,6 +69,84 @@ def mock_file(tmp_path, monkeypatch, spectra):
 
     monkeypatch.setattr("pymzml.run.Reader", create)
     return source, readers
+
+
+def test_isotopes_use_acquisition_predecessor_and_reuse_the_survey_cache(tmp_path, monkeypatch):
+    source, readers = mock_file(tmp_path, monkeypatch, [
+        _Spectrum(4.9, 1, [[500., 9999]]),
+        _Spectrum(5., 1, [[500., 100], [500.5016774, 20], [501.0033548, 4]]),
+        _Spectrum(5.01, 2, [[184., 99999]], [500.]),
+        # A closer RT acquired after the MS2 cannot be used as its precursor survey.
+        _Spectrum(5.005, 1, [[500., 1]]),
+    ])
+    reader = EICReader()
+    try:
+        result = reader.read_isotopes(source, "scan_3", 5.01, 500., "[M+2H]2+")
+        assert result["status"] == "ok" and result["charge"] == 2
+        assert result["rt_minutes"] == 5.
+        assert result["charge_source"] == "adduct"
+        assert [peak["relative_intensity"] for peak in result["peaks"]] == [100., 20., 4.]
+        assert readers[0].decoded == [1]  # Neither MS2 nor the rest of the file was decoded.
+        native = "sample=1 cycle=2 experiment=1"
+        assert reader.read_isotopes(source, native, 5.01, 500., "[M+2H]2+") == result
+        reader.read_spectrum(source, 5.)
+        assert readers[0].decoded == [1]
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("case,status", [
+    ("missing_scan", "scan_not_found"),
+    ("wrong_rt", "scan_metadata_mismatch"),
+    ("wrong_mass", "scan_metadata_mismatch"),
+    ("no_survey", "no_preceding_ms1"),
+    ("invalid_survey", "no_preceding_ms1"),
+    ("profile", "profile_ms1"),
+    ("absent_precursor", "precursor_peak_missing"),
+    ("ambiguous_precursor", "ambiguous_precursor"),
+])
+def test_isotope_requests_do_not_invent_or_substitute_evidence(tmp_path, monkeypatch, case, status):
+    values = [[500., 100.]]
+    if case == "absent_precursor":
+        values = [[510., 100.]]
+    elif case == "ambiguous_precursor":
+        values.append([500.001, 20.])
+    spectra = [_Spectrum(5., 1, values, centroided=case != "profile")]
+    if case == "no_survey":
+        spectra = []
+    elif case == "invalid_survey":
+        spectra.append(_Spectrum(np.nan, 1, values))
+    spectra.append(_Spectrum(5.01, 2, [[500., 1000.]], [500.]))
+    ordinal = len(spectra)
+    source, readers = mock_file(tmp_path, monkeypatch, spectra)
+    reader = EICReader()
+    try:
+        scan = "scan_99" if case == "missing_scan" else f"scan_{ordinal}"
+        rt = 6. if case == "wrong_rt" else 5.01
+        mass = 510. if case == "wrong_mass" else 500.
+        result = reader.read_isotopes(source, scan, rt, mass, "[M+H]+")
+        assert result["status"] == status and result["peaks"] == []
+        assert ordinal - 1 not in readers[0].decoded
+        if case in {"missing_scan", "wrong_rt", "wrong_mass", "no_survey", "invalid_survey"}:
+            assert readers[0].decoded == []
+    finally:
+        reader.close()
+
+
+def test_cancelled_isotope_index_resumes_with_its_real_preceding_survey(tmp_path, monkeypatch):
+    source, readers = mock_file(tmp_path, monkeypatch, [
+        _Spectrum(5., 1, [[500., 100.]]),
+        _Spectrum(5.01, 2, [[184., 1000.]], [500.]),
+    ])
+    reader = EICReader()
+    try:
+        assert reader.read_isotopes(source, "scan_2", 5.01, 500., "[M+H]+",
+                                    cancelled=lambda: bool(readers and readers[0].position == 1)) is None
+        result = reader.read_isotopes(source, "scan_2", 5.01, 500., "[M+H]+")
+        assert result["status"] == "ok" and result["rt_minutes"] == 5.
+        assert len(readers) == 1 and readers[0].decoded == [0]
+    finally:
+        reader.close()
 
 
 def test_eic_decodes_only_ms1_window_and_uses_nearest_ppm_peak(tmp_path, monkeypatch):
@@ -196,6 +278,50 @@ def test_trace_cache_bounds_bytes_and_entries_and_keeps_recent_items():
     for i in range(3):
         cache.put(i, "empty", 0)
     assert len(cache) == 2 and cache.bytes == 0
+
+
+def test_full_survey_uses_actual_ms1_time_keeps_all_masses_and_reuses_eic_cache(tmp_path, monkeypatch):
+    full_scan = [[900.5, 3], [501.0034, 20], [500.0, 100], [50.0, 4]]
+    source, readers = mock_file(tmp_path, monkeypatch, [
+        _Spectrum(5.2, 1, full_scan),
+        _Spectrum(5.0, 1, [[500, 8]]),
+        _Spectrum(5.19, 2, [[184.0733, 10000]]),
+    ])
+    reader = EICReader()
+    try:
+        trace = reader.read_trace(source, 500, 5.1)
+        assert trace.times.tolist() == [5, 5.2]
+        decoded = readers[0].decoded.copy()
+        scan = reader.read_spectrum(source, 5.19)
+        assert scan.rt == 5.2
+        assert scan.identifier == "sample=1 cycle=0 experiment=1"
+        np.testing.assert_allclose(scan.peaks, sorted(full_scan))
+        assert readers[0].decoded == decoded and 2 not in decoded
+        assert reader.read_spectrum(source, 5.19).peaks is scan.peaks
+    finally:
+        reader.close()
+
+
+def test_full_survey_never_substitutes_ms2_and_resumes_cancelled_index(tmp_path, monkeypatch):
+    source, readers = mock_file(tmp_path, monkeypatch, [
+        _Spectrum(5.0, 2, [[184.0733, 1000]]),
+        _Spectrum(5.1, 2, [[184.0733, 2000]]),
+    ])
+    reader = EICReader()
+    try:
+        assert reader.read_spectrum(source, 5, cancelled=lambda: readers and readers[0].position >= 1) is None
+        assert reader.read_spectrum(source, 5) is None
+        assert len(readers) == 1 and not readers[0].decoded
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("rt", [-1, float("nan"), float("inf")])
+def test_full_survey_rejects_invalid_time_without_opening_a_file(rt):
+    reader = EICReader()
+    with pytest.raises(ValueError):
+        reader.read_spectrum("not-opened.mzML", rt)
+    assert not reader._sources
 
 
 @pytest.mark.parametrize("indexed", [True, False])

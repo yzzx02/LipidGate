@@ -9,7 +9,7 @@ def test_two_resolved_isomers_use_the_valley_and_unsmoothed_areas():
     left = 8500 * np.exp(-0.5 * ((times - 30) / 1.0) ** 2)
     right = 18500 * np.exp(-0.5 * ((times - 38) / 1.0) ** 2)
     values = left + right
-    peaks = resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30)
+    peaks = resolve_eic_peaks(times, values, min_height=3000)
     assert len(peaks) == 2
     a, b = peaks
     assert times[a.apex] < 32 and times[b.apex] > 36
@@ -26,7 +26,7 @@ def test_weak_neighbor_still_limits_a_detected_tall_peak():
     times = np.arange(80.0)
     values = (1800 * np.exp(-0.5 * ((times - 30) / 2) ** 2)
               + 18000 * np.exp(-0.5 * ((times - 40) / 2) ** 2))
-    peaks = resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30)
+    peaks = resolve_eic_peaks(times, values, min_height=3000)
     assert len(peaks) == 1
     assert 32 < times[peaks[0].left] < 38
 
@@ -35,7 +35,7 @@ def test_a_shallow_notch_is_not_split_into_two_features():
     times = np.arange(80.0)
     values = 10000 * np.exp(-0.5 * ((times - 40) / 8) ** 2)
     values[40] *= 0.8
-    peaks = resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30)
+    peaks = resolve_eic_peaks(times, values, min_height=3000)
     assert len(peaks) == 1
     assert times[peaks[0].left] < 30 < 50 < times[peaks[0].right]
 
@@ -50,13 +50,13 @@ def test_signal_without_chromatographic_scan_support_is_not_a_peak(kind):
         values[40] = 10000
     else:
         values[40:42] = 10000
-    assert resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30) == []
+    assert resolve_eic_peaks(times, values, min_height=3000) == []
 
 
 def test_nonuniform_scan_times_are_used_in_actual_integral():
     times = np.arange(100.0) + np.sin(np.arange(100.0)) * 0.1
     values = 7000 * np.exp(-0.5 * ((times - 40) / 5) ** 2) + 150
-    peak, = resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30)
+    peak, = resolve_eic_peaks(times, values, min_height=3000)
     section = slice(peak.left, peak.right + 1)
     assert peak.area == pytest.approx(np.trapezoid(values[section], times[section]))
     assert peak.area_baseline_corrected < peak.area
@@ -65,13 +65,74 @@ def test_nonuniform_scan_times_are_used_in_actual_integral():
 def test_truncated_peak_does_not_create_unverified_edges():
     times = np.arange(30.0)
     values = 10000 * np.exp(-0.5 * ((times - 15) / 15) ** 2)
-    assert resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=60) == []
+    assert resolve_eic_peaks(times, values, min_height=3000) == []
 
 
 def test_integration_stops_at_a_low_local_minimum_before_background_shoulders():
     times = np.arange(100.0)
     values = 15000 * np.exp(-0.5 * ((times - 40) / 3) ** 2)
     values += 350 * np.exp(-0.5 * ((times - 55) / 4) ** 2)
-    peak, = resolve_eic_peaks(times, values, min_height=3000, min_fwhm=3, max_fwhm=30)
+    peak, = resolve_eic_peaks(times, values, min_height=3000)
     assert 47 <= times[peak.right] < 54
     assert peak.area == pytest.approx(np.trapezoid(values[peak.left:peak.right + 1], times[peak.left:peak.right + 1]))
+
+
+def test_measured_weak_tail_is_not_mistaken_for_missing_acquisition():
+    times = np.arange(80.)
+    values = 10000 * np.exp(-.5 * ((times - 40.) / 5.) ** 2)
+    values[29] = 2000.
+    values[30:33] = 0.
+    peak, = resolve_eic_peaks(times, values, min_height=3000, smoothing_points=7)
+    assert times[peak.apex] == 40.
+    signal_times = times[peak.left:peak.right + 1][values[peak.left:peak.right + 1] > peak.height * .05]
+    assert np.max(np.diff(signal_times)) > 3
+    assert peak.area == pytest.approx(np.trapezoid(values[peak.left:peak.right + 1], times[peak.left:peak.right + 1]))
+
+
+def test_actual_missing_survey_interval_is_not_integrated_across():
+    times = np.r_[np.arange(35.), np.arange(45., 80.)]
+    values = 10000 * np.exp(-.5 * ((times - 40.) / 5.) ** 2)
+    assert resolve_eic_peaks(times, values, min_height=3000) == []
+
+
+def test_overlapping_peak_with_valley_above_half_height_keeps_its_bounds():
+    times = np.arange(100.)
+    values = (10000 * np.exp(-.5 * ((times - 36.) / 6.) ** 2)
+              + 24000 * np.exp(-.5 * ((times - 51.) / 3.) ** 2))
+    left, right = resolve_eic_peaks(times, values, min_height=3000)
+    assert left.right == right.left
+    assert values[left.right] > left.height / 2
+    assert values[left.right] <= min(values[left.right - 1], values[left.right + 1])
+    assert left.right_kind == right.left_kind == "valley"
+    assert not hasattr(left, "fwhm")  # Boundary geometry never re-runs a width filter.
+
+
+def test_known_detector_apices_keep_a_shallow_but_measured_valley_separate():
+    times = np.arange(100.)
+    values = (10000 * np.exp(-.5 * ((times - 40.) / 4.2) ** 2)
+              + 12000 * np.exp(-.5 * ((times - 51.) / 4.2) ** 2))
+    left, right = resolve_eic_peaks(times, values, min_height=3000, native_apices=[40., 51.])
+    assert left.right == right.left
+    assert times[left.apex] < times[left.right] < times[right.apex]
+    assert values[left.right] > .65 * min(left.height, right.height)
+    assert left.left_kind == right.right_kind == "baseline"
+
+
+def test_distant_small_neighbor_does_not_extend_a_peak_past_its_baseline():
+    times = np.arange(120.)
+    values = (15000 * np.exp(-.5 * ((times - 35.) / 3.) ** 2)
+              + 600 * np.exp(-.5 * ((times - 80.) / 2.) ** 2))
+    peak, = resolve_eic_peaks(times, values, min_height=3000)
+    assert times[peak.right] < 50
+    assert peak.right_kind == "baseline"
+
+
+def test_broad_shoulder_does_not_turn_background_drift_into_high_noise():
+    times = np.arange(180.)
+    values = (100000 * np.exp(-.5 * ((times - 100.) / 12.) ** 2)
+              + 40000 * np.exp(-.5 * ((times - 70.) / 23.) ** 2))
+    peak, = resolve_eic_peaks(times, values, min_height=3000)
+    assert peak.left_kind == peak.right_kind == "baseline"
+    assert max(values[peak.left], values[peak.right]) < peak.height * .01
+    assert peak.area == pytest.approx(np.trapezoid(
+        values[peak.left:peak.right + 1], times[peak.left:peak.right + 1]))

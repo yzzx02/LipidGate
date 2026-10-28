@@ -10,13 +10,17 @@ from .rules import DEFAULT_RULES, RuleSet
 from .sphingolipid_rules import SphingoRule
 from .gate_policy import evaluate_sphingolipid_gate, fah_only_low_confidence_gate_passes as _fah_only_low_confidence_gate_passes
 from .scoring_policy import FAH_ONLY_FALLBACK_REASON, HG_ONLY_FALLBACK_REASON
+from .record_facts import with_record_facts
 from .scoring import (
     _empty_pool_scores, _calculate_pool_scores, _non_precursor_quality_overrides,
-    _total_score_from_pool_scores, _with_negative_cer_match_bonus,
+    _total_score_from_pool_scores, _with_negative_cer_match_bonus, _matched_intensity_sums,
 
 )
 
+_PRODUCTION_QUALITY_OVERRIDES = _non_precursor_quality_overrides
 
+
+@with_record_facts
 def score_sphingolipid_candidate(
     spectrum: ExperimentalSpectrum, record: LibraryRecord, *,
     matches: Sequence[FragmentMatch], rule: SphingoRule, series: str,
@@ -65,17 +69,14 @@ def score_sphingolipid_candidate(
     adduct, class_key = gate.adduct, gate.class_key
     uses_negative_hg_fah_tiered_gate = gate.uses_negative_hg_fah_tiered_gate
 
-    matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
-    matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
+    matched_intensity_sum, matched_relative_intensity_sum = _matched_intensity_sums(spectrum, matches)
     pool_scores = _calculate_pool_scores(
         matches,
         record,
         rules.get(record.compound_class),
-        quality_relative_intensity_overrides=_non_precursor_quality_overrides(
-            spectrum,
-            record,
-            matches,
-        ),
+        quality_relative_intensity_overrides=(None if _non_precursor_quality_overrides is _PRODUCTION_QUALITY_OVERRIDES
+                                             else _non_precursor_quality_overrides(spectrum, record, matches)),
+        spectrum=spectrum,
     )
     total_score = _total_score_from_pool_scores(pool_scores)
     total_score = _with_negative_cer_match_bonus(record, matches, total_score)

@@ -5,6 +5,8 @@ src/lipidgate/ms2/native_backend/search_core.dll
 src/lipidgate/ms2/native_backend/search_core.so
 src/lipidgate/ms2/native_backend/search_core.dylib
 src/lipidgate/ms2/native_backend/search_core.json
+src/lipidgate/ms2/native_backend/_search_bridge.*
+src/lipidgate/ms2/native_backend/search_bridge.json
 src/lipidgate/ms2/native_backend/policy/
 src/lipidgate/ms2/*.pyd
 .pytest_cache/

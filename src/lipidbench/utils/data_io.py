@@ -128,6 +128,11 @@ def load_pyopenms_results(
     min_peak_height=0.0,
     force_recompute_bounds=False,
 ):
+    """Normalize exported units without another detector/width pass.
+
+    Detector settings remain accepted for existing callers. They never supply
+    missing RT edges or act as post-detection peak filters.
+    """
     df = pd.read_csv(file_path)
 
     # Native exports carry units explicitly, including acquisitions <200 s.
@@ -168,13 +173,17 @@ def load_pyopenms_results(
     needs_mz_bounds = force_recompute_bounds or ("mzmin" not in df.columns or "mzmax" not in df.columns)
 
     if needs_rt_bounds and not has_rt_bounds and "RT" in df.columns:
-        rt_numeric = pd.to_numeric(df["RT"], errors="coerce")
-        half_width_sec = max(float(min_fwhm or 0.0), 0.0) / 2.0
-        df["RTstart"] = rt_numeric - half_width_sec
-        df["RTend"] = rt_numeric + half_width_sec
-        df["RTmin"] = rt_numeric - half_width_sec
-        df["RTmax"] = rt_numeric + half_width_sec
-        has_rt_bounds = True
+        # A detector parameter is not a measured integration boundary. Keep
+        # any supplied edges, and leave absent edges explicitly unresolved.
+        for column in ("RTmin", "RTmax"):
+            if column not in df:
+                df[column] = float("nan")
+        missing = df["RTmin"].isna() | df["RTmax"].isna()
+        if missing.any():
+            df.loc[missing, "peak_boundary_method"] = "unresolved_detector_bounds"
+            df.loc[missing, "peak_boundary_status"] = "unresolved"
+            df.loc[missing, "peak_boundary_reason"] = "missing_detector_bounds"
+        needs_rt_bounds = False
 
     if needs_mz_bounds and not has_mz_bounds and "mz" in df.columns:
         mz_numeric = pd.to_numeric(df["mz"], errors="coerce")

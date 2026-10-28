@@ -406,8 +406,8 @@
     "workbooks": {
       "status": "verified",
       "outputs": {
-        "catalog": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\library_statistics_20261020\\LipidGate_Supplementary_Data_1.xlsx",
-        "heads": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\phospholipid_headgroups_20261021\\LipidGate_phospholipid_headgroup_SMILES_corrected_20261021.xlsx"
+        "catalog": "LipidGate_Supplementary_Data_1.xlsx",
+        "heads": "LipidGate_phospholipid_headgroup_SMILES_corrected_20261021.xlsx"
       },
       "classes": 166,
       "headgroup_classes": 89,
@@ -516,7 +516,7 @@
     }
   ],
   "exported_library": {
-    "path": "C:\\Users\\Administrator\\Documents\\ChatGPT\\LipidGate\\outputs\\glc_gp_library_20261021\\Glc_GP_and_6_Ac_Glc_GP_negative_C14-C26.msp",
+    "path": "Glc_GP_and_6_Ac_Glc_GP_negative_C14-C26.msp",
     "sha256": "8ca58b750807b3196f3dd51ae439c323aa362003a819a6b0970c3056aac69a79",
     "records": 4290
   }

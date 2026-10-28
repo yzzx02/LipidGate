@@ -211,7 +211,40 @@ def feature_export_table(features, annotations):
         for title, column in (("Annotation", "matched_name"), ("Adduct", "adduct"),
                               ("Score", "final_score"), ("Confidence", "_confidence")):
             result[f"Top{rank} {title}"] = features._key.map(selected[column]).to_numpy()
-    for column in features:
-        if str(column).lower().endswith(".mzml"):
-            result[column] = pd.to_numeric(features[column], errors="coerce").to_numpy()
+    for column, values in measured_feature_areas(features).items():
+        result[column] = values.to_numpy()
+    return result
+
+
+def measured_feature_areas(features):
+    """Return measured sample areas, including native single-sample tables.
+
+    Aligned sample columns are authoritative. Only a real local feature can
+    fill its own sample from a saved area; precursor confirmation alone cannot.
+    """
+    result = {column: pd.to_numeric(features[column], errors="coerce").copy()
+              for column in features if str(column).lower().endswith(".mzml")}
+    if features.empty:
+        return result
+    def texts(column):
+        return features.get(column, pd.Series("", index=features.index)).fillna("").astype(str).str.strip()
+
+    native = texts("_native_feature") if "_native_feature" in features else texts("Feature_ID")
+    local = native.ne("")
+    if result:
+        local &= texts("_aligned_feature").eq("")
+    measured = pd.Series(float("nan"), index=features.index)
+    for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
+        if column in features:
+            measured = measured.where(measured.notna(), pd.to_numeric(features[column], errors="coerce"))
+    measured = measured.where(local)
+    if not result:
+        return {"Peak area": measured} if any(column in features for column in
+            ("ms1_feature_area", "intensity", "Area", "peak_area", "into")) else {}
+    sources = texts("_source") if "_source" in features else texts("source_file")
+    for source in sources.loc[local].unique():
+        if not source.lower().endswith(".mzml"):
+            continue
+        values = result.setdefault(source, pd.Series(float("nan"), index=features.index))
+        result[source] = values.combine_first(measured.where(sources.eq(source)))
     return result

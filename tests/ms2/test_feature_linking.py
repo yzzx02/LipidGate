@@ -8,11 +8,58 @@ import pytest
 from lipidgate.ms2.feature_linking import (
     collect_mzml_paths,
     link_ms2_to_features,
+    link_unmatched_by_eic_identity,
     rescue_orphan_annotations_to_features,
     remove_feature_supported_fa_orphans,
     summarize_feature_annotations,
     summarize_orphan_annotations,
 )
+
+
+def test_unique_native_eic_identity_links_a_tail_scan_without_widening_quantitation():
+    features = pd.DataFrame([dict(Feature_ID="F1", Aligned_Feature_ID="A1", source_file="sample.mzML",
+        mz=500., RT=5., RTmin=4.98, RTmax=5.08, RT_unit="minutes", intensity=1234.,
+        observed_eic_apex_rt_sec=300., peak_boundary_method="eic_local_valley")])
+    ms2 = pd.DataFrame([dict(source_file="sample.mzML", scan_id="tail", rt_minutes=4.95,
+        precursor_mz=500., final_score=88., passed_required_gates=True,
+        chromatographic_apex_rt_raw_min=5., chromatographic_peak_id="5.00000000",
+        chromatographic_native_anchors=True)])
+    initial = link_ms2_to_features(features, ms2)
+    assert initial.Feature_ID.isna().all()
+    before = initial.copy(deep=True)
+    linked = link_unmatched_by_eic_identity(features, initial)
+    assert linked.Feature_ID.tolist() == ["F1"] and linked.Aligned_Feature_ID.tolist() == ["A1"]
+    assert linked.ms1_initial_link_reason.tolist() == ["ms2_outside_ms1_peak_bounds"]
+    assert linked.ms1_feature_link_reason.tolist() == ["feature_eic_peak_identity_match"]
+    assert linked.ms1_peak_left_raw_min.tolist() == [4.98] and linked.ms1_peak_right_raw_min.tolist() == [5.08]
+    assert linked.ms1_feature_area.tolist() == [1234.]
+    pd.testing.assert_frame_equal(linked[ms2.columns], ms2)
+    pd.testing.assert_frame_equal(initial, before)
+
+
+@pytest.mark.parametrize("case", ["other_file", "ambiguous_native", "neighbor_peak", "unresolved", "without_native_anchors", "bad_mass"])
+def test_eic_identity_rescue_rejects_ambiguous_or_different_peaks(case):
+    features = pd.DataFrame([dict(Feature_ID="F1", source_file="sample.mzML", mz=500., RT=5.,
+        RTmin=4.98, RTmax=5.08, RT_unit="minutes", observed_eic_apex_rt_sec=300.,
+        peak_boundary_method="eic_local_valley")])
+    ms2 = pd.DataFrame([dict(source_file="sample.mzML", scan_id="tail", rt_minutes=4.95,
+        precursor_mz=500., chromatographic_apex_rt_raw_min=5., chromatographic_peak_id="5.00000000",
+        chromatographic_native_anchors=True)])
+    if case == "other_file":
+        features.source_file = "another.mzML"
+    elif case == "ambiguous_native":
+        features = pd.concat([features, features.assign(Feature_ID="F2")], ignore_index=True)
+    elif case == "neighbor_peak":
+        ms2.chromatographic_apex_rt_raw_min = 5.1
+        ms2.chromatographic_peak_id = "5.10000000"
+    elif case == "unresolved":
+        features.peak_boundary_method = "unresolved_detector_bounds"
+    elif case == "without_native_anchors":
+        ms2.chromatographic_native_anchors = False
+    else:
+        ms2.precursor_mz = 500.02
+    initial = link_ms2_to_features(features, ms2)
+    assert link_unmatched_by_eic_identity(features, initial).Feature_ID.isna().all()
 
 
 def test_collect_mzml_paths_accepts_directory_file_and_list(tmp_path: Path) -> None:

@@ -13,9 +13,11 @@ sys.path.insert(0, str(root / "scripts"))
 from build_prebuilt_libraries import ensure_prebuilt
 from build_native_search import ensure_native
 from build_native_policy import ensure_policy
+from build_native_bridge import ensure_bridge
 
 native = ensure_native(root)
 policies = ensure_policy(root)
+bridge = ensure_bridge(root)
 prebuilt = ensure_prebuilt(root)
 pyopenms_dir = Path(next(iter(importlib.util.find_spec("pyopenms").submodule_search_locations)))
 pymzml_dir = Path(next(iter(importlib.util.find_spec("pymzml").submodule_search_locations)))
@@ -36,12 +38,14 @@ datas = [
     (str(pymzml_dir / "obo"), "pymzml/obo"),
     (str(native.with_suffix(".json")), "lipidgate/ms2/native_backend"),
     (str(policies / "manifest.json"), "lipidgate/ms2/native_backend/policy"),
+    (str(bridge.parent / "search_bridge.json"), "lipidgate/ms2/native_backend"),
 ]
 
 analysis = Analysis(
     [str(root / "scripts" / "lipidgate_desktop.py")],
     pathex=[str(root / "src")],
     binaries=[(str(native), "lipidgate/ms2/native_backend"),
+              (str(bridge), "lipidgate/ms2/native_backend"),
               *[(str(p), "lipidgate/ms2/native_backend/policy") for p in policies.iterdir()
                 if p.suffix in {".pyd", ".so"}]],
     datas=datas,

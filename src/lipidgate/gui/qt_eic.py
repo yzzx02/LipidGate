@@ -31,6 +31,7 @@ def display_indices(times, intensities, x0, x1, columns):
 
 
 class EICPlot(QtWidgets.QWidget):
+    scan_selected = QtCore.Signal(float)
     y_axis_label = "Intensity"
 
     def __init__(self):
@@ -47,6 +48,8 @@ class EICPlot(QtWidgets.QWidget):
         self.limits = None
         self._path_cache = None
         self.peak_bounds = None
+        self.selected_rt = None
+        self._scan_press = None
         self.status = "选择特征后查看 EIC"
         self.signal_status = ""
         self._clear_drag()
@@ -63,6 +66,8 @@ class EICPlot(QtWidgets.QWidget):
         self.limits = None
         self._path_cache = None
         self.peak_bounds = None
+        self.selected_rt = None
+        self._scan_press = None
         self.signal_status = ""
         self._clear_drag()
         self.unsetCursor()
@@ -82,6 +87,8 @@ class EICPlot(QtWidgets.QWidget):
         self.ppm = float(ppm)
         self.half_window_min = half_window_min
         self.peak_bounds = peak_bounds
+        self.selected_rt = None
+        self._scan_press = None
         self.status = "" if len(self.times) else "所选窗口没有 MS1 扫描"
         x0, x1 = max(0.0, self.feature_rt - half_window_min), self.feature_rt + half_window_min
         ymax = max(float(self.intensities.max()), 1.0) if len(self.intensities) else 1.0
@@ -89,17 +96,14 @@ class EICPlot(QtWidgets.QWidget):
         self.limits = self._trace_bounds
         self._path_cache = None
         self._clear_drag()
-        self.signal_status = ("有 MS1 信号" if np.any(self.intensities > 0) else
+        self.signal_status = ("" if np.any(self.intensities > 0) else
                               "目标 m/z 无信号" if len(self.times) else "窗口内无 MS1 扫描")
-        self.setToolTip(
-            f"MS1 EIC · RT ±{half_window_min:g} min · {self.ppm:g} ppm · 原始强度\n"
-            "轴上右键：右拖/上拖放大，左拖/下拖缩小；强度从 0 开始；双击复位。"
-            if len(self.times) else "所选时间范围没有 MS1 扫描；可在 MS2 标签查看 m/z 谱图。"
-        )
+        self.setToolTip("")
         self.update()
 
     def _plot_rect(self):
-        return QtCore.QRectF(84, 48, max(1, self.width() - 100), max(1, self.height() - 94))
+        top = 48 if self.signal_status else 32
+        return QtCore.QRectF(84, top, max(1, self.width() - 100), max(1, self.height() - top - 46))
 
     def _bounds(self):
         return self.limits
@@ -171,16 +175,16 @@ class EICPlot(QtWidgets.QWidget):
             painter.drawText(rect, QtCore.Qt.AlignmentFlag.AlignCenter, self.status)
             return
         title = f"MS1 EIC · m/z {self.mz:.4f}"
-        subtitle = f"RT {self.feature_rt:.3f} min · ±{self.half_window_min:g} min · {self.signal_status}"
         painter.setPen(QtGui.QColor("#42474d"))
         metrics = painter.fontMetrics()
         painter.drawText(QtCore.QRectF(8, 1, self.width() - 16, 22), QtCore.Qt.AlignmentFlag.AlignLeft,
                          metrics.elidedText(title, QtCore.Qt.TextElideMode.ElideRight, self.width() - 16))
-        font.setPointSizeF(9.2)
-        painter.setFont(font)
-        painter.setPen(QtGui.QColor("#777c82"))
-        painter.drawText(QtCore.QRectF(8, 23, self.width() - 16, 20), QtCore.Qt.AlignmentFlag.AlignLeft,
-                         painter.fontMetrics().elidedText(subtitle, QtCore.Qt.TextElideMode.ElideRight, self.width() - 16))
+        if self.signal_status:
+            font.setPointSizeF(9.2)
+            painter.setFont(font)
+            painter.setPen(QtGui.QColor("#777c82"))
+            painter.drawText(QtCore.QRectF(8, 23, self.width() - 16, 20), QtCore.Qt.AlignmentFlag.AlignLeft,
+                             painter.fontMetrics().elidedText(self.signal_status, QtCore.Qt.TextElideMode.ElideRight, self.width() - 16))
         font.setPointSizeF(10.2)
         painter.setFont(font)
         bounds = self._bounds()
@@ -221,6 +225,10 @@ class EICPlot(QtWidgets.QWidget):
             marker_x, _ = self._pixel(self.feature_rt, 0, bounds)
             painter.setPen(QtGui.QPen(QtGui.QColor("#a3a7ab"), 1.0, QtCore.Qt.PenStyle.DashLine))
             painter.drawLine(QtCore.QPointF(marker_x, rect.top()), QtCore.QPointF(marker_x, rect.bottom()))
+        if self.selected_rt is not None and x0 <= self.selected_rt <= x1:
+            selected_x, _ = self._pixel(self.selected_rt, 0, bounds)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#647f91"), 1.15))
+            painter.drawLine(QtCore.QPointF(selected_x, rect.top()), QtCore.QPointF(selected_x, rect.bottom()))
         if not len(self.times):
             painter.setPen(QtGui.QColor("#6e7379"))
             painter.drawText(rect.adjusted(8, 0, -8, 0), QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, self.status)
@@ -273,6 +281,12 @@ class EICPlot(QtWidgets.QWidget):
         self.setCursor(plot_cursor(axis) if axis else QtGui.QCursor(QtCore.Qt.CursorShape.ArrowCursor))
 
     def mousePressEvent(self, event):
+        self._scan_press = None
+        if (event.button() == QtCore.Qt.MouseButton.LeftButton and len(self.times)
+                and self._plot_rect().contains(event.position())):
+            self._scan_press = event.position()
+            event.accept()
+            return
         axis = self._axis_at(event.position())
         if axis is None or event.button() not in {QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.MouseButton.RightButton}:
             return
@@ -322,14 +336,39 @@ class EICPlot(QtWidgets.QWidget):
         )
 
     def mouseReleaseEvent(self, event):
+        if self._scan_press is not None and event.button() == QtCore.Qt.MouseButton.LeftButton:
+            distance = (event.position() - self._scan_press).manhattanLength()
+            self._scan_press = None
+            if (distance <= QtWidgets.QApplication.startDragDistance() and len(self.times)
+                    and self._plot_rect().contains(event.position())):
+                self._select_scan_at(event.position())
+            event.accept()
+            return
         if self._press is not None and event.button() == self._drag_button:
             self._clear_drag()
             self._cursor_at(event.position())
             event.accept()
 
     def mouseDoubleClickEvent(self, event):
+        self._scan_press = None
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._select_scan_at(event.position()):
+            event.accept()
+            return
         if self.limits is not None and (self._plot_rect().contains(event.position()) or self._axis_at(event.position())):
             self.reset_view()
+
+    def _select_scan_at(self, position):
+        if not len(self.times) or self.limits is None or not self._plot_rect().contains(position):
+            return False
+        rt, _ = self._data(position)
+        after = int(np.searchsorted(self.times, rt))
+        choices = {max(0, min(len(self.times) - 1, i)) for i in (after - 1, after)}
+        index = min(choices, key=lambda i: (abs(self.times[i] - rt), self.times[i]))
+        self.selected_rt = float(self.times[index])
+        QtWidgets.QToolTip.hideText()
+        self.update()
+        self.scan_selected.emit(self.selected_rt)
+        return True
 
     def wheelEvent(self, event):
         if self.limits is not None and self._plot_rect().contains(event.position()):

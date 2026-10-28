@@ -56,11 +56,14 @@ def _restore_slot_state(instance, state):
         object.__setattr__(instance, name, value)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExperimentalPeak:
     mz: float
     intensity: float
     relative_intensity: float
+
+    def __setstate__(self, state):
+        _restore_slot_state(self, state)
 
 
 @dataclass
@@ -86,14 +89,22 @@ class ExperimentalSpectrum:
         return sum(peak.intensity for peak in self.peaks)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FragmentMatch:
     fragment: FragmentRecord
     experimental_peak: ExperimentalPeak
     mz_error: float
 
+    def __setstate__(self, state):
+        _restore_slot_state(self, state)
 
-@dataclass
+
+# The optional bridge may allocate this exact frozen dataclass directly only
+# while both its generated initializer and slot descriptors remain unchanged.
+_FRAGMENT_MATCH_INITIALIZER = (FragmentMatch.__init__, FragmentMatch.__init__.__code__)
+
+
+@dataclass(slots=True)
 class PoolScore:
     pool_name: str
     matched_count: int
@@ -102,6 +113,9 @@ class PoolScore:
     intensity_ratio: float
     weight_ratio: float
     pool_score: float
+
+    def __setstate__(self, state):
+        _restore_slot_state(self, state)
 
 
 @dataclass

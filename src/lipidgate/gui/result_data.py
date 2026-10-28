@@ -26,9 +26,6 @@ COLUMNS = [
     ("Adduct", "adduct"),
     ("Score", "final_score"),
     ("Confidence", "_confidence"),
-    ("Top1 支持", "_top1_support"),
-    ("鉴定状态", "_annotation_status"),
-    ("ECN", "_ecn"),
     ("MS1 Feature", "ms1_support_status"),
 ]
 FAMILIES = {
@@ -209,7 +206,7 @@ def family_for(value):
         ("SM", "LSM", "ASM", "SL", "SPH", "DHSPH", "PHYTOSPH", "SPB", "GM", "GD", "GT", "GB")
     ):
         return "SP"
-    if key.startswith(("FA", "CAR", "NAE")):
+    if key.startswith(("FA", "CAR", "NAE", "NAGLY", "NASER", "NAORN", "NATAU")):
         return "FA"
     if key in {"CE", "BRSE", "CHOL", "CHOLESTEROL", "ST", "STEROID"}:
         return "ST"
@@ -584,6 +581,37 @@ class ResultBundle:
         return (rows.sort_values(["_representative_first", "_scope_order", "_rank", "_score"],
                                  ascending=[False, True, True, False], kind="stable")
                 .drop_duplicates("_spectrum").drop(columns=["_representative_first", "_scope_order"]))
+
+    def display_spectra(self, key):
+        """One best real spectrum, plus alternatives only for a different Top1.
+
+        This is a view selection, not a new feature consensus or ranking step.
+        All scans and their evidence remain available to audit and export.
+        Independent FA/NAE channels do not create main-channel disagreements.
+        """
+        rows = self.spectra(key)
+        if rows.empty or (self.path is not None and self.path.parent.name == "audit"):
+            return rows
+        rows = rows.copy()
+        feature = self.features.loc[self.features._key.eq(key)].iloc[0]
+        scopes = candidate_scopes(rows)
+        rows["_main_first"] = scopes.eq("main")
+        # A displayed feature can be supported by a lower-ranked candidate in
+        # its representative scan. Keep that actual scan as the default too.
+        rows["_record_first"] = rows._spectrum.eq(text(feature.get("_spectrum")))
+        rows["_feature_first"] = (rows.matched_name.fillna("").eq(text(feature.get("matched_name")))
+                                   & rows.compound_class.fillna("").eq(text(feature.get("compound_class"))))
+        rows["_high_first"] = rows._confidence.eq("高")
+        rows = rows.sort_values(["_main_first", "_record_first", "_feature_first", "_high_first", "_score", "_spectrum"],
+                                ascending=[False, False, False, False, False, True], kind="stable")
+        main = rows.loc[rows._main_first & rows.matched_name.fillna("").ne("")]
+        if main.empty:
+            # Precursor-only channels can also be the feature's only output.
+            scopes = candidate_scopes(rows)
+            main = rows.loc[scopes.eq(scopes.iloc[0]) & rows.matched_name.fillna("").ne("")]
+        selected = (main.drop_duplicates(["compound_class", "matched_name", "adduct"])
+                    if not main.empty else rows.iloc[:1])
+        return selected.drop(columns=["_main_first", "_record_first", "_feature_first", "_high_first"])
 
     def candidate_rows(self, key, spectrum=None):
         feature = self.features.loc[self.features._key.eq(key)]

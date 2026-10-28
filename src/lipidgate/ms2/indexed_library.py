@@ -1,7 +1,8 @@
 """Read mass-sorted library records from bounded, compressed disk blocks.
 
-The index changes storage only. It contains the exact normalized LibraryRecord
-objects, in the same stable precursor order used by the list-based searcher.
+The authoritative blocks contain exact normalized LibraryRecord objects, in
+the same stable precursor order used by the list-based searcher. Optional
+numeric search columns derive necessary conditions without replacing scores.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 from array import array
 from collections import OrderedDict
 from collections.abc import Iterable, Sequence
+import bisect
 import json
 from itertools import accumulate
 import math
@@ -22,12 +24,15 @@ import tempfile
 import zlib
 
 from .models import FragmentRecord, LibraryRecord
+from .record_facts import record_revision
 from . import safe_pickle
 
 
 INDEX_FORMAT_VERSION = 3
 BLOCK_SIZE = 1024
 MAX_CACHED_BLOCKS = 4
+MAX_SELECTED_RECORDS = 4096
+MAX_SELECTED_RECORD_BYTES = 32 * 1024 * 1024
 SQL_CACHE_KIB = 4096
 LEGACY_RECORD_ENCODING = "tuples-v1"
 TEMPLATE_RECORD_ENCODING = "fragment-templates-v2"
@@ -55,6 +60,24 @@ def _pack_record(record):
 
 def _unpack_record(value):
     return LibraryRecord(*value[:8], fragments=[FragmentRecord(*f) for f in value[8]], metadata=value[9])
+
+
+def _record_cache_bytes(record):
+    # Count shared strings separately for each record: this intentionally
+    # overestimates ownership and keeps the selected cache within its budget.
+    size = sys.getsizeof(record) + sys.getsizeof(record.fragments) + sys.getsizeof(record.metadata) + 256
+    for value in (record.record_id, record.compound_class, record.lipid_name,
+                  record.lipid_chain_name, record.precursor_mz, record.adduct,
+                  record.formula, record.polarity):
+        size += sys.getsizeof(value)
+    for fragment in record.fragments:
+        size += sys.getsizeof(fragment)
+        for value in (fragment.mz, fragment.name, fragment.fragment_type,
+                      fragment.intensity, fragment.weight, fragment.required_group):
+            size += sys.getsizeof(value)
+    for key, value in record.metadata.items():
+        size += sys.getsizeof(key) + sys.getsizeof(value)
+    return size
 
 
 def _template_fragment(template, position, columns=None):
@@ -244,6 +267,8 @@ def write_library_index(path: Path, records: Sequence[LibraryRecord], identity: 
             "class_id INTEGER NOT NULL, adduct_id INTEGER NOT NULL);"
             "CREATE TABLE blocks (block_id INTEGER PRIMARY KEY, payload BLOB NOT NULL);"
         )
+        from .search_plan import SearchPlanWriter
+        search_plans = SearchPlanWriter(connection)
         for start in range(0, len(ordered), BLOCK_SIZE):
             block = ordered[start:start + BLOCK_SIZE]
             payload = zlib.compress(_encode_block(block), level=6)
@@ -252,9 +277,11 @@ def write_library_index(path: Path, records: Sequence[LibraryRecord], identity: 
                 raise ValueError(f"Library block {start // BLOCK_SIZE} changed during serialization")
             connection.execute("INSERT INTO blocks VALUES (?, ?)",
                                (start // BLOCK_SIZE, payload))
+            search_plans.add_block(start // BLOCK_SIZE, block)
             connection.executemany("INSERT INTO entries VALUES (?, ?, ?, ?)",
                                    ((start + offset, record.precursor_mz, class_ids[record.compound_class], adduct_ids[record.adduct])
                                     for offset, record in enumerate(block)))
+        search_plans.finish(metadata)
         connection.execute("INSERT INTO metadata VALUES ('library', ?)", (json.dumps(metadata),))
         connection.commit()
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -319,6 +346,8 @@ def write_streaming_library_index(path: Path, records: Iterable[LibraryRecord], 
                 'CREATE TABLE entries (ordinal INTEGER PRIMARY KEY, precursor REAL NOT NULL, '
                 'class_id INTEGER NOT NULL, adduct_id INTEGER NOT NULL);'
                 'CREATE TABLE blocks (block_id INTEGER PRIMARY KEY, payload BLOB NOT NULL);')
+            from .search_plan import SearchPlanWriter
+            search_plans = SearchPlanWriter(output)
             cursor = stage.execute('SELECT payload FROM records ORDER BY precursor, position')
             verified = 0
             while True:
@@ -330,12 +359,14 @@ def write_streaming_library_index(path: Path, records: Iterable[LibraryRecord], 
                 if _decode_block(payload, metadata) != block:
                     raise ValueError(f'Library block {verified // BLOCK_SIZE} changed during serialization')
                 output.execute('INSERT INTO blocks VALUES (?, ?)', (verified // BLOCK_SIZE, payload))
+                search_plans.add_block(verified // BLOCK_SIZE, block)
                 output.executemany('INSERT INTO entries VALUES (?, ?, ?, ?)',
                     ((verified + offset, r.precursor_mz, class_ids[r.compound_class], adduct_ids[r.adduct])
                      for offset, r in enumerate(block)))
                 verified += len(block)
             if verified != count:
                 raise ValueError('Streaming library index lost records')
+            search_plans.finish(metadata)
             output.execute("INSERT INTO metadata VALUES ('library', ?)", (json.dumps(metadata),))
             output.commit()
             if output.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
@@ -397,6 +428,8 @@ def repack_library_index(source: Path, destination: Path, identity: dict, *, exp
             "class_id INTEGER NOT NULL, adduct_id INTEGER NOT NULL);"
             "CREATE TABLE blocks (block_id INTEGER PRIMARY KEY, payload BLOB NOT NULL);"
         )
+        from .search_plan import SearchPlanWriter
+        search_plans = SearchPlanWriter(connection)
         class_ids = {value: index for index, value in enumerate(metadata["classes"])}
         adduct_ids = {value: index for index, value in enumerate(metadata["adducts"])}
         verified, last_precursor = 0, -math.inf
@@ -421,10 +454,12 @@ def repack_library_index(source: Path, destination: Path, identity: dict, *, exp
                 raise ValueError("Source record order is inconsistent")
             last_precursor = records[-1].precursor_mz
             connection.execute("INSERT INTO blocks VALUES (?, ?)", (block_id, encoded))
+            search_plans.add_block(block_id, records)
             connection.executemany("INSERT INTO entries VALUES (?, ?, ?, ?)", entries)
             verified += len(records)
         if verified != metadata["record_count"]:
             raise ValueError("Source index has missing record blocks")
+        search_plans.finish(metadata)
         connection.execute("INSERT INTO metadata VALUES ('library', ?)", (json.dumps(metadata),))
         connection.commit()
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -442,12 +477,15 @@ def repack_library_index(source: Path, destination: Path, identity: dict, *, exp
 
 
 class IndexedLibrary(Sequence):
-    """Compact precursor arrays and at most 4096 decoded library records."""
+    """Four decoded blocks plus a bounded cache of individually used records."""
 
     def __init__(self, path: Path, *, allowed_adducts=(), allowed_class_keys=(), mz_min=None, mz_max=None):
         self.path = Path(path)
         self._connection = _readonly_connection(self.path)
         self._blocks = OrderedDict()
+        self._selected_records = OrderedDict()
+        self._selected_positions = []
+        self._selected_bytes = 0
         self.precursors = array("d")
         self._positions = array("I")
         try:
@@ -489,9 +527,29 @@ class IndexedLibrary(Sequence):
         if isinstance(index, slice):
             return [self[position] for position in range(*index.indices(len(self)))]
         position = self._positions[operator.index(index)]
+        selected = self._selected_records.get(position)
+        if selected is not None:
+            self._selected_records.move_to_end(position)
+            return selected[0]
         block_size = self.metadata["block_size"]
         block_id, offset = divmod(position, block_size)
-        return self._get_block(block_id).record(offset)
+        block = self._get_block(block_id)
+        record = block.record(offset)
+        # Keep only selected annotations, never an experimental spectrum or
+        # query result. This avoids decoding an entire block on repeat visits.
+        revision = record_revision(record)
+        size = (_record_cache_bytes(record) + sys.getsizeof(revision)
+                + sum(sys.getsizeof(f) for f in revision[9]) + sys.getsizeof(position) + 8)
+        if size <= MAX_SELECTED_RECORD_BYTES:
+            self._selected_records[position] = (record, size, revision)
+            bisect.insort(self._selected_positions, position)
+            self._selected_bytes += size
+            while (len(self._selected_records) > MAX_SELECTED_RECORDS
+                   or self._selected_bytes > MAX_SELECTED_RECORD_BYTES):
+                removed_position, (_, removed, _) = self._selected_records.popitem(last=False)
+                self._selected_positions.pop(bisect.bisect_left(self._selected_positions, removed_position))
+                self._selected_bytes -= removed
+        return record
 
     def _get_block(self, block_id):
         block = self._blocks.get(block_id)
@@ -526,6 +584,9 @@ class IndexedLibrary(Sequence):
             self._connection.close()
             self._connection = None
         self._blocks.clear()
+        self._selected_records.clear()
+        self._selected_positions.clear()
+        self._selected_bytes = 0
 
     def __del__(self):
         if hasattr(self, "_connection"):

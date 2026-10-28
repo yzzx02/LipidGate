@@ -111,6 +111,35 @@ def _eic_self_test(app, window, arguments):
         raise AssertionError(f"Expected {args.expect_confidence} confidence; got {confidence}")
     if args.plot_test:
         _plot_interaction_self_test(app, page)
+    # Exercise the actual EIC click and the serialized indexed survey worker,
+    # rather than constructing a spectrum directly in a rendering-only probe.
+    from PySide6 import QtCore, QtGui, QtWidgets
+    page.plot_tabs.setCurrentWidget(page.ms1_tab)
+    app.processEvents()
+    index = int(page.eic_plot.intensities.argmax())
+    selected_rt = float(page.eic_plot.times[index])
+    position = QtCore.QPointF(*page.eic_plot._pixel(
+        selected_rt, float(page.eic_plot.intensities[index]) * .5, page.eic_plot.limits))
+    for kind in (QtCore.QEvent.Type.MouseButtonPress, QtCore.QEvent.Type.MouseButtonRelease):
+        event = QtGui.QMouseEvent(kind, position,
+                                 QtCore.QPointF(page.eic_plot.mapToGlobal(position.toPoint())),
+                                 QtCore.Qt.MouseButton.LeftButton,
+                                 QtCore.Qt.MouseButton.LeftButton if kind == QtCore.QEvent.Type.MouseButtonPress
+                                 else QtCore.Qt.MouseButton.NoButton,
+                                 QtCore.Qt.KeyboardModifier.NoModifier)
+        QtWidgets.QApplication.sendEvent(page.eic_plot, event)
+    deadline = time.monotonic() + 30
+    while page._survey_thread is not None or page.survey_timer.isActive():
+        app.processEvents()
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Packaged MS1 survey self-test timed out")
+        time.sleep(.002)
+    measured = page.ms1_spectrum.ms1_spectrum
+    if measured is None or not len(measured.peaks) or abs(measured.rt - selected_rt) > 1e-6:
+        raise AssertionError("EIC click did not open its actual MS1 survey")
+    assert page.detail_tabs.currentWidget() is page.ms1_survey_tab
+    assert not page.spectrum.canvas.toolTip() and not page.navigation.canvas.toolTip()
+    assert page.candidates.columnCount() == 6 and page.notice.isHidden()
     if args.eic_output:
         args.eic_output.parent.mkdir(parents=True, exist_ok=True)
         if not page.eic_plot.grab().save(str(args.eic_output)):
@@ -128,6 +157,9 @@ def _eic_self_test(app, window, arguments):
                           feature_status=dict(page.detail.rows).get("MS1 feature"),
                           ms1_evidence=dict(page.detail.rows).get("MS1 evidence"),
                           confidence=confidence,
+                          ms1_survey_verified=True,
+                          ms1_survey_points=len(measured.peaks),
+                          ms1_survey_rt=measured.rt,
                           plot_interactions_checked=args.plot_test)), flush=True)
 
 
@@ -246,13 +278,26 @@ def _project_self_test(app, window, arguments):
     assert window.ms2_page.workers.value() == saved.get("workers", 1)
     page = window.results_page
     deadline = time.monotonic() + 60
-    while page._jobs or page._eic_thread is not None or page.eic_timer.isActive():
+    while (page._jobs or any(thread is not None for thread in
+           (page._eic_thread, page._survey_thread, page._isotope_thread))
+           or any(timer.isActive() for timer in (page.eic_timer, page.survey_timer, page.isotope_timer))):
         app.processEvents()
         if time.monotonic() >= deadline:
             raise TimeoutError("Named project restoration timed out")
         time.sleep(.002)
     assert not page.bundle.features.empty and not page.bundle.candidates.empty
-    assert page.eic_source.count() == len(project.mzml_files())
+    assert len(page._all_eic_sources) == len(project.mzml_files())
+    representatives = page.bundle.display_spectra(page.current_key)
+    assert page.spectrum_choice.count() == len(representatives)
+    assert page.spectrum_choice.currentData() is not None
+    assert page.eic_source.count() <= len(project.mzml_files())
+    details = dict(page.detail.rows)
+    assert not {"MS1 feature", "MS1 evidence", "原始峰顶范围"} & details.keys()
+    assert "MS1 积分范围" in details
+    isotope = page._isotope_cache.get(page._isotope_current_key)
+    assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
+    from lipidgate.gui.result_browser import isotope_display
+    assert details["同位素"] == isotope_display(isotope)[0]
     before = page.bundle.candidates.copy(deep=True)
     exports = args.project_check_dir / "exports"
     export_browser_results(page.bundle, exports)
@@ -265,9 +310,22 @@ def _project_self_test(app, window, arguments):
     assert not any("同位素" in column for column in evidence)
     pd.testing.assert_frame_equal(page.bundle.candidates, before)
     print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
-                          latest_result_restored=True, isotope_export_verified=True,
+                          latest_result_restored=True, isotope_export_verified=True, isotope_detail_verified=True,
                           feature_rows=len(features), isotope_rows=int(features["同位素"].notna().sum()),
                           evidence_rows=len(evidence)), ensure_ascii=False), flush=True)
+
+
+def _shutdown_test_workers(app, window):
+    """Finish all shared-reader jobs before a probe destroys its Qt objects."""
+    page = window.results_page
+    deadline = time.monotonic() + 60
+    while page._jobs or not page.shutdown_eic():
+        app.processEvents()
+        if time.monotonic() >= deadline:
+            raise TimeoutError("GUI workers did not stop after the self-test")
+        time.sleep(.002)
+    window.close()
+    app.processEvents()
 
 
 def main() -> int:
@@ -305,18 +363,10 @@ def main() -> int:
                 import traceback
 
                 traceback.print_exc()
-                window.results_page._cancel_eic_request()
-                while window.results_page._eic_thread is not None:
-                    app.processEvents()
-                    time.sleep(0.002)
-                while window.results_page._jobs:
-                    app.processEvents()
-                    time.sleep(0.002)
-                window.close()
+                _shutdown_test_workers(app, window)
                 return 1
         print("LipidGate GUI and bundled libraries OK", flush=True)
-        window.close()
-        app.processEvents()
+        _shutdown_test_workers(app, window)
         return 0
     if len(sys.argv) >= 2 and sys.argv[1] == "--library-test":
         _restore_worker_streams()

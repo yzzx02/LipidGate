@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from . import native_bridge
 from typing import (
     Dict,
     List,
@@ -79,6 +80,7 @@ from .evidence_policy import (
     _uses_positive_support_pool_scoring,
 )
 from .gate_policy import (
+    sodium_phospholipid_missing_hg,
     glyceride_substituent_evidence_group,
     glyceride_substituent_group_multiplicity,
     is_positive_three_substituent_glyceride,
@@ -116,8 +118,10 @@ from .negative_hexcer import is_negative_hexcer
 from .oxidized_chain_evidence import oxidized_chain_requirements, oxidized_chain_missing_groups
 from .positive_gm3 import is_positive_gm3
 from .positive_pe_cer import is_positive_pe_cer
+from .positive_pe_sodium import is_positive_pe_sodium
+from .positive_pc_sodium import is_positive_pc_sodium
 from .positive_single_chain_h import is_protonated_single_chain_nagly, SINGLE_CHAIN_POOL_WEIGHTS, single_chain_rule
-from .record_facts import with_record_facts
+from .record_facts import with_record_facts, cached_record_fact, cached_rule_fact, cached_spectrum_fact, get_native_query
 from .resolution_policy import (
     CHAIN_LEVEL_INFO_MISSING_REASON,
     PHOSPHOLIPID_CHAIN_CONFIRMATION_MISSING_REASON,
@@ -153,6 +157,7 @@ PRECURSOR_CLUSTER_EXCLUSION_DA = 4.1
 NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS = frozenset({"FA", "OXFA", "NAE"})
 SCORE_MIN = 0.0
 SCORE_MAX = 100.0
+_NATIVE_EVIDENCE_PRECHECK = object()
 POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES = {"ASM", "LPC", "LPCO", "SM", "LSM"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
 AHEXCER_NEGATIVE_POOL_WEIGHTS = {"fah": 60.0, "hg": 20.0, "other": 20.0}
@@ -218,7 +223,7 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
         return ADGGA_POSITIVE_POOL_WEIGHTS
     if class_key == "PEP" and adduct == "[M+Na]+":
         return POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS
-    if class_key == "LPE" and adduct == "[M+Na]+":
+    if class_key in {"LPE", "LPC"} and adduct == "[M+Na]+":
         return LPE_SODIUM_POOL_WEIGHTS
     if (
         adduct == "[M-H]-" and class_key in {"CER1P", "CERP"}
@@ -309,12 +314,78 @@ def _positive_three_substituent_top_half_quality(
     return sum(distinct_group_qualities[:required_groups]) / required_groups
 
 
+@cached_record_fact
+def _library_fragments_by_pool(record):
+    result = defaultdict(list)
+    for fragment in record.fragments:
+        for pool_name in _scoring_pools_for_fragment(record, fragment, matched=False):
+            result[pool_name].append(fragment)
+    return {name: tuple(fragments) for name, fragments in result.items()}
+
+
+@cached_rule_fact
+def _library_pool_configuration(record, rule):
+    return _build_pool_configuration(record, rule, _library_fragments_by_pool(record))
+
+
+def _build_pool_configuration(record, rule, total_fragments_by_pool):
+    pool_weights = _pool_weights_for_record(record, rule)
+    pool_names = tuple(POOL_NAMES) + (("lcb",) if "lcb" in pool_weights else ())
+    active_pools = [name for name in pool_names if total_fragments_by_pool.get(name)]
+    effective_pool_weights = _effective_pool_weights(pool_weights, active_pools)
+    active_sum = sum(max(float(effective_pool_weights.get(name, 0.0)), 0.0) for name in active_pools)
+    if is_negative_gm3(record.compound_class, record.adduct):
+        active_sum = sum(pool_weights.values())
+    equal_weight = 100.0 / len(active_pools) if active_pools else 0.0
+    structural = [name for name in ("fah", "hg", "lcb") if total_fragments_by_pool.get(name)]
+    primary = max(structural, key=lambda name: float(effective_pool_weights.get(name, 0.0))) if structural else None
+    result = []
+    for name in pool_names:
+        total_count = len(total_fragments_by_pool.get(name, ()))
+        weight = (max(float(effective_pool_weights.get(name, 0.0)), 0.0) / active_sum * 100.0
+                  if total_count and active_sum > 0.0 else equal_weight if total_count else 0.0)
+        half = PRIMARY_POOL_SATURATION_HALF_INTENSITY if name == primary else SECONDARY_POOL_SATURATION_HALF_INTENSITY
+        kind = (0 if name == "other" and not _is_negative_ahexcer_record(record) else
+                2 if name == "fah" and oxidized_chain_requirements(record) is not None else
+                3 if name == "fah" and is_positive_three_substituent_glyceride(record) else 1)
+        result.append((name, total_count, weight, half, kind))
+    return tuple(result)
+
+
+@cached_rule_fact
+def _numeric_pool_plan(record, rule):
+    configuration = _library_pool_configuration(record, rule)
+    pool_bits = {name: 1 << i for i, (name, *_rest) in enumerate(configuration)}
+    triple = any(item[4] == 3 for item in configuration)
+    multiplicity = glyceride_substituent_group_multiplicity(record) if triple else {}
+    groups = {name: i for i, name in enumerate(multiplicity)}
+    routes = {}
+    for fragment in record.fragments:
+        mask = sum(pool_bits.get(name, 0) for name in _scoring_pools_for_fragment(record, fragment, matched=True))
+        group = glyceride_substituent_evidence_group(record, fragment) if triple else None
+        routes[id(fragment)] = (mask, groups.get(group, -1))
+    return configuration, routes, (len(groups), len(groups) == 1 and sum(multiplicity.values()) == 3,
+                                   IDENTICAL_THREE_CHAIN_SECOND_EVIDENCE_MULTIPLIER)
+
+
+@cached_rule_fact
+def _prepared_numeric_pool_plan(record, rule):
+    kernel = native_bridge.load_bridge()
+    if kernel is None or not hasattr(kernel, 'create_pool_plan'):
+        return None
+    configuration, routes, groups = _numeric_pool_plan(record, rule)
+    capsule = kernel.create_pool_plan(routes, configuration, groups)
+    # Include a conservative allocation allowance in the bounded fact LRU.
+    return None if capsule is None else (capsule, configuration, bytes(1024 + len(routes)*64))
+
+
 def _calculate_pool_scores(
     matches: Sequence[FragmentMatch],
     record: LibraryRecord,
     rule: ClassRule,
     fragments: Sequence[FragmentRecord] | None = None,
     quality_relative_intensity_overrides: Dict[int, float] | None = None,
+    *, spectrum: ExperimentalSpectrum | None = None,
 ) -> Dict[str, PoolScore]:
     if _normalized_class_key(record.compound_class) == "NAE":
         # Presence is the complete evidence under the explicit NAE policy.
@@ -328,58 +399,61 @@ def _calculate_pool_scores(
         value = float(matched)
         result["fah"] = PoolScore("fah", int(matched), 1, value, value, 1.0, 100.0 * value)
         return result
+    if (fragments is None and _saturation_fragment_quality is _PRODUCTION_SATURATION
+            and _match_relative_intensity is _PRODUCTION_MATCH_INTENSITY
+            and _positive_three_substituent_top_half_quality is _PRODUCTION_TRIPLE_QUALITY
+            and _top_two_fragment_quality is _PRODUCTION_TOP_TWO):
+        kernel = native_bridge.load_bridge()
+        if kernel is not None and hasattr(kernel, "pool_metrics"):
+            prepared = _prepared_numeric_pool_plan(record, rule)
+            query = get_native_query(spectrum)
+            normalization = (_native_pool_normalization(spectrum, record)
+                             if spectrum is not None and quality_relative_intensity_overrides is None
+                             and hasattr(kernel, 'pool_metrics_normalized') else None)
+            if normalization is not None and prepared is not None:
+                numeric = kernel.pool_metrics_normalized(matches, prepared[0], normalization)
+                if numeric is not None:
+                    return {item[0]: PoolScore(item[0], values[0], item[1], values[1], values[2], 0.0, values[3])
+                            for item, values in zip(prepared[1], numeric)}
+            if spectrum is not None and quality_relative_intensity_overrides is None:
+                quality_relative_intensity_overrides = _non_precursor_quality_overrides(spectrum, record, matches)
+            if prepared is not None:
+                configuration = prepared[1]
+                numeric = (kernel.pool_metrics_query(matches, prepared[0], quality_relative_intensity_overrides, query)
+                           if query is not None and hasattr(kernel, 'pool_metrics_query') else
+                           kernel.pool_metrics(matches, prepared[0], quality_relative_intensity_overrides))
+            else:
+                configuration, routes, groups = _numeric_pool_plan(record, rule)
+                numeric = kernel.pool_metrics(matches, routes, configuration, groups, quality_relative_intensity_overrides)
+            if numeric is not None:
+                return {item[0]: PoolScore(item[0], values[0], item[1], values[1], values[2], 0.0, values[3])
+                        for item, values in zip(configuration, numeric)}
+    if spectrum is not None and quality_relative_intensity_overrides is None:
+        quality_relative_intensity_overrides = _non_precursor_quality_overrides(spectrum, record, matches)
     matched_by_pool: Dict[str, List[FragmentMatch]] = defaultdict(list)
     total_fragments_by_pool: Dict[str, List[FragmentRecord]] = defaultdict(list)
-    library_fragments = list(record.fragments if fragments is None else fragments)
-    matched_fragment_ids = {id(match.fragment) for match in matches}
-    for fragment in library_fragments:
-        for pool_name in _scoring_pools_for_fragment(
-            record,
-            fragment,
-            matched=id(fragment) in matched_fragment_ids,
-        ):
-            total_fragments_by_pool[pool_name].append(fragment)
+    if fragments is None:
+        # Pool membership is explicitly matched-independent. The alternate
+        # fragment subset used for FA keeps the original occurrence path.
+        total_fragments_by_pool = _library_fragments_by_pool(record)
+    else:
+        matched_fragment_ids = {id(match.fragment) for match in matches}
+        for fragment in fragments:
+            for pool_name in _scoring_pools_for_fragment(
+                record, fragment, matched=id(fragment) in matched_fragment_ids,
+            ):
+                total_fragments_by_pool[pool_name].append(fragment)
     for match in matches:
         for pool_name in _scoring_pools_for_fragment(record, match.fragment, matched=True):
             matched_by_pool[pool_name].append(match)
-    pool_weights = _pool_weights_for_record(record, rule)
-    pool_names = tuple(POOL_NAMES) + (("lcb",) if "lcb" in pool_weights else ())
-    active_pools = [
-        pool_name
-        for pool_name in pool_names
-        if total_fragments_by_pool.get(pool_name)
-    ]
-    effective_pool_weights = _effective_pool_weights(pool_weights, active_pools)
-    original_active_weight_sum = sum(
-        max(float(effective_pool_weights.get(pool_name, 0.0)), 0.0)
-        for pool_name in active_pools
-    )
-    if is_negative_gm3(record.compound_class, record.adduct):
-        # Optional/unavailable P/R evidence earns zero, not a redistribution
-        # of its 20 points. This also keeps legacy sum-only entries at 60/0/20.
-        original_active_weight_sum = sum(pool_weights.values())
-    equal_active_weight = 100.0 / len(active_pools) if active_pools else 0.0
-    structural_active_pools = [
-        pool_name
-        for pool_name in ("fah", "hg", "lcb")
-        if total_fragments_by_pool.get(pool_name)
-    ]
-    primary_pool = (
-        max(
-            structural_active_pools,
-            key=lambda pool_name: float(effective_pool_weights.get(pool_name, 0.0)),
-        )
-        if structural_active_pools
-        else None
-    )
+    configuration = (_library_pool_configuration(record, rule) if fragments is None else
+                     _build_pool_configuration(record, rule, total_fragments_by_pool))
     result: Dict[str, PoolScore] = {}
-    for pool_name in pool_names:
-        pool_fragments = total_fragments_by_pool.get(pool_name, [])
+    for pool_name, total_count, dynamic_pool_weight, half_saturation, quality_kind in configuration:
         pool_matches = matched_by_pool.get(pool_name, [])
-        total_count = len(pool_fragments)
         matched_count = len(pool_matches)
         count_ratio = matched_count / total_count if total_count else 0.0
-        if pool_name == "other" and not _is_negative_ahexcer_record(record):
+        if quality_kind == 0:
             # Supporting fragments saturate after three observations.  When a
             # library only contains one or two supporting fragments, matching
             # all available evidence still earns the full pool credit.
@@ -390,16 +464,11 @@ def _calculate_pool_scores(
                 else 0.0
             )
         else:
-            half_saturation = (
-                PRIMARY_POOL_SATURATION_HALF_INTENSITY
-                if pool_name == primary_pool
-                else SECONDARY_POOL_SATURATION_HALF_INTENSITY
-            )
-            if pool_name == "fah" and oxidized_chain_requirements(record) is not None:
+            if quality_kind == 2:
                 pool_quality = _top_two_fragment_quality(
                     pool_matches, quality_relative_intensity_overrides, half_saturation,
                 )
-            elif pool_name == "fah" and is_positive_three_substituent_glyceride(record):
+            elif quality_kind == 3:
                 pool_quality = _positive_three_substituent_top_half_quality(
                     record,
                     pool_matches,
@@ -421,16 +490,6 @@ def _calculate_pool_scores(
                     default=0.0,
                 )
         intensity_ratio = pool_quality
-        if total_count and original_active_weight_sum > 0.0:
-            dynamic_pool_weight = (
-                max(float(effective_pool_weights.get(pool_name, 0.0)), 0.0)
-                / original_active_weight_sum
-                * 100.0
-            )
-        elif total_count:
-            dynamic_pool_weight = equal_active_weight
-        else:
-            dynamic_pool_weight = 0.0
         pool_score = dynamic_pool_weight * pool_quality
         result[pool_name] = PoolScore(
             pool_name=pool_name,
@@ -478,7 +537,16 @@ def _top_two_fragment_quality(matches, quality_relative_intensity_overrides, hal
     return sum(sorted(by_peak.values(), reverse=True)[:2]) / 2.0
 
 
+@cached_spectrum_fact
 def _non_precursor_base_intensity(spectrum: ExperimentalSpectrum) -> float:
+    bridge = native_bridge.load_bridge()
+    query = get_native_query(spectrum, exclusion=PRECURSOR_CLUSTER_EXCLUSION_DA)
+    if query is not None and bridge is not None and hasattr(bridge, 'query_base'):
+        return bridge.query_base(query)[0]
+    if bridge is not None and hasattr(bridge, 'non_precursor_base'):
+        native = bridge.non_precursor_base(spectrum, PRECURSOR_CLUSTER_EXCLUSION_DA)
+        if native is not None:
+            return native[0]
     return max(
         (
             peak.intensity
@@ -500,9 +568,25 @@ def _non_precursor_quality_overrides(
     if _normalized_class_key(record.compound_class) in NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS:
         return {}
 
+    bridge = native_bridge.load_bridge()
+    query = get_native_query(spectrum, exclusion=PRECURSOR_CLUSTER_EXCLUSION_DA)
+    if query is not None and bridge is not None and hasattr(bridge, 'quality_overrides_query'):
+        native = bridge.quality_overrides_query(matches, query)
+        if native is not None:
+            return native
+
     non_precursor_base_intensity = _non_precursor_base_intensity(spectrum)
     if non_precursor_base_intensity <= 0.0:
         return {}
+
+    bridge = native_bridge.load_bridge()
+    if bridge is not None and hasattr(bridge, "quality_overrides"):
+        native = bridge.quality_overrides(
+            matches, spectrum.precursor_mz, non_precursor_base_intensity,
+            PRECURSOR_CLUSTER_EXCLUSION_DA,
+        )
+        if native is not None:
+            return native
 
     overrides: Dict[int, float] = {}
     for match in matches:
@@ -517,6 +601,32 @@ def _non_precursor_quality_overrides(
         if adjusted_relative_intensity > float(match.experimental_peak.relative_intensity):
             overrides[id(match)] = adjusted_relative_intensity
     return overrides
+
+
+def _native_pool_normalization(spectrum, record):
+    """Supply only this query's scalars; unusual values keep reference math."""
+    if (_non_precursor_quality_overrides is not _PRODUCTION_QUALITY_OVERRIDES
+            or _normalized_class_key(record.compound_class) in NON_PRECURSOR_NORMALIZATION_EXCLUDED_CLASS_KEYS):
+        return None
+    query = get_native_query(spectrum, exclusion=PRECURSOR_CLUSTER_EXCLUSION_DA)
+    if query is not None:
+        return query
+    base = _non_precursor_base_intensity(spectrum)
+    if (type(base) in (float, int) and type(spectrum.precursor_mz) in (float, int)
+            and base > 0.):
+        return spectrum.precursor_mz, base, PRECURSOR_CLUSTER_EXCLUSION_DA
+    return None
+
+
+def _matched_intensity_sums(spectrum, matches):
+    query = get_native_query(spectrum)
+    bridge = native_bridge.load_bridge()
+    if query is not None and bridge is not None and hasattr(bridge, 'query_intensity_sums'):
+        sums = bridge.query_intensity_sums(matches, query)
+        if sums is not None:
+            return sums
+    return (sum(match.experimental_peak.intensity for match in matches),
+            sum(match.experimental_peak.relative_intensity for match in matches))
 
 
 def _total_score_from_pool_scores(pool_scores: Dict[str, PoolScore]) -> float:
@@ -569,37 +679,24 @@ def _determine_resolution(
     if configured_resolution is not None and configured_resolution[0] == "chain_level":
         return configured_resolution
     if is_positive_mode:
-        matched_hg_count = _matched_hg_fragment_count(record, matches)
-        matched_loss_count = _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss)
-        matched_chain_loss_count = _chain_evidence_count_for_matches(
-            record,
-            matches,
-            _fragment_counts_as_chain_resolving_loss,
-        )
-        matched_hg_max = max(
-            (
-                match.experimental_peak.relative_intensity
-                for match in matches
-                if _fragment_counts_as_hg(record, match.fragment)
-            ),
-            default=0.0,
-        )
-        required_fah_hits = _required_chain_level_fah_hits(record, expected_fah_tokens, chain_tokens, rule)
         if (
             expected_fah_tokens
-            and _matched_required_fah_count(record, matches, expected_fah_tokens) >= required_fah_hits
+            and _matched_required_fah_count(record, matches, expected_fah_tokens)
+                >= _required_chain_level_fah_hits(record, expected_fah_tokens, chain_tokens, rule)
         ):
             return "chain_level", ""
         if _positive_glyceride_rco_gate_passes(record, matches):
             return "chain_level", ""
         if positive_loss_can_resolve_chain:
             required_loss_hits = _positive_required_loss_hits(chain_tokens, _record_fa_loss_fragment_count(record))
+            matched_chain_loss_count = _chain_evidence_count_for_matches(
+                record, matches, _fragment_counts_as_chain_resolving_loss)
             if matched_chain_loss_count >= required_loss_hits:
                 return "chain_level", ""
-        if matched_hg_count >= 1:
-            has_library_loss = any(_fragment_counts_as_effective_loss(record, fragment) for fragment in record.fragments)
+        if _matched_hg_fragment_count(record, matches) >= 1:
             if configured_resolution is not None:
                 return configured_resolution
+            has_library_loss = _record_loss_fragment_count(record) > 0
             if record.compound_class in POSITIVE_HG_CHAIN_LEVEL_CLASSES:
                 return "chain_level", ""
             if not expected_fah_tokens and not has_library_loss:
@@ -616,10 +713,8 @@ def _determine_resolution(
                     if matched_signature_count >= required_signature_hits:
                         return "chain_level", ""
                 return "class_level", "lyso_hg_only_fallback"
-            if matched_hg_max > 0.5:
-                return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
             return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
-        if matched_loss_count >= 1:
+        if _chain_evidence_count_for_matches(record, matches, _fragment_counts_as_effective_loss) >= 1:
             return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
         return "class_level", "missing_positive_gate"
     if not expected_fah_tokens and rule.allow_loss_only_if_no_fah:
@@ -631,6 +726,56 @@ def _determine_resolution(
     if _matched_required_fah_count(record, matches, expected_fah_tokens) >= required_fah_hits:
         return "chain_level", ""
     return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON
+
+
+@cached_rule_fact
+def _prepared_fa_precursor_pool_plan(record, rule):
+    """Compile the unchanged FA precursor-subset configuration, not a score."""
+    kernel = native_bridge.load_bridge()
+    if kernel is None or not hasattr(kernel, 'create_pool_plan'):
+        return None
+    fragments = _record_precursor_ion_fragments(record)
+    totals = defaultdict(list)
+    for fragment in fragments:
+        for name in _scoring_pools_for_fragment(record, fragment, matched=False):
+            totals[name].append(fragment)
+    configuration = _build_pool_configuration(record, rule, totals)
+    bits = {item[0]: 1 << i for i, item in enumerate(configuration)}
+    routes = {id(fragment): (sum(bits.get(name, 0) for name in
+               _scoring_pools_for_fragment(record, fragment, matched=True)), -1)
+              for fragment in record.fragments}
+    capsule = kernel.create_pool_plan(routes, configuration, (0, False))
+    return None if capsule is None else (capsule, configuration,
+        tuple(id(f) for f in fragments), bytes(1024 + len(routes)*64))
+
+
+def _fa_precursor_pool_scores(spectrum, record, rule, matches, fragments):
+    if (not _is_fa_record(record) or _calculate_pool_scores is not _FA_REFERENCE_POOL_SCORER
+            or _build_pool_configuration is not _FA_REFERENCE_CONFIGURATION
+            or _scoring_pools_for_fragment is not _FA_REFERENCE_ROUTING
+            or PoolScore is not _FA_REFERENCE_POOL_TYPE
+            or PoolScore.__init__ is not _FA_REFERENCE_POOL_INITIALIZER
+            or PoolScore.__init__.__code__ is not _FA_REFERENCE_POOL_CODE
+            or _saturation_fragment_quality is not _PRODUCTION_SATURATION
+            or _match_relative_intensity is not _PRODUCTION_MATCH_INTENSITY
+            or _top_two_fragment_quality is not _PRODUCTION_TOP_TWO
+            or type(record) is not LibraryRecord
+            or type(record.compound_class) is not str or type(record.adduct) is not str
+            or any(type(f) is not FragmentRecord or type(f.name) is not str
+                   or type(f.fragment_type) is not str for f in record.fragments)):
+        return None
+    query = get_native_query(spectrum)
+    kernel = native_bridge.load_bridge()
+    if query is None or kernel is None or not hasattr(kernel, 'pool_metrics_query'):
+        return None
+    prepared = _prepared_fa_precursor_pool_plan(record, rule)
+    if prepared is None or tuple(id(f) for f in fragments) != prepared[2]:
+        return None
+    numeric = kernel.pool_metrics_query(matches, prepared[0], None, query)
+    if numeric is None:
+        return None
+    return {item[0]: PoolScore(item[0], values[0], item[1], values[1], values[2], 0.0, values[3])
+            for item, values in zip(prepared[1], numeric)}
 
 
 def _score_fa_precursor_only_candidate(
@@ -687,9 +832,10 @@ def _score_fa_precursor_only_candidate(
             downgrade_reason="no_fragment_match",
         )
 
-    matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
-    matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
-    pool_scores = _calculate_pool_scores(matches, record, rule, fragments=precursor_fragments)
+    matched_intensity_sum, matched_relative_intensity_sum = _matched_intensity_sums(spectrum, matches)
+    pool_scores = _fa_precursor_pool_scores(spectrum, record, rule, matches, precursor_fragments)
+    if pool_scores is None:
+        pool_scores = _calculate_pool_scores(matches, record, rule, fragments=precursor_fragments)
     total_score = _total_score_from_pool_scores(pool_scores)
     return CandidateScore(
         record=record,
@@ -706,6 +852,9 @@ def _score_fa_precursor_only_candidate(
     )
 
 
+_prepared_scoring_module = None
+
+
 @with_record_facts
 def score_candidate(
     spectrum: ExperimentalSpectrum,
@@ -717,7 +866,9 @@ def score_candidate(
     fragment_ppm_tolerance: float | None = None,
     experimental_mz: Sequence[float] | None = None,
     precomputed_matches: Sequence[FragmentMatch] | None = None,
-) -> CandidateScore:
+    _search_only: bool = False,
+    _native_evidence_checked=None,
+) -> CandidateScore | None:
     rule = single_chain_rule(record, rule)
     if _normalized_class_key(record.compound_class) == "NAE":
         from .nae_precursor import nae_precursor_fragment
@@ -743,6 +894,69 @@ def score_candidate(
             precomputed_matches=precomputed_matches,
         )
 
+    if (_search_only and _native_evidence_checked is _NATIVE_EVIDENCE_PRECHECK
+            and _missing_required_groups is _PRODUCTION_MISSING_GROUPS
+            and _determine_resolution is _PRODUCTION_RESOLUTION):
+        global _prepared_scoring_module
+        if _prepared_scoring_module is None:
+            from . import prepared_scoring as _prepared_scoring_module
+        prepared = _prepared_scoring_module.score_prepared(
+            spectrum, record, rule, precomputed_matches,
+            precursor_mz_tolerance_da, precursor_ppm_tolerance)
+        if prepared is not NotImplemented:
+            return prepared
+
+    # The public scorer retains complete rejected-candidate evidence. The
+    # canonical searcher may omit work for candidates that cannot reach either
+    # a strict result or an existing HG/FAH fallback. Matching is unchanged.
+    search_matches = None
+    search_support_only = False
+    if _search_only and _native_evidence_checked is _NATIVE_EVIDENCE_PRECHECK:
+        # Only the verified indexed plan may supply this token. Its program
+        # already checked the search-only necessary conditions. The exact
+        # mandatory gates, fallback intensities and resolution still run below.
+        search_matches = precomputed_matches
+        if not search_matches:
+            return None
+    elif _search_only:
+        search_matches = precomputed_matches if precomputed_matches is not None else _match_fragments(
+            spectrum.peaks, record.fragments, fragment_mz_tolerance,
+            ppm_tolerance=fragment_ppm_tolerance, experimental_mz=experimental_mz,
+        )
+        if not search_matches:
+            return None
+        if not _is_positive_adduct(record.adduct) and oxidized_chain_requirements(record) is None:
+            expected_fah = set(_record_expected_fah_tokens(record))
+            if expected_fah and not expected_fah.issubset(_matched_fah_tokens(search_matches)):
+                return None
+        if (
+            (is_positive_pep(record) or is_positive_pc_sodium(record) or is_positive_pe_sodium(record))
+            and not any(_fragment_counts_as_hg(record, match.fragment) for match in search_matches)
+        ):
+            return None
+        if sodium_phospholipid_missing_hg(record, search_matches):
+            return None
+        search_support_only = (
+            _normalized_class_key(record.compound_class) != "OXFA"
+            and all(
+                match.fragment.fragment_type in {"Common", "Precursor Ion"}
+                or (
+                    match.fragment.fragment_type == "FA_Frag"
+                    and not _is_positive_glyceride_rco_fragment(record, match.fragment)
+                    and not _fragment_counts_as_effective_loss(record, match.fragment)
+                )
+                for match in search_matches
+            )
+            and not _requires_precursor_fragment(record)
+            and not any(_fragment_counts_as_hg(record, match.fragment) for match in search_matches)
+        )
+        if search_support_only and (
+            _record_hg_fragment_count(record) > 0
+            or _record_expected_fah_tokens(record)
+            or (_is_positive_adduct(record.adduct) and _record_loss_fragment_count(record) > 0)
+        ):
+            return None
+
     (
         expected_fah_tokens,
         hg_fragment_count,
@@ -756,6 +970,10 @@ def score_candidate(
         supports_required_groups,
         required_group_names,
     ) = _derive_required_groups(record, rule)
+    if (
+        _search_only and required_group_names and search_support_only
+    ):
+        return None
     positive_required_hg_hits = _required_positive_hg_hits(
         rule=rule,
         expected_fah_tokens=expected_fah_tokens,
@@ -794,7 +1012,7 @@ def score_candidate(
             matched_relative_intensity_sum=0.0,
             downgrade_reason="precursor_out_of_tolerance",
         )
-    matches = precomputed_matches if precomputed_matches is not None else _match_fragments(
+    matches = search_matches if search_matches is not None else precomputed_matches if precomputed_matches is not None else _match_fragments(
         spectrum.peaks,
         record.fragments,
         fragment_mz_tolerance,
@@ -829,18 +1047,24 @@ def score_candidate(
         require_loss_with_fah_only,
         matches,
     )
+    if _search_only and missing_groups:
+        missing_set = set(missing_groups)
+        # Negative fallback admits only missing HG. Positive fallbacks can
+        # recover HG/FAH/loss, never failed precursor, TG all-chain, oxidized-
+        # chain or other mandatory gates. Leave every recoverable case intact.
+        recoverable = (
+            missing_set.issubset({"hg", "sphingo_rule"})
+            or missing_set.issubset({"fah", "loss"})
+        ) if is_positive_mode else missing_set == {"hg"}
+        if not recoverable:
+            return None
     pool_scores = _calculate_pool_scores(
         matches,
         record,
         rule,
-        quality_relative_intensity_overrides=_non_precursor_quality_overrides(
-            spectrum,
-            record,
-            matches,
-        ),
+        spectrum=spectrum,
     )
-    matched_intensity_sum = sum(match.experimental_peak.intensity for match in matches)
-    matched_relative_intensity_sum = sum(match.experimental_peak.relative_intensity for match in matches)
+    matched_intensity_sum, matched_relative_intensity_sum = _matched_intensity_sums(spectrum, matches)
     matched_hg_count = _matched_hg_fragment_count(record, matches)
     total_score = _total_score_from_pool_scores(pool_scores)
     positive_single_chain_species_hg_only = _positive_single_chain_species_hg_only(
@@ -926,3 +1150,18 @@ def score_candidate(
         matched_relative_intensity_sum=matched_relative_intensity_sum,
         downgrade_reason=downgrade_reason,
     )
+
+
+_PRODUCTION_SATURATION = _saturation_fragment_quality
+_PRODUCTION_MATCH_INTENSITY = _match_relative_intensity
+_PRODUCTION_TRIPLE_QUALITY = _positive_three_substituent_top_half_quality
+_PRODUCTION_TOP_TWO = _top_two_fragment_quality
+_PRODUCTION_MISSING_GROUPS = _missing_required_groups
+_PRODUCTION_RESOLUTION = _determine_resolution
+_PRODUCTION_QUALITY_OVERRIDES = _non_precursor_quality_overrides
+_FA_REFERENCE_POOL_SCORER = _calculate_pool_scores
+_FA_REFERENCE_CONFIGURATION = _build_pool_configuration
+_FA_REFERENCE_ROUTING = _scoring_pools_for_fragment
+_FA_REFERENCE_POOL_TYPE = PoolScore
+_FA_REFERENCE_POOL_INITIALIZER = PoolScore.__init__
+_FA_REFERENCE_POOL_CODE = PoolScore.__init__.__code__

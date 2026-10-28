@@ -1,0 +1,57 @@
+{
+  "checkpoint": "ms1_background_edge_correction_20261028",
+  "date": "2026-10-28",
+  "release_kind": "Unreleased source quantification correction; no executable packaging or GitHub publication",
+  "preceding_manifest": "gui_ms1_survey_revision_20261028.json",
+  "library_revision": "lpc_na_20261028",
+  "last_local_executable_manifest": "release_v1.0.7.json",
+  "product_code_sha256": "f65be4fcb48fb5b7d25e5ac2af05b3de6fa9e40b38dd61d52c93fe3f4f1b7fb3",
+  "ms1_runtime_sha256": "a7dd99135258b386a055bcb8b9186ca0634fd7801077a0946a885027012f6fce",
+  "preceding_ms1_runtime_sha256": "2033c6d03e62078f22aa94e2690fc3413a555a769904176570e9a9998e9cd5fa",
+  "ms2_rules_sha256": "c67a147cf7fc5bf8164abcf3f7eecae5467d37f9e73de2613b09074d1815a1ab",
+  "peak_boundary_version": 7,
+  "ms1_quantification_changed": true,
+  "ms2_scoring_code_and_libraries_unchanged": true,
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "index_sha256": "53b11992486dd675c7c30694d2fedc5a0e9b7139bfc4c8982e9b5baededc13f0"
+    },
+    "negative": {
+      "source_gzip_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "source_gzip_bytes": 39395074,
+      "index_sha256": "8f4807fcb7976ca72474d9139f7b55e1e6f75679dcf2ff76430d705045898ba0"
+    }
+  },
+  "boundary_policy": {
+    "start": "real native interval and apex",
+    "background_model": "robust linear flank background, at most four fitting passes, with positive endpoint support",
+    "confirmation": "five adjacent acquired scans at background; removed background must be substantially longer than retained flank",
+    "protections": [
+      "do not fit decaying foreground to a line ending at zero",
+      "retain uncertain or short native boundaries",
+      "retain same-file native neighbor valley separators",
+      "isolated zeros do not force persistent background to zero",
+      "no boundary decision reads FWHM parameters or detector width statistics"
+    ],
+    "correction_reason": "detector_interval_background_repaired",
+    "area_method": "raw_eic_trapezoid",
+    "baseline_corrected_area": "separate audit field",
+    "original_detector_ids_apices_masses_fwhm_areas_and_bounds": "preserved"
+  },
+  "verification": {
+    "pytest_test_functions": 1349,
+    "pytest_subtests": 3118,
+    "junit_test_cases": 4467,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "full_production_rerun_verified": true,
+    "per_spectrum_candidate_order_scores_gates_and_confidence_preserved": true,
+    "native_original_fields_and_split_parent_ids_preserved": true,
+    "prior_neighbor_peak_and_ms2_link_examples_retained": true,
+    "background_only_eic_has_no_invented_feature_or_area": true,
+    "gui_actual_eic_bounds_verified": true
+  }
+}

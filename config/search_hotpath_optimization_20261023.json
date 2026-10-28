@@ -1,0 +1,340 @@
+{
+  "date": "2026-10-23",
+  "kind": "execution-only native hot-path refinement; no scientific change",
+  "code_fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e",
+  "previous_execution_checkpoint_sha256": "73dcd0b383b1a377966f6f404d2ed5245e5c9cfeddf370991fd4f8942ec09400",
+  "timing_boundary": "precursor retrieval, fragment matching, original score/gates, ranking and materialized Top20 IDs/scores",
+  "excluded_from_timing": [
+    "library/index loading",
+    "LCI/ECN",
+    "cross-spectrum merging",
+    "evidence/display serialization",
+    "CSV export"
+  ],
+  "frozen_library_records": {
+    "positive": 1254316,
+    "negative": 1088179
+  },
+  "frozen_precursor_tolerance_da": 0.01,
+  "frozen_fragment_tolerance_da": 0.025,
+  "original_100_batch_value_check": [
+    {
+      "mode": "positive",
+      "method": "LipidIN",
+      "median_us": 22.5683,
+      "q1_us": 21.6817,
+      "q3_us": 23.564475,
+      "batches": 100,
+      "queries_per_batch": 1000,
+      "same_top20_id_score_digest": true,
+      "single_cpu": 0,
+      "threads": 1,
+      "wall_seconds": 4.601871899998514,
+      "peak_process_tree_MiB": 966.7109375
+    },
+    {
+      "mode": "positive",
+      "method": "LipidGate",
+      "median_us": 124.56130000000002,
+      "q1_us": 119.68520000000001,
+      "q3_us": 127.99955,
+      "batches": 100,
+      "queries_per_batch": 1000,
+      "same_top20_id_score_digest": true,
+      "single_cpu": 0,
+      "threads": 1,
+      "wall_seconds": 23.765851300006034,
+      "peak_process_tree_MiB": 701.51171875
+    },
+    {
+      "mode": "negative",
+      "method": "LipidIN",
+      "median_us": 33.060950000000005,
+      "q1_us": 32.061175,
+      "q3_us": 34.963375,
+      "batches": 100,
+      "queries_per_batch": 1000,
+      "same_top20_id_score_digest": true,
+      "single_cpu": 0,
+      "threads": 1,
+      "wall_seconds": 5.896074399992358,
+      "peak_process_tree_MiB": 1003.63671875
+    },
+    {
+      "mode": "negative",
+      "method": "LipidGate",
+      "median_us": 91.01025000000001,
+      "q1_us": 87.83670000000001,
+      "q3_us": 95.32152500000001,
+      "batches": 100,
+      "queries_per_batch": 1000,
+      "same_top20_id_score_digest": true,
+      "single_cpu": 0,
+      "threads": 1,
+      "wall_seconds": 17.89593749999767,
+      "peak_process_tree_MiB": 722.40234375
+    }
+  ],
+  "paired_100_batches_per_version": [
+    {
+      "mode": "positive",
+      "batches_per_version": 100,
+      "queries_per_batch": 1000,
+      "paired_group_order_alternated": true,
+      "before": {
+        "median_us": 110.51625000000001,
+        "q1_us": 97.06997500000001,
+        "q3_us": 114.84367500000002,
+        "fingerprint": "43ef544c90646661c3d5d6e3e3778e0a25e47d5a9dd35bec0a112281b060d9fc"
+      },
+      "after": {
+        "median_us": 99.02705,
+        "q1_us": 95.459675,
+        "q3_us": 101.63470000000001,
+        "fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e"
+      },
+      "speedup": 1.116020824613073,
+      "time_reduction_pct": 10.395937249047094
+    },
+    {
+      "mode": "negative",
+      "batches_per_version": 100,
+      "queries_per_batch": 1000,
+      "paired_group_order_alternated": true,
+      "before": {
+        "median_us": 77.39825,
+        "q1_us": 75.45642500000001,
+        "q3_us": 79.18365000000001,
+        "fingerprint": "43ef544c90646661c3d5d6e3e3778e0a25e47d5a9dd35bec0a112281b060d9fc"
+      },
+      "after": {
+        "median_us": 75.4855,
+        "q1_us": 73.630775,
+        "q3_us": 77.584575,
+        "fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e"
+      },
+      "speedup": 1.0253393035748588,
+      "time_reduction_pct": 2.4713091058260472
+    }
+  ],
+  "complete_output_audit": {
+    "fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e",
+    "library_content_and_scientific_rules_changed": false,
+    "banks": [
+      {
+        "mode": "positive",
+        "kind": "common",
+        "all_authoritative_data_and_numeric_columns_exact": true
+      },
+      {
+        "mode": "positive",
+        "kind": "normalized",
+        "all_authoritative_data_and_numeric_columns_exact": true
+      },
+      {
+        "mode": "negative",
+        "kind": "common",
+        "all_authoritative_data_and_numeric_columns_exact": true
+      },
+      {
+        "mode": "negative",
+        "kind": "normalized",
+        "all_authoritative_data_and_numeric_columns_exact": true
+      }
+    ],
+    "positive": {
+      "queries": 1000,
+      "repeats": 2,
+      "all_export_fields_exact": true
+    },
+    "negative": {
+      "queries": 1000,
+      "repeats": 2,
+      "all_export_fields_exact": true
+    },
+    "standards": {
+      "spectra": 1197,
+      "all_export_fields_exact": true
+    },
+    "total_distinct_spectra": 3197,
+    "wall_seconds": 29.89278480000212
+  },
+  "installed_indexes": {
+    "fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e",
+    "libraries": [
+      {
+        "mode": "positive",
+        "previous_index_sha256": "2c9791ac23fd54a90f1abbc1cb91c6d76b255caf6eef21f2c1975b130265b5f0",
+        "index_sha256": "cfca436a848b2ca6e1d26bf9cdf1524254c03c555d4311e3a9ad115989b87ec5",
+        "source_sha256": "55b515783a0a2742f201cb89bf6a097375517d17780d3333e1954f12c5ad3f6c",
+        "records": 1254316,
+        "all_record_and_numeric_column_bytes_unchanged": true
+      },
+      {
+        "mode": "negative",
+        "previous_index_sha256": "33aa306326b758fe6a8eb03c7f6ee50767d84b2469429e50d6b60c171fc36b47",
+        "index_sha256": "af8b42af7d8b4deece202229387a535859ac8ee86e4e650769763fe10728766b",
+        "source_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+        "records": 1088179,
+        "all_record_and_numeric_column_bytes_unchanged": true
+      }
+    ]
+  },
+  "tests": {
+    "pytest_passed": 1181,
+    "subtests_passed": 3118,
+    "warnings": 1673,
+    "seconds": 183.52,
+    "forced_python_policy_targeted_passed": 127
+  },
+  "production_resources": {
+    "positive": {
+      "mode": "positive",
+      "code_fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e",
+      "baseline_import_RSS_MiB": 91.390625,
+      "loaded_RSS_MiB": 215.33984375,
+      "query_RSS_MiB": 252.7109375,
+      "peak_RSS_MiB": 271.3125,
+      "index_load_seconds": 1.489238000009209,
+      "numeric_plan_MiB": 97.50038623809814,
+      "selected_record_count": 821,
+      "selected_record_MiB": 3.4501523971557617,
+      "library_fact_count": 819,
+      "library_fact_MiB": 18.269484519958496,
+      "original_1000_queries": true,
+      "complete_production_export": true,
+      "duplicated_benchmark_library_arrays": false,
+      "SQLite_RAM_mirror": false,
+      "record_and_fact_caches_released_on_close": true
+    },
+    "negative": {
+      "mode": "negative",
+      "code_fingerprint": "48c905e5e511c22974c71ba2a466eb3175f76c11a8c3eced7008a72668d60c6e",
+      "baseline_import_RSS_MiB": 91.1953125,
+      "loaded_RSS_MiB": 224.78515625,
+      "query_RSS_MiB": 266.78515625,
+      "peak_RSS_MiB": 295.234375,
+      "index_load_seconds": 1.462810900004115,
+      "numeric_plan_MiB": 110.0163927078247,
+      "selected_record_count": 341,
+      "selected_record_MiB": 1.5255022048950195,
+      "library_fact_count": 341,
+      "library_fact_MiB": 6.777314186096191,
+      "original_1000_queries": true,
+      "complete_production_export": true,
+      "duplicated_benchmark_library_arrays": false,
+      "SQLite_RAM_mirror": false,
+      "record_and_fact_caches_released_on_close": true
+    }
+  },
+  "scientific_rules_and_library_payloads_changed": false,
+  "original_figures_and_plot_tables_changed": false,
+  "production_executable_replaced": false,
+  "committed_or_pushed": false,
+  "parent_commit": "3719a62ce6c83622afdd7eaf5f6d541ad7a7a827",
+  "upstream_EQ_commit": "abfd9201a40d56a8dde8fae1fff5898403c64c65",
+  "source_and_component_sha256": {
+    "src/lipidgate/ms2/__init__.py": "4c02593c71ff6abbbc55de31a1506c331d79011754972e220cbb0ebca664d7f2",
+    "src/lipidgate/ms2/aligned_ms2.py": "a3bf5933e34942253ea9ea5ca360f9e92449ff6df137e4934644a6695fae7c43",
+    "src/lipidgate/ms2/chain_labels.py": "eaa82238f9a0e9b0a6f1c971b58cedb6a1dad720f88349e6800ce8510eef1b71",
+    "src/lipidgate/ms2/chain_utils.py": "fe9981c0cc9b21d04905bc36d5815fb871e26cc78e957d06512d6d1962691509",
+    "src/lipidgate/ms2/checkpoints.py": "6ed048ff99dd0759c27bd3cd723e451a055628ca99d674a2a2836aa7367704a4",
+    "src/lipidgate/ms2/chromatographic_membership.py": "c6e875d0c13766fc0b576eebadbdbbeec99ed5ecae10f026af0ce19f4c8d12f6",
+    "src/lipidgate/ms2/cohort_groups.py": "75f89eea2ddefe8baea8c38c5b5f952c6f30f553b47b32c01383260273df8a6a",
+    "src/lipidgate/ms2/confidence.py": "54b8ec4290f510cca8609565a926b333ef73c1c5ffc797513cb160e9827f00be",
+    "src/lipidgate/ms2/config.py": "e13d4575e5eb483a50841940e403d36a07e5ad59abb4842d86f5e7518cad4d66",
+    "src/lipidgate/ms2/equivalent_candidates.py": "c8ef205557355c2cf561a05adcc0ce09eec428969b84abac5fe37b201242adf9",
+    "src/lipidgate/ms2/esterified_ceramide.py": "676be748b93fa36235ca5229ef666cd6d92a1247016bcb5b6103fedb7d38b5a0",
+    "src/lipidgate/ms2/evidence_export.py": "1c91039428220f96be22d52adee2bd2abd4ac3df5818f318f36a82bd19d6888b",
+    "src/lipidgate/ms2/evidence_policy.py": "d9c9649fdb3e6a10d766900527dde28474894ec4169df1def96e598c1449ffac",
+    "src/lipidgate/ms2/feature_linking.py": "0ea7b88b285f0bbe68f5d56b6233faf6bd37d6b5240927db369dbb3fc468ebe8",
+    "src/lipidgate/ms2/file_search.py": "4da209fc3d9de633f7bfc649d410cb1b93c73f29a3ec22c86ad4cb31b16085ef",
+    "src/lipidgate/ms2/fragment_labels.py": "3f44291c0979f082b9cd4b9e96783b45db2d2fe70dbef02548798d139eedec6d",
+    "src/lipidgate/ms2/gate_policy.py": "162b7ebc06011c1b4c7fc01033dff2553856d6fa1a5300b8b5bed1cef5c5aeb2",
+    "src/lipidgate/ms2/import_msdial_sphingo_positive.py": "428956a48eb03ece4d86215f10ca4665c431bc91f85b3e0d31210a52d8fcadb1",
+    "src/lipidgate/ms2/indexed_library.py": "270d6311c8072118fe25d21804c8e7ac5e2416855bf4641f758de7390117b132",
+    "src/lipidgate/ms2/integration.py": "2d8c8e0592966f91ca14b3db1e46683eac85ccfbe143a246305151261581dea2",
+    "src/lipidgate/ms2/isotope_export.py": "54284f245e21d5a8d95b22dced0bb91a15f28463bbf2fbcedf0c5dc8b1b33c59",
+    "src/lipidgate/ms2/library.py": "296bc4ee2beec3de79b403cf5afe42839e62a9208728ef69fe4eab18b27711b6",
+    "src/lipidgate/ms2/library_fragment_policy.py": "78d9d2529705ed3d60a372c9e39a912f411e9e663d1920cea42cf25ebbccc7f7",
+    "src/lipidgate/ms2/lipid_naming.py": "593cc7454306899a8255cf87e89294c071e368f641baea33844767834116e3f9",
+    "src/lipidgate/ms2/matching.py": "1f8867fd7430a1a1a20567bdf0c317a0e8e550722fb0fb2c96d30fc0528ef74a",
+    "src/lipidgate/ms2/models.py": "7a946fdae379c61f83f3954b4fb43bd17c4c008ff878968e818590ca138c1304",
+    "src/lipidgate/ms2/ms1_evidence.py": "cc2ffb14c7a3264095abb77f52eaef597751848988c5b0349f67c8dea63b124f",
+    "src/lipidgate/ms2/msp_tools.py": "c0fea36489758ac25d8fe8a4c7095e444eb39d3320141c87b38c2ac864bf1186",
+    "src/lipidgate/ms2/nae_precursor.py": "58e4404eea9a12a867b616309a19bd0219c329bd2d031f6b1154fe0a5aa703fd",
+    "src/lipidgate/ms2/native_backend/_search_bridge.cp313-win_amd64.pyd": "2a0adefe54953cb2b156ec8ab5297a64149f2784036be24fb6f847524345d07e",
+    "src/lipidgate/ms2/native_backend/policy/chain_utils.cp313-win_amd64.pyd": "981c6f29f7352d76c1d6225571c9dc766aff36502a0e322b1472c4433d017bd4",
+    "src/lipidgate/ms2/native_backend/policy/equivalent_candidates.cp313-win_amd64.pyd": "5e57f9a46df796b09ab55eb733f351df949536e4931be3e7f4b1721cb6fe86f7",
+    "src/lipidgate/ms2/native_backend/policy/evidence_policy.cp313-win_amd64.pyd": "9eebcc3e551a7aa2e6f9250a3e8fcde1d8eb0e8c8a74e0b62e9f8d6558aa24d1",
+    "src/lipidgate/ms2/native_backend/policy/gate_policy.cp313-win_amd64.pyd": "a1dd918bc9c572d9ca80c342f30bb2a32cbb185b4cad7139111ac263390cbfab",
+    "src/lipidgate/ms2/native_backend/policy/indexed_library.cp313-win_amd64.pyd": "b8e684ccebad519d6bc1c68b1f46b87899e2d9bc2f59b09e671fe484117b04db",
+    "src/lipidgate/ms2/native_backend/policy/manifest.json": "88a76c851a5c524cf80e921de2efd53863e9ebc0385943910f8b7664a3f91030",
+    "src/lipidgate/ms2/native_backend/policy/matching.cp313-win_amd64.pyd": "f50c3f26e3a6be1ab8371038c35d1fbc76ecb950609d1e2ac181ec3b23452548",
+    "src/lipidgate/ms2/native_backend/policy/native_engine.cp313-win_amd64.pyd": "51e86ba848db4a595d07b59d2752c49a52d384acae19eb48af600bbb8b420eb0",
+    "src/lipidgate/ms2/native_backend/policy/native_plan.cp313-win_amd64.pyd": "470980a28a53e73d940c7616d41624f26d2424cedeecf59422fe2bb98facfe73",
+    "src/lipidgate/ms2/native_backend/policy/oxidized_fragment_policy.cp313-win_amd64.pyd": "f90055ae1f5f5317d71897f95d5bd73230035b65b24072c195ce82e39f3bf5f1",
+    "src/lipidgate/ms2/native_backend/policy/prepared_scoring.cp313-win_amd64.pyd": "d5b1eccaba5ecfb1f58fcc6b91a30996b3d3b6535213f0baa91ade06724e404e",
+    "src/lipidgate/ms2/native_backend/policy/ranking_policy.cp313-win_amd64.pyd": "47f390ba383822ab1466def9479a475cb000c63a720b6cc978caa4605d13b982",
+    "src/lipidgate/ms2/native_backend/policy/record_facts.cp313-win_amd64.pyd": "a1590db7413486e6a76475493e880ea436a0b56dd6e41f5828a73094444cdac8",
+    "src/lipidgate/ms2/native_backend/policy/resolution_policy.cp313-win_amd64.pyd": "39784f6353975fe03bf726bbabcf4bb04b995c50a5b020274c7dcbb8bc47b512",
+    "src/lipidgate/ms2/native_backend/policy/scoring.cp313-win_amd64.pyd": "511e7df1cc11610480421b35c1388c3f2b24af7c1219610f9ac427d0a70e169c",
+    "src/lipidgate/ms2/native_backend/policy/scoring_policy.cp313-win_amd64.pyd": "34edeca8020931c85c9194f5394235b0d2be36316a83c0eef27cd33b4e1d79b1",
+    "src/lipidgate/ms2/native_backend/policy/search.cp313-win_amd64.pyd": "efb665656eca4f7209076e46453af56518bd7931de8a5bd7339f86fa496c2978",
+    "src/lipidgate/ms2/native_backend/policy/search_plan.cp313-win_amd64.pyd": "59cd44867d16dd89cc699e5d32d6a01f195f7215e20f59b65d31a2eb4d6694b3",
+    "src/lipidgate/ms2/native_backend/policy/sphingolipid_scoring.cp313-win_amd64.pyd": "b595d0eb7b771fa52d37bc70d80baa7ef18f7931a746b8c32302595780a25fd8",
+    "src/lipidgate/ms2/native_backend/search_bridge.cpp": "7272a3c0733d52a32af599db52ceaf5fb3c0941b9ea32da19761ff2ff253a43e",
+    "src/lipidgate/ms2/native_backend/search_bridge.json": "5868cd5dde937be110bc8b0e317ec2bfee7d8536f88e6695106c9fc91d9341df",
+    "src/lipidgate/ms2/native_backend/search_core.cpp": "fe30bffa8ad93e3a6f839693089ab2bf86ced97644e2021ea8b08e3bd7bcc016",
+    "src/lipidgate/ms2/native_backend/search_core.dll": "8cad4c87e140b94a6f9fa7499e20a081fa7b51366bf5261cd8374ac048937b42",
+    "src/lipidgate/ms2/native_backend/search_core.json": "2e7cbe7c968aa6e8b7e934850d18da5cfed992e97f1ca8d804dd7e073e804be8",
+    "src/lipidgate/ms2/native_bridge.py": "38021c6ab1f640b2aa2c0757c54362abef5d121e3a408e6e15b4a871ef705a49",
+    "src/lipidgate/ms2/native_engine.py": "38cad9e1f8652d23b78a32d62c18de3e3eb86308d4d90543a758f58317fad20f",
+    "src/lipidgate/ms2/native_plan.py": "972f6db18ae1bfe1a0cc304445c891334c505ccfbd67fc894c1623e07c9bf265",
+    "src/lipidgate/ms2/native_policy.py": "1aabe9367db0ab5d6afeed3bb339c0adb6838444a60e192d1c492bbb0af9093d",
+    "src/lipidgate/ms2/negative_cer_hsu2016.py": "c5f4647474de70c2ab77ff1ed60a4e702186c00537486c3c383e752dc4d2aa60",
+    "src/lipidgate/ms2/negative_gm3.py": "f73c5403b31c755ffd6e409aa32790a3675e036180a82ffe4f8bf7f040eff971",
+    "src/lipidgate/ms2/negative_hexcer.py": "70867a596598120f0cbde46e6f1ca034b1da843fcbe60a1066c94e8862e95d65",
+    "src/lipidgate/ms2/negative_ptdglc.py": "2fa653f9a0b596f69440edc5fb6110dcfb19a5cb3dcbf878a91666c9d79f1f2c",
+    "src/lipidgate/ms2/oxidized_chain_evidence.py": "41f954fd25bae07370845b095072b1f31d4f8eb339317d0edbcacc10e4c0e0f0",
+    "src/lipidgate/ms2/oxidized_fragment_policy.py": "24d77a9303c0e628671496dba5f74aa2186313a3665358251c9454d276546a78",
+    "src/lipidgate/ms2/positive_gm3.py": "2aa8a9bb7d1c97911088a01ae246c1c3e222b08d243a506f7f5fbc2fb98ca2c9",
+    "src/lipidgate/ms2/positive_lpe_sodium.py": "bd326735d422ba1a86e0179ada192dab19682d9a8c2ad64db101aae316047e6d",
+    "src/lipidgate/ms2/positive_pc_sodium.py": "eb4a5e77171a3e5c23ab58ca023784b4a66938953c4b26cc29978d5985cc38cf",
+    "src/lipidgate/ms2/positive_pe_cer.py": "25d0c52c4daff710190e88219ff129327e6d36252d78abddf86ba83f13fccf07",
+    "src/lipidgate/ms2/positive_pe_sodium.py": "e61247b2e2d87c8b9c9dc4c66a9d18e43489970bb2e38138704569b97b31b450",
+    "src/lipidgate/ms2/positive_pep_sodium.py": "92bd14701a6fdcd3cb1b09cee8972b8a8c82c9a14120d6c61c66632d3ec14c97",
+    "src/lipidgate/ms2/positive_single_chain_h.py": "41a54e1de482f51612f6ef0375e987ebfc857fe5c56931d56eff5ece1137110b",
+    "src/lipidgate/ms2/precursor_refinement.py": "49c067f4155ecc8a8a942820e8a89d91b12b0708f9f76f47f5cfa8680f4ecf57",
+    "src/lipidgate/ms2/prepared_scoring.py": "9fc20dd797bb1f198a653857669e0947c2646bedb3386f092e8049a86d7c74f0",
+    "src/lipidgate/ms2/provenance.py": "a78df5dd6b8933500dcd61788f0d249cdcc67d1224d665896aa98b224cb8ce6c",
+    "src/lipidgate/ms2/ranking_policy.py": "20f303ccdbfb3984ee5d672a2650bb406c697c01e4e7a4a42b8ea307d35499c4",
+    "src/lipidgate/ms2/record_facts.py": "147eb48ad84d6d0ee0da721da5a9bb1bd768460a24396e44cf484ad1046551db",
+    "src/lipidgate/ms2/resolution_policy.py": "2418a1c5f43801f755549708fc9b2c808fa8f3f69b2642a34cd949089a1aaabc",
+    "src/lipidgate/ms2/result_export.py": "cebf360cfcdfcb747d49192d92aba3b62e8f5de73b34a084ee7351f4d7a49b40",
+    "src/lipidgate/ms2/rules.py": "c9f7d4d777454fb657112fe469a2409136fd71ac06070d9e8fc1fadb711fd073",
+    "src/lipidgate/ms2/safe_pickle.py": "e9d11035e303256c56b17a7451805bcb2cb44c914739c96f48209fb2556c8467",
+    "src/lipidgate/ms2/scoring.py": "22be15e3f8461902473549e2e6785ac1b1123a45dfb636587b3b5b8a4ed0d323",
+    "src/lipidgate/ms2/scoring_policy.py": "608265cbd698d0be144de444839e07669baca05fd6098a35108001fe6abcb3ab",
+    "src/lipidgate/ms2/search.py": "d91a532204ab56a823975559a64734089d517da47dd446184ac4cce5f5197618",
+    "src/lipidgate/ms2/search_plan.py": "85f1967b16ecef48745d88248ca09fb6eddeb88316934d71e1a5d507fcc0df59",
+    "src/lipidgate/ms2/spectrum_preparation.py": "8a7c6461e39dcbe50d3d852ef75b2c400a451f4fa3c3bc179906f2afc8cc2780",
+    "src/lipidgate/ms2/sphingolipid_naming.py": "9f4edb58bca2870ef82dd5218a3f6eda181b61e681b4abc656dd2eeb30d83760",
+    "src/lipidgate/ms2/sphingolipid_rules.py": "354c8e06b661a6ec97cbbfe45179ffb8bf8a447d1b62a703d526a66abfc5b514",
+    "src/lipidgate/ms2/sphingolipid_scoring.py": "ba2c640ad71908941c59ca00854c1ceadbea1242b4ae7e7ca30a3a480b6a8aea",
+    "src/lipidgate/ms2/workbook_export.py": "718a09e33597362722c8f1f08a1eb3d5d7eb1e083289629ea305ecdb5d5a36bb",
+    "src/lipidgate/ms2/workflow.py": "487c3889ac9e7757bf5c22e2ce565afa0a42ddcec5dd45cca34a65a493bf7fc9",
+    "tests/ms2/test_adduct_charge_cache.py": "bf369af9954775c2f3d00ca67c35362e68b0ab18bc5722945afc8f128359ac3a",
+    "tests/ms2/test_library_fact_cache.py": "fe4305e4a3c3d54777b9bc57d2f745ffac58b7e72c5769f90a588372acee86a1",
+    "tests/ms2/test_native_bridge.py": "e67bc000eddf046d9be10da36bad240e94b76e6f2dc57c7852777f488a2dce0c",
+    "tests/ms2/test_native_normalization.py": "7bf9d99c8fcd575de68d4da3950e08125e455266df673a8170100b0a24433ea1",
+    "tests/ms2/test_native_revision.py": "330827b3f4a3a741be4ef0e806002ff1640400b62b1142f6f8815b6aacb88889"
+  },
+  "original_reference_sha256": {
+    "positive_full_reference.json.gz": "33a6d7768f010a4248056f0c6c032a556c67179d6b3db41473a868111ab35145",
+    "negative_full_reference.json.gz": "1a16a4f2780b6d7d350d1f4821726e3ae815be85bb55dde21c7fc884334517cf",
+    "standards_full_reference.json.gz": "45a8178ab7f50dd61e196251c6d3adb3fbaf356f906c2320cf99eb67e9143392"
+  },
+  "audit_archive_sha256": "d62ad6074d66cbcb1661d259683bafd232885037006047bdeca7d5fa1e28a243",
+  "audit_archive_bytes": 7170712
+}

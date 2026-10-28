@@ -147,7 +147,7 @@ def run_project(project_path, settings, progress=lambda message: None):
     feature = None
     external_ms1 = ms1.get("algo") in {"msdial", "ms-dial"}
     if ms1.get("enabled", True) and (ms1_files or external_ms1):
-        progress("提取并对齐 MS1 特征…")
+        progress("提取 MS1 特征…" if len(ms1_files) == 1 else "提取并对齐 MS1 特征…")
         if not external_ms1 and len(ms1_files) < len(files):
             progress(f"MS1 跳过 {len(files) - len(ms1_files)} 个不含 MS1 扫描的文件；这些文件的结果仍可进行 MS2 匹配。")
         config = default_config()

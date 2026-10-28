@@ -21,7 +21,6 @@ from .result_data import (
     text,
     ms1_feature_display,
     ms1_feature_description,
-    ms1_evidence_display,
     confidence_description,
 )
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
@@ -41,6 +40,29 @@ def confidence_display(value):
 
 def ecn_display(value):
     return "-" if text(value) in {"", "无法判断"} else text(value)
+
+
+def annotation_font():
+    """Use one weight and tabular digits for every lipid annotation."""
+    font = QtGui.QFont(QtWidgets.QApplication.font())
+    font.setPixelSize(14)
+    font.setWeight(QtGui.QFont.Weight.Normal)
+    font.setKerning(False)
+    font.setFeature(QtGui.QFont.Tag.fromString("tnum"), 1)
+    return font
+
+
+def isotope_display(snapshot):
+    from lipidgate.ms2.isotope_export import STATUS_LABELS
+
+    if snapshot is None:
+        return "读取中…", ""
+    peaks = snapshot.get("peaks", [])
+    value = "; ".join(f"{peak['mz']:.4f}: {peak['relative_intensity']:.1f}%" for peak in peaks)
+    status = STATUS_LABELS.get(snapshot.get("status"), "未提取")
+    rt = number(snapshot.get("rt_minutes"))
+    origin = f"{snapshot.get('source_file', '')} · MS1 RT {rt:.4f} min" if math.isfinite(rt) else ""
+    return value or status, "\n".join(part for part in (value, origin, status) if part)
 
 
 def eic_coordinates(feature, spectra, source):
@@ -121,8 +143,6 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             if key == "_confidence":
                 return confidence_display(value)
-            if key == "_ecn":
-                return ecn_display(value)
             if key == "ms1_support_status":
                 return ms1_feature_display(row)
             if key in {"_rt", "_mz", "final_score"}:
@@ -134,6 +154,8 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
             if key == "ms1_support_status":
                 return ms1_feature_description(row)
             return text(value)
+        if role == QtCore.Qt.ItemDataRole.FontRole and key == "matched_name":
+            return annotation_font()
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and key in {
             "_rt",
             "_mz",
@@ -225,6 +247,28 @@ class ResultsPage(QtWidgets.QWidget):
         self._eic_current_key = None
         self._eic_current_peak_bounds = None
         self._eic_ppm = 10.0
+        self._all_eic_sources = []
+        self._survey_cancel = None
+        self._survey_thread = None
+        self._survey_worker = None
+        self._survey_pending = None
+        self._survey_active_key = None
+        self._survey_current_key = None
+        self._isotope_cache = ByteLRU(1024**2, 256)
+        self._isotope_cancel = None
+        self._isotope_thread = None
+        self._isotope_worker = None
+        self._isotope_pending = None
+        self._isotope_active_key = None
+        self._isotope_current_key = None
+        self.isotope_timer = QtCore.QTimer(self)
+        self.isotope_timer.setSingleShot(True)
+        self.isotope_timer.setInterval(100)
+        self.isotope_timer.timeout.connect(self._start_isotope_job)
+        self.survey_timer = QtCore.QTimer(self)
+        self.survey_timer.setSingleShot(True)
+        self.survey_timer.setInterval(90)
+        self.survey_timer.timeout.connect(self._start_survey_job)
         self.eic_timer = QtCore.QTimer(self)
         self.eic_timer.setSingleShot(True)
         self.eic_timer.setInterval(90)
@@ -286,7 +330,7 @@ class ResultsPage(QtWidgets.QWidget):
         actions.addWidget(back)
         root.addLayout(actions)
         self.notice = _ElidedNotice("打开项目结果或 CSV / Excel 鉴定表开始浏览。")
-        root.addWidget(self.notice)
+        self.notice.hide()
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -400,17 +444,17 @@ class ResultsPage(QtWidgets.QWidget):
         right.setChildrenCollapsible(False)
         right.setMinimumWidth(360)
         self.right_splitter = right
-        detail, detail_layout = card("注释详情")
+        detail, detail_layout = card("")
         self.detail = DetailPanel()
         detail_layout.addWidget(self.detail, 1)
         self.spectrum_choice = QtWidgets.QComboBox()
-        self.spectrum_choice.setToolTip("查看归入当前特征的每一张 MS2 谱图")
+        self.spectrum_choice.setToolTip("切换 Top1 注释不同的代表谱图")
         self.spectrum_choice.currentIndexChanged.connect(self._spectrum_selected)
         detail_layout.addWidget(self.spectrum_choice)
-        detail_layout.addWidget(label("Top3 候选 / 独立 FA、NAE", "resultSection"))
-        self.candidates = QtWidgets.QTableWidget(0, 7)
+        detail_layout.addWidget(label("候选注释", "resultSection"))
+        self.candidates = QtWidgets.QTableWidget(0, 6)
         self.candidates.setHorizontalHeaderLabels(
-            ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm", "ECN"]
+            ["Rank", "Annotation", "Class", "Adduct", "Score", "ppm"]
         )
         self.candidates.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
@@ -425,11 +469,28 @@ class ResultsPage(QtWidgets.QWidget):
         self.candidates.verticalHeader().setDefaultSectionSize(25)
         self.candidates.setMaximumHeight(102)
         self.candidates.setMinimumHeight(65)
-        self.candidates.setColumnWidth(0, 66)
-        self.candidates.setColumnWidth(1, 180)
+        for index, width in enumerate((40, 158, 54, 84, 62, 60)):
+            self.candidates.setColumnWidth(index, width)
         self.candidates.currentCellChanged.connect(self.candidate_selected)
         detail_layout.addWidget(self.candidates)
-        right.addWidget(detail)
+        self.detail_tabs = QtWidgets.QTabWidget()
+        self.detail_tabs.setObjectName("detailTabs")
+        self.detail_tabs.addTab(detail, "注释详情")
+        survey, survey_layout = card("")
+        self.survey_status = _ElidedNotice("点击下方 EIC 时间点查看 MS1 全扫描")
+        survey_layout.addWidget(self.survey_status)
+        self.precursor_zoom = QtWidgets.QToolButton()
+        self.precursor_zoom.setText("前体附近")
+        self.precursor_zoom.setEnabled(False)
+        self.ms1_spectrum = SpectrumPlot()
+        self.ms1_spectrum.canvas.setMinimumHeight(150)
+        self.ms1_spectrum.set_status("点击下方 EIC 时间点")
+        self.precursor_zoom.clicked.connect(self.ms1_spectrum.focus_precursor)
+        self.ms1_spectrum.controls.insertWidget(1, self.precursor_zoom)
+        survey_layout.addWidget(self.ms1_spectrum, 1)
+        self.ms1_survey_tab = survey
+        self.detail_tabs.addTab(survey, "MS1 全扫描")
+        right.addWidget(self.detail_tabs)
         spectrum, spectrum_layout = card("")
         self.plot_tabs = QtWidgets.QTabWidget()
         self.plot_tabs.setObjectName("spectrumTabs")
@@ -475,13 +536,14 @@ class ResultsPage(QtWidgets.QWidget):
         self.eic_error.setText("错误详情")
         self.eic_error.hide()
         self.eic_error.clicked.connect(self._show_eic_error)
-        eic_actions.addWidget(self.eic_retry)
+        eic_actions.addWidget(self.eic_retry, 0, QtCore.Qt.AlignmentFlag.AlignRight)
         eic_actions.addWidget(self.eic_error)
         eic_layout.addLayout(eic_actions)
         self.eic_plot = EICPlot()
+        self.eic_plot.scan_selected.connect(self._request_survey)
         eic_layout.addWidget(self.eic_plot, 1)
         self.ms1_tab = eic_tab
-        self.plot_tabs.addTab(eic_tab, "MS1")
+        self.plot_tabs.addTab(eic_tab, "MS1 EIC")
         self.plot_tabs.setTabToolTip(0, "MS1 EIC · RT ±1 min，未关联到检测特征的注释点也显示原始 MS1 信号")
         self.plot_tabs.addTab(ms2_tab, "MS2")
         self.plot_tabs.setCurrentWidget(ms2_tab)
@@ -494,9 +556,9 @@ class ResultsPage(QtWidgets.QWidget):
         self.splitter.addWidget(right)
         self.detail_panel = right
         self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 5)
+        self.splitter.setStretchFactor(1, 4)
         self.splitter.setStretchFactor(2, 3)
-        self.splitter.setSizes([165, 740, 430])
+        self.splitter.setSizes([165, 680, 490])
         root.addWidget(self.splitter, 1)
         self.setStyleSheet("""
             QWidget#resultsWorkbench { background:#f5f7fb; }
@@ -516,13 +578,13 @@ class ResultsPage(QtWidgets.QWidget):
             QComboBox::down-arrow { image:url("__COMBO_DOWN__"); width:18px; height:18px; }
             QComboBox::down-arrow:hover { image:url("__COMBO_DOWN_HOVER__"); }
             QPushButton,QToolButton { min-height:24px; border-radius:4px; padding:0 7px; }
-            QTabWidget#spectrumTabs::pane { border:0; }
-            QTabWidget#spectrumTabs QTabBar::tab {
+            QTabWidget#spectrumTabs::pane,QTabWidget#detailTabs::pane { border:0; }
+            QTabWidget#spectrumTabs QTabBar::tab,QTabWidget#detailTabs QTabBar::tab {
                 min-width:42px; min-height:20px; max-height:24px;
                 padding:2px 12px; margin:0 2px 0 0; font-size:14px;
                 border:1px solid #dce3ec; border-radius:3px; background:#f7f9fc;
             }
-            QTabWidget#spectrumTabs QTabBar::tab:selected { background:#e4edf6; color:#172438; }
+            QTabWidget#spectrumTabs QTabBar::tab:selected,QTabWidget#detailTabs QTabBar::tab:selected { background:#e4edf6; color:#172438; }
             QTreeWidget,QTextBrowser { border:none; background:white; }
             QTreeWidget#lipidClassTree::branch:closed:has-children {
                 image:url("__TREE_RIGHT__"); width:18px; height:18px;
@@ -613,6 +675,9 @@ class ResultsPage(QtWidgets.QWidget):
 
     def set_bundle(self, bundle):
         self._cancel_eic_request()
+        self._clear_survey()
+        self._cancel_isotopes()
+        self._isotope_cache.clear()
         self._eic_generation += 1
         self.bundle = bundle
         self._eic_current_key = None
@@ -674,9 +739,11 @@ class ResultsPage(QtWidgets.QWidget):
     def _configure_eic_sources(self, bundle):
         self.eic_source.blockSignals(True)
         self.eic_source.clear()
+        self._all_eic_sources = []
         self._eic_ppm = 10.0
         if bundle.path:
             for source in result_sources(bundle.path):
+                self._all_eic_sources.append((source.name, str(source)))
                 self.eic_source.addItem(source.name, str(source))
             for directory in Path(bundle.path).resolve().parents:
                 settings = directory / "run_settings.json"
@@ -692,12 +759,32 @@ class ResultsPage(QtWidgets.QWidget):
         self.eic_plot.set_status("选择特征后查看 EIC" if self.eic_source.count() else "打开项目运行结果后可查看 EIC")
 
     def _select_eic_source(self, feature):
-        source_name = Path(text(feature.get("_source"))).name
+        spectra = self._display_spectra
+        selected = self.spectrum_choice.currentData()
+        current = spectra.loc[spectra._spectrum.eq(selected)] if not spectra.empty else spectra
+        row = current.iloc[0] if not current.empty else feature
+        source_name = Path(text(row.get("_source"))).name
+        # Keep only representative files in the normal view. The audit table
+        # still exposes every scan, and Top1 disagreements retain alternatives.
+        available = self._all_eic_sources or [
+            (self.eic_source.itemText(i), self.eic_source.itemData(i))
+            for i in range(self.eic_source.count())]
+        names = {Path(text(value)).name for value in spectra._source} if not spectra.empty else {source_name}
+        sources = [(name, path) for name, path in available if name in names]
+        if not sources and available and not source_name and spectra.empty:
+            measured = next(((name, path) for name, path in available if number(feature.get(name)) > 0), None)
+            sources = [measured] if measured else []
+        self.eic_source.blockSignals(True)
+        self.eic_source.clear()
+        for name, path in sources:
+            self.eic_source.addItem(name, path)
+        self.eic_source.blockSignals(False)
+        self.eic_source.setVisible(self.eic_source.count() > 1)
         index = next(
             (i for i in range(self.eic_source.count()) if Path(self.eic_source.itemData(i)).name == source_name),
             -1,
         )
-        if index < 0:
+        if index < 0 and not source_name:
             index = next(
                 (i for i in range(self.eic_source.count())
                  if number(feature.get(self.eic_source.itemText(i))) > 0),
@@ -740,6 +827,8 @@ class ResultsPage(QtWidgets.QWidget):
             self.eic_plot.setToolTip(str(exc))
             return
         key = (self._eic_generation, signature, mz, rt, self._eic_ppm, EIC_HALF_WINDOW_MIN)
+        if self._eic_current_key != key:
+            self._clear_survey()
         self._eic_current_key = key
         self._eic_current_peak_bounds = eic_peak_bounds(row, spectra, source)
         cached = self._eic_cache.get(key)
@@ -767,7 +856,8 @@ class ResultsPage(QtWidgets.QWidget):
             self._eic_cancel.set()
 
     def _start_eic_job(self):
-        if self._eic_thread is not None or self._eic_pending is None:
+        if (self._eic_thread is not None or self._survey_thread is not None
+                or self._isotope_thread is not None or self._eic_pending is None):
             return
         key = self._eic_pending
         self._eic_pending = None
@@ -828,14 +918,214 @@ class ResultsPage(QtWidgets.QWidget):
                 self._start_eic_job()
         else:
             self._eic_pending = None
+        if self._survey_pending is not None and not self.survey_timer.isActive():
+            self._start_survey_job()
+        if self._isotope_pending is not None and not self.isotope_timer.isActive():
+            self._start_isotope_job()
+
+    def _clear_survey(self):
+        self.survey_timer.stop()
+        self._survey_pending = self._survey_current_key = None
+        if self._survey_cancel is not None:
+            self._survey_cancel.set()
+        self.ms1_spectrum.set_status("点击下方 EIC 时间点")
+        self.survey_status.setText("点击下方 EIC 时间点查看 MS1 全扫描")
+        self.precursor_zoom.setEnabled(False)
+
+    @QtCore.Slot(float)
+    def _request_survey(self, rt):
+        if (self._eic_current_key is None or not len(self.eic_plot.times)
+                or self.plot_tabs.currentWidget() is not self.ms1_tab):
+            return
+        key = self._eic_current_key, float(rt)
+        if key == self._survey_current_key:
+            self.detail_tabs.setCurrentWidget(self.ms1_survey_tab)
+            return
+        if self._survey_cancel is not None:
+            self._survey_cancel.set()
+        self._survey_current_key = self._survey_pending = key
+        self.ms1_spectrum.set_status("正在读取 MS1 全扫描…")
+        self.survey_status.setText(f"MS1 · RT {rt:.4f} min")
+        self.precursor_zoom.setEnabled(False)
+        self.detail_tabs.setCurrentWidget(self.ms1_survey_tab)
+        self.survey_timer.start()
+
+    def _start_survey_job(self):
+        # One reader owns both tasks. Never use the mzML handle concurrently.
+        if (self._eic_thread is not None or self._survey_thread is not None
+                or self._isotope_thread is not None or self._survey_pending is None):
+            return
+        key = self._survey_pending
+        self._survey_pending = None
+        if key != self._survey_current_key:
+            return
+        self._survey_active_key = key
+        eic_key, rt = key
+        cancelled = self._survey_cancel = Event()
+        thread = QtCore.QThread(self)
+        worker = Worker(lambda: self._eic_reader.read_spectrum(eic_key[1][0], rt, cancelled=cancelled.is_set))
+        worker.moveToThread(thread)
+        self._survey_thread, self._survey_worker = thread, worker
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._survey_loaded, QtCore.Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self._survey_failed, QtCore.Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._survey_job_finished)
+        thread.start()
+
+    @QtCore.Slot(object)
+    def _survey_loaded(self, spectrum):
+        key = self._survey_active_key
+        if key is None or key != self._survey_current_key or key[0][0] != self._eic_generation:
+            return
+        if spectrum is None:
+            self.ms1_spectrum.set_status("此文件没有 MS1 扫描")
+            return
+        self.ms1_spectrum.set_ms1_spectrum(spectrum, key[0][2], tolerance_ppm=key[0][4])
+        self.survey_status.setText(f"MS1 · RT {spectrum.rt:.4f} min · {spectrum.identifier}")
+        self.precursor_zoom.setEnabled(bool(len(spectrum.peaks)))
+
+    @QtCore.Slot(str)
+    def _survey_failed(self, message):
+        if self._survey_active_key == self._survey_current_key:
+            self.ms1_spectrum.set_status("MS1 扫描读取失败")
+            self.survey_status.setText(message.splitlines()[-1][:140])
+            self._survey_current_key = None  # Allow another click to retry.
+
+    @QtCore.Slot()
+    def _survey_job_finished(self):
+        self._survey_thread = self._survey_worker = None
+        self._survey_active_key = self._survey_cancel = None
+        if self._eic_pending is not None and not self.eic_timer.isActive():
+            self._start_eic_job()
+        if self._survey_pending is not None and not self.survey_timer.isActive():
+            self._start_survey_job()
+        if self._isotope_pending is not None and not self.isotope_timer.isActive():
+            self._start_isotope_job()
+
+    def _cancel_isotopes(self):
+        self.isotope_timer.stop()
+        self._isotope_pending = self._isotope_current_key = None
+        if self._isotope_cancel is not None:
+            self._isotope_cancel.set()
+
+    def _isotopes_for(self, row):
+        saved = text(row.get("同位素"))
+        if saved:
+            self._cancel_isotopes()
+            return saved
+        scan = text(row.get("_scan", row.get("scan_id")))
+        if not scan:
+            self._cancel_isotopes()
+            return "无关联 MS2 谱图"
+        source_name = Path(text(row.get("_source", row.get("source_file")))).name
+        sources = [path for name, path in self._all_eic_sources if name.casefold() == source_name.casefold()]
+        if len(sources) != 1:
+            self._cancel_isotopes()
+            return "原始 mzML 不可用"
+        rt = number(row.get("rt_minutes"))
+        target = number(row.get("precursor_ms1_mz"))
+        if not math.isfinite(target):
+            target = number(row.get("precursor_mz"))
+        raw = number(row.get("precursor_mz_raw"))
+        if not math.isfinite(raw):
+            raw = number(row.get("precursor_mz"))
+        if not all(math.isfinite(v) and v >= 0 for v in (rt, target, raw)) or target <= 0:
+            self._cancel_isotopes()
+            return "缺少前体或扫描时间"
+        try:
+            signature = source_signature(sources[0])
+        except OSError:
+            self._cancel_isotopes()
+            return "原始 mzML 不可用"
+        key = self._eic_generation, signature, scan, rt, target, text(row.get("adduct")), raw
+        cached = self._isotope_cache.get(key)
+        if key != self._isotope_current_key:
+            self._cancel_isotopes()
+            self._isotope_current_key = key
+        if cached is not None:
+            return isotope_display(cached)[0]
+        if (key != self._isotope_active_key or self._isotope_cancel is None
+                or self._isotope_cancel.is_set()):
+            self._isotope_pending = key
+            self.isotope_timer.start()
+        return "读取中…"
+
+    def _start_isotope_job(self):
+        if (any(thread is not None for thread in (self._eic_thread, self._survey_thread, self._isotope_thread))
+                or self._eic_pending is not None or self._survey_pending is not None
+                or self._isotope_pending is None):
+            return
+        key = self._isotope_pending
+        self._isotope_pending = None
+        if key != self._isotope_current_key:
+            return
+        self._isotope_active_key = key
+        _, signature, scan, rt, target, adduct, raw = key
+        cancelled = self._isotope_cancel = Event()
+        thread = QtCore.QThread(self)
+        worker = Worker(lambda: self._eic_reader.read_isotopes(
+            signature[0], scan, rt, target, adduct, raw_mz=raw, cancelled=cancelled.is_set))
+        worker.moveToThread(thread)
+        self._isotope_thread, self._isotope_worker = thread, worker
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._isotope_loaded, QtCore.Qt.ConnectionType.QueuedConnection)
+        worker.failed.connect(self._isotope_failed, QtCore.Qt.ConnectionType.QueuedConnection)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._isotope_job_finished)
+        thread.start()
+
+    def _update_isotope_detail(self, value, tooltip=""):
+        before, marker, after = self.detail._full_html.partition('<span id="measuredIsotope">')
+        if marker:
+            _, closing, remainder = after.partition('</span>')
+            content = before + marker + html.escape(value) + closing + remainder
+        else:
+            content = self.detail._full_html
+        self.detail.update_value("同位素", value, full_html=content, tooltip=tooltip)
+
+    @QtCore.Slot(object)
+    def _isotope_loaded(self, snapshot):
+        key = self._isotope_active_key
+        if snapshot is None or key is None or key[0] != self._eic_generation:
+            return
+        self._isotope_cache.put(key, snapshot, len(json.dumps(snapshot).encode("utf-8")))
+        if key == self._isotope_current_key:
+            self._update_isotope_detail(*isotope_display(snapshot))
+
+    @QtCore.Slot(str)
+    def _isotope_failed(self, message):
+        if self._isotope_active_key == self._isotope_current_key:
+            self._update_isotope_detail("同位素读取失败", message)
+            self._isotope_current_key = None
+
+    @QtCore.Slot()
+    def _isotope_job_finished(self):
+        self._isotope_thread = self._isotope_worker = None
+        self._isotope_active_key = self._isotope_cancel = None
+        if self._eic_pending is not None and not self.eic_timer.isActive():
+            self._start_eic_job()
+        if self._survey_pending is not None and not self.survey_timer.isActive():
+            self._start_survey_job()
+        if self._isotope_pending is not None and not self.isotope_timer.isActive():
+            self._start_isotope_job()
 
     def shutdown_eic(self):
         """Cooperatively stop disk reads before Qt destroys the worker thread."""
         self._cancel_eic_request()
-        if self._eic_thread is not None:
+        self._clear_survey()
+        self._cancel_isotopes()
+        if any(thread is not None for thread in (self._eic_thread, self._survey_thread, self._isotope_thread)):
             return False
         self._eic_reader.close()
         self._eic_cache.clear()
+        self._isotope_cache.clear()
         return True
 
     def closeEvent(self, event):
@@ -1032,6 +1322,8 @@ class ResultsPage(QtWidgets.QWidget):
         self.current_key = None
         self.current_candidate = None
         self._cancel_eic_request()
+        self._clear_survey()
+        self._cancel_isotopes()
         self.eic_plot.set_status("选择特征后查看 EIC")
         self.navigation.select_key(None)
         self.candidates.blockSignals(True)
@@ -1040,26 +1332,25 @@ class ResultsPage(QtWidgets.QWidget):
         self.spectrum_choice.blockSignals(True)
         self.spectrum_choice.clear()
         self.spectrum_choice.blockSignals(False)
+        self.spectrum_choice.hide()
+        self.eic_source.hide()
         self.detail.clear()
         self.spectrum.set_evidence(None)
 
     def select_feature(self, key):
+        self._clear_survey()
+        self._cancel_isotopes()
         self.current_key = key
         self.navigation.select_key(key)
-        spectra = self.bundle.spectra(key)
+        spectra = self.bundle.display_spectra(key)
+        self._display_spectra = spectra
         self.spectrum_choice.blockSignals(True)
         self.spectrum_choice.clear()
-        if self.bundle.path is None or self.bundle.path.parent.name != "audit":
-            self.spectrum_choice.addItem("特征汇总（同名最佳记录）", None)
-            difference_count = len(self.bundle.annotations.loc[
-                self.bundle.annotations._key.eq(key)
-                & self.bundle.annotations.feature_result_role.eq("sample_difference")])
-            if difference_count:
-                self.spectrum_choice.addItem(f"高置信差异（{difference_count}）", "__differences__")
         for _, spectrum in spectra.iterrows():
             name = Path(text(spectrum["_source"])).name
             self.spectrum_choice.addItem(f"{name} / {spectrum['_scan']}", spectrum["_spectrum"])
         self.spectrum_choice.blockSignals(False)
+        self.spectrum_choice.setVisible(len(spectra) > 1)
         self._display_spectrum()
         feature = self.bundle.features.loc[self.bundle.features._key.eq(key)]
         if not feature.empty:
@@ -1068,7 +1359,9 @@ class ResultsPage(QtWidgets.QWidget):
 
     def _spectrum_selected(self, index):
         if index >= 0 and self.current_key:
+            self._clear_survey()
             self._display_spectrum()
+            self._select_eic_source(self._feature)
             self._request_eic()
 
     def _display_spectrum(self):
@@ -1090,7 +1383,6 @@ class ResultsPage(QtWidgets.QWidget):
                     "adduct",
                     "final_score",
                     "ppm_error",
-                    "_ecn",
                 ]
             ):
                 value = row.get(column)
@@ -1101,9 +1393,9 @@ class ResultsPage(QtWidgets.QWidget):
                     scope = text(row.get("_candidate_scope"))
                     if scope in {"fa", "nae"}:
                         value = f"{scope.upper()} {value}"
-                if column == "_ecn":
-                    value = ecn_display(value)
                 item = QtWidgets.QTableWidgetItem(text(value))
+                if column == "matched_name":
+                    item.setFont(annotation_font())
                 item.setToolTip(text(value))
                 self.candidates.setItem(i, j, item)
         if self._candidate_rows:
@@ -1150,19 +1442,22 @@ class ResultsPage(QtWidgets.QWidget):
             ),
             ("RT（原始中位数）" if math.isfinite(number(feature.get("_aligned_rt"))) else "RT", f"{feature['_rt']:.3f} min"),
             ("Score", formatted(row.get("final_score"), 2)),
-            ("合格 Top1 支持", f"{row.get('feature_support_count', 0)} / {row.get('feature_vote_sample_count', 0)} 个样本"),
-            ("汇总状态", feature.get("_annotation_status")),
             ("Confidence", confidence_display(row.get("_confidence"))),
-            ("ECN", ecn_display(row.get("_ecn"))),
-            ("MS1 feature", ms1_feature_display(row)),
-            ("MS1 evidence", ms1_evidence_display(row)),
             ("MS1 检出样本数", 0 if text(feature.get("_key")).startswith("MS2|") else feature.get("_sample_count")),
             ("MS2 样本数", feature.get("_ms2_sample_count")),
             ("关联 MS2 谱图", feature.get("_linked_ms2_scans")),
             ("争议样本", feature.get("feature_ambiguous_samples")),
-            ("最佳记录来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
+            ("谱图来源", f"{Path(text(row.get('_source'))).name} / {text(row.get('_scan'))}"),
             ("Precursor ppm", formatted(row.get("ppm_error"), 2)),
+            ("同位素", self._isotopes_for(row)),
         ]
+        source = text(row.get("_source"))
+        bounds = eic_peak_bounds(feature, pd.DataFrame([row]), source) if source else None
+        interval = f"{bounds[0]:.3f}–{bounds[1]:.3f} min" if bounds else "未确认"
+        values.insert(6, ("MS1 积分范围", interval))
+        if math.isfinite(number(row.get("ms1_feature_area"))):
+            position = next(i for i, item in enumerate(values) if item[0] == "MS1 积分范围")
+            values.insert(position + 1, ("MS1 面积", formatted(row.get("ms1_feature_area"), 2)))
         self.navigation.select_key(text(feature.get("_key")), adduct=text(row.get("adduct")))
         differences = self.bundle.annotations.loc[
             self.bundle.annotations._key.eq(feature.get("_key"))
@@ -1172,9 +1467,9 @@ class ResultsPage(QtWidgets.QWidget):
                 f"{item.matched_name}（{item.feature_result_samples}）" for item in differences.itertuples())))
         if text(row.get("RT_filter_action")) == "score_reject":
             values.insert(8, ("分析筛选", "未通过分数过滤（仅审计表显示）"))
-        if math.isfinite(number(feature.get("_aligned_rt"))):
+        if (math.isfinite(number(feature.get("_aligned_rt")))
+                and number(feature.get("_sample_count")) > 1):
             values[6:6] = [
-                ("原始峰顶范围", f"{formatted(feature.get('_raw_rt_min'), 3)}–{formatted(feature.get('_raw_rt_max'), 3)} min"),
                 ("对齐参考 RT", f"{formatted(feature.get('_aligned_rt'), 3)} min"),
             ]
         if evidence:
@@ -1196,17 +1491,15 @@ class ResultsPage(QtWidgets.QWidget):
         content = (
             '<table cellspacing="3" width="100%">'
             + "".join(
-                f'<tr><td style="color:#7b8798;white-space:nowrap">{k}</td><td>{html.escape(text(v)) or "—"}</td></tr>'
+                f'<tr><td style="color:#7b8798;white-space:nowrap">{k}</td><td>'
+                + ('<span id="measuredIsotope">' + (html.escape(text(v)) or "—") + '</span>'
+                   if k == "同位素" else html.escape(text(v)) or "—") + '</td></tr>'
                 for k, v in values
             )
             + "</table><p>MS1 特征：" + html.escape(ms1_feature_description(row))
             + "</p><p>鉴定置信度：" + html.escape(confidence_description(row))
             + "</p><p><b>鉴定证据</b></p>"
         )
-        area = number(row.get("ms1_feature_area"))
-        if math.isfinite(area):
-            units = " intensity·s" if text(row.get("ms1_area_unit")) == "intensity*seconds" else ""
-            content += f"<p>MS1 积分面积（当前谱图样本）：{area:.2f}{units}</p>"
         boundary_method = text(row.get("ms1_peak_boundary_method", row.get("peak_boundary_method")))
         if boundary_method == "eic_local_valley":
             content += "<p>峰边界按该样本原始 EIC 的谷底和低强度峰脚划分；面积使用未平滑的扫描强度及实际采集时间积分。</p>"

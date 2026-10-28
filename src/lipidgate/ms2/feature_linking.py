@@ -194,7 +194,8 @@ def _feature_work_table(feature_df: pd.DataFrame) -> pd.DataFrame:
     ) / 2.0
     for source, target in [("source_file", "_source_file"), ("FWHM", "_fwhm"), ("max_height", "_apex_intensity"),
                            ("peak_boundary_method", "_boundary_method"), ("intensity", "_area"),
-                           ("area_method", "_area_method"), ("area_unit", "_area_unit")]:
+                           ("area_method", "_area_method"), ("area_unit", "_area_unit"),
+                           ("observed_eic_apex_rt_sec", "_observed_apex_sec")]:
         if source in feature_df:
             out[target] = feature_df[source]
     return out.dropna(subset=["_feature_mz"]).reset_index(drop=True)
@@ -219,6 +220,66 @@ def _rt_delta_seconds(ms2_rt: float, feature_rt: float | None) -> float:
 def _finish_feature_links(out):
     out["ms1_feature_link_reason"] = out["ms1_support_reason"]
     return restore_ms1_support(out)
+
+
+def _attach_native_feature(out, index, best, link_rt, source, reason, observed_mz, ms2_rt):
+    """Copy a real native feature's fields without widening or fabricating it."""
+    for column, key in (("Feature_ID", "_feature_id"), ("Aligned_Feature_ID", "_aligned_feature_id"),
+                        ("feature_mz", "_feature_mz"), ("feature_rt", "_feature_rt"),
+                        ("feature_rtmin", "_feature_rtmin"), ("feature_rtmax", "_feature_rtmax"),
+                        ("ms1_feature_rt_raw_min", "_feature_rt"), ("ms1_peak_left_raw_min", "_feature_rtmin"),
+                        ("ms1_peak_right_raw_min", "_feature_rtmax"), ("ms1_feature_apex_intensity", "_apex_intensity"),
+                        ("ms1_peak_fwhm_sec", "_fwhm"), ("ms1_peak_boundary_method", "_boundary_method"),
+                        ("ms1_feature_area", "_area"), ("ms1_area_method", "_area_method"),
+                        ("ms1_area_unit", "_area_unit")):
+        out.at[index, column] = best.get(key, pd.NA)
+    out.at[index, "mz_error_to_feature_ppm"] = _ppm_error(observed_mz, float(best["_feature_mz"]))
+    out.at[index, "rt_delta_sec"] = _rt_delta_seconds(ms2_rt, best["_feature_rt"])
+    out.at[index, "feature_link_rt_raw_min"] = link_rt
+    out.at[index, "feature_link_rt_source"] = source
+    out.at[index, "ms1_support_status"] = "MS1-supported"
+    out.at[index, "ms1_support_reason"] = reason
+    out.at[index, "ms1_feature_link_reason"] = reason
+
+
+def link_unmatched_by_eic_identity(feature_df, candidates, *, mz_tol_ppm=10., mz_tol_da=None):
+    """Associate only one same-file native feature with the exact measured apex.
+
+    Chromatographic memberships must have been resolved with the native apex
+    anchors, retaining valley-separated neighbors. Quantitative edges and the
+    original MS2/precursor times remain untouched.
+    """
+    required = {"source_file", "mz", "observed_eic_apex_rt_sec"}
+    if (feature_df.empty or not required.issubset(feature_df)
+            or not {"source_file", "precursor_mz", "rt_minutes", "chromatographic_apex_rt_raw_min",
+                    "chromatographic_peak_id", "chromatographic_native_anchors"}.issubset(candidates)):
+        return candidates
+    work = _feature_work_table(feature_df)
+    work["_observed_apex"] = pd.to_numeric(work._observed_apex_sec, errors="coerce") / 60.
+    out = candidates.copy()
+    local = out.get("Feature_ID", pd.Series("", index=out.index)).fillna("").astype(str).str.strip()
+    for index, row in out.loc[local.eq("")].iterrows():
+        if str(row.get("chromatographic_native_anchors")).casefold() != "true" or not _text_key(row.get("chromatographic_peak_id")):
+            continue
+        apex = pd.to_numeric(row.get("chromatographic_apex_rt_raw_min"), errors="coerce")
+        mass = pd.to_numeric(row["precursor_mz"], errors="coerce")
+        if not math.isfinite(apex) or not math.isfinite(mass) or mass <= 0:
+            continue
+        same_file = work._source_file.map(lambda source: Path(str(source)).name.casefold()).eq(Path(str(row.source_file)).name.casefold())
+        tolerance = mz_tol_da if mz_tol_da is not None else mass * mz_tol_ppm * 1e-6
+        matches = work.loc[same_file & (pd.to_numeric(work._feature_mz) - mass).abs().le(tolerance)
+                           & (work._observed_apex - apex).abs().lt(1e-6)]
+        if len(matches) != 1:
+            continue
+        best = matches.iloc[0]
+        if str(best.get("_boundary_method")) == "unresolved_detector_bounds":
+            continue
+        if "ms1_initial_link_reason" not in out:
+            out["ms1_initial_link_reason"] = pd.Series(pd.NA, index=out.index, dtype=object)
+        out.at[index, "ms1_initial_link_reason"] = row.get("ms1_feature_link_reason", row.get("ms1_support_reason"))
+        _attach_native_feature(out, index, best, float(apex), "measured_eic_apex", "feature_eic_peak_identity_match",
+                               float(mass), float(row.get("ms2_rt_raw_min", row["rt_minutes"])))
+    return out
 
 
 def link_ms2_to_features(
@@ -332,35 +393,13 @@ def link_ms2_to_features(
         candidates["_distance"] = mass_distance + (rt_deltas / rt_window_sec)
         candidates.sort_values(["_distance", "_mz_error_abs_ppm", "_rt_delta_sec"], inplace=True)
         best = candidates.iloc[0]
-        best_error = float(candidate_ppm_errors.loc[best.name])
-
-        out.at[row_index, "Feature_ID"] = best["_feature_id"]
-        if "_aligned_feature_id" in best:
-            out.at[row_index, "Aligned_Feature_ID"] = best["_aligned_feature_id"]
-        out.at[row_index, "feature_mz"] = best["_feature_mz"]
-        out.at[row_index, "feature_rt"] = best["_feature_rt"]
-        out.at[row_index, "feature_rtmin"] = best["_feature_rtmin"]
-        out.at[row_index, "feature_rtmax"] = best["_feature_rtmax"]
-        out.at[row_index, "mz_error_to_feature_ppm"] = best_error
-        out.at[row_index, "rt_delta_sec"] = _rt_delta_seconds(float(ms2_rt), best["_feature_rt"])
-        out.at[row_index, "feature_link_rt_raw_min"] = link_rt
-        out.at[row_index, "feature_link_rt_source"] = "confirmed_precursor_ms1_scan" if use_precursor_scan else "ms2_scan"
-        out.at[row_index, "ms1_support_status"] = "MS1-supported"
-        out.at[row_index, "ms1_support_reason"] = (
+        reason = (
             "feature_precursor_ms1_bounds_match" if use_precursor_scan and has_bounds.loc[best.name]
             else "feature_bounds_match" if has_bounds.loc[best.name] else "feature_rt_window_match"
         )
-        if "ms1_feature_link_reason" in out:
-            out.at[row_index, "ms1_feature_link_reason"] = out.at[row_index, "ms1_support_reason"]
-        out.at[row_index, "ms1_feature_rt_raw_min"] = best["_feature_rt"]
-        out.at[row_index, "ms1_peak_left_raw_min"] = best["_feature_rtmin"]
-        out.at[row_index, "ms1_peak_right_raw_min"] = best["_feature_rtmax"]
-        out.at[row_index, "ms1_feature_apex_intensity"] = best.get("_apex_intensity", pd.NA)
-        out.at[row_index, "ms1_peak_fwhm_sec"] = best.get("_fwhm", pd.NA)
-        out.at[row_index, "ms1_peak_boundary_method"] = best.get("_boundary_method", pd.NA)
-        out.at[row_index, "ms1_feature_area"] = best.get("_area", pd.NA)
-        out.at[row_index, "ms1_area_method"] = best.get("_area_method", pd.NA)
-        out.at[row_index, "ms1_area_unit"] = best.get("_area_unit", pd.NA)
+        _attach_native_feature(out, row_index, best, link_rt,
+                               "confirmed_precursor_ms1_scan" if use_precursor_scan else "ms2_scan",
+                               reason, float(ms2_mz), float(ms2_rt))
 
     return _finish_feature_links(out)
 

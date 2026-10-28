@@ -168,8 +168,14 @@ class DetailPanel(QtWidgets.QWidget):
         for index in annotation:
             self.grid.addWidget(self.cells[index], row, 0, 1, 2)
             row += 1
-        for position, index in enumerate(i for i in range(len(self.rows)) if i not in annotation):
+        isotopes = [i for i, (key, _) in enumerate(self.rows) if key == "同位素"]
+        ordinary = [i for i in range(len(self.rows)) if i not in annotation and i not in isotopes]
+        for position, index in enumerate(ordinary):
             self.grid.addWidget(self.cells[index], row + position // 2, position % 2)
+        row += (len(ordinary) + 1) // 2
+        for index in isotopes:
+            self.grid.addWidget(self.cells[index], row, 0, 1, 2)
+            row += 1
         self.grid_widget.show()
         if evidence_lines:
             summary = evidence_lines[0]
@@ -189,6 +195,18 @@ class DetailPanel(QtWidgets.QWidget):
         content.setMinimumHeight(content.layout().minimumSize().height())
         content.updateGeometry()
         self.scroll.show()
+
+    def update_value(self, key, value, *, full_html=None, tooltip=None):
+        """Update an asynchronous value without resetting the detail scroll."""
+        for index, (name, _) in enumerate(self.rows):
+            if name == key:
+                self.rows[index] = (name, value)
+                self.cells[index].value.set_value(value)
+                if tooltip:
+                    self.cells[index].value.setToolTip(tooltip)
+                if full_html is not None:
+                    self._full_html = full_html
+                return
 
     def show_full_detail(self):
         if not self._full_html:

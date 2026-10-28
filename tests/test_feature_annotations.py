@@ -117,6 +117,29 @@ def test_final_main_table_does_not_repeat_areas_for_independent_candidates(tmp_p
     assert len(candidates) == 3 and 'sample.mzML' not in candidates
 
 
+def test_single_sample_saved_area_is_exported_without_an_alignment_matrix(tmp_path):
+    data = pd.DataFrame([row('PC(16:0/18:1)', ms1_feature_area=66091.5703125),
+                         row('PC(16:1/18:0)', rank=2, score=79, ms1_feature_area=66091.5703125)])
+    original = data.copy(deep=True)
+    result = export_final_results(data, tmp_path/'final', use_ecn=False, export_xlsx=False, export_plots=False)
+    assert result.passed_data['Peak area'].tolist() == [66091.5703125]
+    bundle = ResultBundle.from_frames(data)
+    export_browser_results(bundle, tmp_path/'browser', xlsx=False)
+    assert pd.read_csv(tmp_path/'browser/feature_results.csv')['Peak area'].tolist() == [66091.5703125]
+    assert 'a.mzML' not in pd.read_csv(tmp_path/'final/feature_candidates.csv')
+    pd.testing.assert_frame_equal(data, original)
+
+
+def test_raw_precursor_confirmation_cannot_export_a_background_intensity_as_area(tmp_path):
+    item = row('PC(34:1)', feature='F200', intensity=999.)
+    item.update(Feature_ID=None, ms1_support_status='MS2-only', ms1_feature_area=None)
+    bundle = ResultBundle.from_frames(pd.DataFrame([item]))
+    export_browser_results(bundle, tmp_path, xlsx=False)
+    exported = pd.read_csv(tmp_path/'feature_results.csv')
+    assert 'a.mzML' not in exported or exported['a.mzML'].isna().all()
+    assert 'Peak area' not in exported or exported['Peak area'].isna().all()
+
+
 def test_independent_nae_does_not_take_representative_or_feature_top3(tmp_path):
     data = cohort().iloc[:3].copy()
     independent = row('NAE(18:2)', score=100, result_rank_scope='nae', counts_toward_topn=False)

@@ -15,13 +15,13 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 
-from lipidbench.utils.chromatographic_peaks import resolve_eic_peaks
+from lipidbench.utils.chromatographic_peaks import PEAK_BOUNDARY_VERSION, resolve_eic_peaks
 from lipidgate.pymzml_compat import prepare_pymzml
 from lipidgate.project import project_input_paths
 from .ms1_evidence import confirmed_ms1_precursor
 
 
-MEMBERSHIP_VERSION = 2
+MEMBERSHIP_VERSION = 5
 MEMBERSHIP_COLUMNS = (
     "chromatographic_apex_rt_raw_min", "chromatographic_peak_id",
     "chromatographic_peak_apices_json", "chromatographic_membership_reason",
@@ -112,8 +112,33 @@ def _stream_traces(path, queries, ppm, da=None):
         reader.close()
 
 
-def _profile_memberships(path, rows, ppm, da=None):
+def _include_native_context(queries, native_anchors, ppm, da):
+    """Cover real detector intervals and one neighboring native peak per side.
+
+    A short MS2-centered window can start halfway down a neighboring peak and
+    reject a perfectly real native peak as clipped. Only same-mass native
+    intervals can extend this read context; it never changes quantitative edges.
+    """
+    for query in queries:
+        tolerance = da if da is not None else query["mz"] * ppm * 1e-6
+        bounded = sorted((entry for entry in native_anchors if len(entry) == 4
+                          and abs(entry[0] - query["mz"]) <= tolerance), key=lambda entry: entry[1])
+        relevant = [index for index, (_, apex, left, right) in enumerate(bounded)
+                    if query["lower"] <= apex <= query["upper"]
+                    or (left <= query["upper"] and right >= query["lower"])]
+        if not relevant:
+            continue
+        context = bounded[max(0, relevant[0] - 1):relevant[-1] + 2]
+        left = min(entry[2] for entry in context)
+        right = max(entry[3] for entry in context)
+        padding = max(.05, min(.15, .1 * (right - left)))
+        query["lower"] = min(query["lower"], max(0., left - padding))
+        query["upper"] = max(query["upper"], right + padding)
+
+
+def _profile_memberships(path, rows, ppm, da=None, native_anchors=()):
     queries = _queries(rows, ppm, da)
+    _include_native_context(queries, native_anchors, ppm, da)
     _stream_traces(path, queries, ppm, da)
     records = {}
     for query in queries:
@@ -122,7 +147,11 @@ def _profile_memberships(path, rows, ppm, da=None):
         # Duplicate scan times cannot form a chromatographic interval.
         unique, positions = np.unique(times, return_index=True)
         times, values = unique, values[positions]
-        peaks = resolve_eic_peaks(times * 60., values, min_fwhm=3., sn=3., filter_width=False)
+        window = da if da is not None else query["mz"] * ppm * 1e-6
+        anchors = [entry[1] * 60. for entry in native_anchors
+                   if abs(entry[0] - query["mz"]) <= window
+                   and query["lower"] <= entry[1] <= query["upper"]]
+        peaks = resolve_eic_peaks(times * 60., values, sn=3., native_apices=anchors)
         apices = [float(times[peak.apex]) for peak in peaks]
         encoded = json.dumps(apices, separators=(",", ":"))
         for row in query["rows"]:
@@ -136,7 +165,8 @@ def _profile_memberships(path, rows, ppm, da=None):
     return records
 
 
-def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cache=True, mz_da=None):
+def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cache=True, mz_da=None,
+                                       native_features=None):
     """Locate each spectrum's real peak without affecting local feature links.
 
     A small cache is replaced per input dataset, with scan coordinates, input
@@ -163,7 +193,29 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
             request.setdefault(name, []).append(dict(scan=_text(row["scan_id"]), mz=float(mz), seed=seed))
     if not request:
         return data
-    identity = {"version": MEMBERSHIP_VERSION, "ppm": mz_ppm, "da": mz_da, "requests": request,
+    native_anchors = {}
+    if native_features is not None and {"source_file", "mz", "RT"}.issubset(native_features):
+        for _, row in native_features.iterrows():
+            mass = pd.to_numeric(row["mz"], errors="coerce")
+            apex = pd.to_numeric(row.get("observed_eic_apex_rt_sec"), errors="coerce") / 60.
+            if not np.isfinite(apex):
+                apex = pd.to_numeric(row["RT"], errors="coerce")
+                if _text(row.get("RT_unit", "")).casefold() in {"s", "second", "seconds", "sec"}:
+                    apex /= 60.
+            if np.isfinite(mass) and mass > 0 and np.isfinite(apex):
+                name = Path(_text(row["source_file"])).name.casefold()
+                entry = [float(mass), float(apex)]
+                factor = 60. if _text(row.get("RT_unit", "")).casefold() in {"s", "second", "seconds", "sec"} else 1.
+                left = pd.to_numeric(row.get("detector_rt_left_sec"), errors="coerce") / 60.
+                right = pd.to_numeric(row.get("detector_rt_right_sec"), errors="coerce") / 60.
+                if not (np.isfinite(left) and np.isfinite(right) and left < right):
+                    left = pd.to_numeric(row.get("RTmin"), errors="coerce") / factor
+                    right = pd.to_numeric(row.get("RTmax"), errors="coerce") / factor
+                if np.isfinite(left) and np.isfinite(right) and left <= apex <= right and left < right:
+                    entry.extend([float(left), float(right)])
+                native_anchors.setdefault(name, []).append(entry)
+    identity = {"version": MEMBERSHIP_VERSION, "boundary_version": PEAK_BOUNDARY_VERSION,
+                "ppm": mz_ppm, "da": mz_da, "requests": request, "native_anchors": native_anchors,
                 "inputs": {name: [str(paths[name]), paths[name].stat().st_size, paths[name].stat().st_mtime_ns]
                            for name in request}}
     signature = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -182,8 +234,11 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
     if not memberships:
         for name, rows in request.items():
             try:
-                memberships[name] = (_profile_memberships(paths[name], rows, mz_ppm, mz_da)
-                                     if mz_da is not None else _profile_memberships(paths[name], rows, mz_ppm))
+                if native_anchors.get(name):
+                    memberships[name] = _profile_memberships(paths[name], rows, mz_ppm, mz_da, native_anchors[name])
+                else:
+                    memberships[name] = (_profile_memberships(paths[name], rows, mz_ppm, mz_da)
+                                         if mz_da is not None else _profile_memberships(paths[name], rows, mz_ppm))
             except (OSError, ValueError, KeyError, TypeError, ET.ParseError):
                 # A missing/invalid raw input does not invalidate saved results.
                 memberships[name] = {}
@@ -197,6 +252,8 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
             except OSError:
                 pass
     out = data.copy()
+    out["chromatographic_native_anchors"] = [bool(native_anchors.get(Path(_text(name)).name.casefold()))
+                                            for name in data.source_file]
     for position, column in enumerate(MEMBERSHIP_COLUMNS):
         out[column] = [memberships.get(Path(_text(row.source_file)).name.casefold(), {})
                        .get(_text(row.scan_id), [None, "", "[]", "raw_data_unavailable"])[position]

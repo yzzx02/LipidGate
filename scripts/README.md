@@ -26,6 +26,10 @@
 - `build_native_search.py`, `build_native_policy.py`: strict C++ numerical
   matching and direct compilation of existing policy source; optional for
   source execution and included in Windows release builds.
+- `build_native_bridge.py`: optional CPython interface to the numerical kernel,
+  prepared pool/count plans and exact record-revision validation. Verify source,
+  binary and ABI fingerprints; retain reference fallback for unsupported numeric
+  types, modified slot descriptors or missing native binaries.
 - `lipidgate_desktop.py`, `qt_runtime.py`: desktop entry and Qt DLL setup.
 - `check_frozen_release.py`: packaged application verification.
 - `freeze_windows_release.py`: tested Windows packaging and fingerprints.
@@ -36,6 +40,9 @@
 - `benchmark_ms2_search_perf.py`: generic search performance comparison.
 - `curate_*.py`, annotation normalization and adduct pruning scripts: explicit
   library maintenance with regression coverage. These are not startup steps.
+- `curate_positive_lpc_sodium.py`: add the 77 permitted position-independent
+  sodium LPC compositions with mandatory NL59, four ordinary fragments and
+  HG/Other75/25; verify all unrelated source blocks and their order before install.
 
 See [native search measurements](../docs/native_search_benchmark.md) for the
 measured stages, original LipidIN EQ comparison and reproducibility conditions.

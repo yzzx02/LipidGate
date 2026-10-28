@@ -1,0 +1,45 @@
+{
+  "checkpoint": "gui_ms1_survey_revision_20261028",
+  "date": "2026-10-28",
+  "release_kind": "Source GUI correction; no executable packaging or GitHub publication",
+  "preceding_manifest": "ms1_peak_context_correction_20261028.json",
+  "product_code_sha256": "f65be4fcb48fb5b7d25e5ac2af05b3de6fa9e40b38dd61d52c93fe3f4f1b7fb3",
+  "preceding_product_code_sha256": "f9014a5e879c19e077dc0fa608f1df1ae9b6401644bfb354892bc786ece6327c",
+  "ms1_runtime_sha256": "2033c6d03e62078f22aa94e2690fc3413a555a769904176570e9a9998e9cd5fa",
+  "ms2_rules_sha256": "c67a147cf7fc5bf8164abcf3f7eecae5467d37f9e73de2613b09074d1815a1ab",
+  "scientific_code_unchanged": true,
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "index_sha256": "53b11992486dd675c7c30694d2fedc5a0e9b7139bfc4c8982e9b5baededc13f0"
+    },
+    "negative": {
+      "source_gzip_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "source_gzip_bytes": 39395074,
+      "index_sha256": "8f4807fcb7976ca72474d9139f7b55e1e6f75679dcf2ff76430d705045898ba0"
+    }
+  },
+  "display": {
+    "eic_rt_window_subtitle": false,
+    "selection": "Single or double EIC click reads nearest actual MS1 scan without resetting EIC zoom",
+    "default_survey_focus": "precursor +/-3 Da",
+    "precursor_highlight": "nearest positive-intensity measured peak within the current EIC ppm tolerance, drawn red at its actual height",
+    "missing_measured_precursor": "no artificial line or highlight",
+    "full_height_precursor_marker": false,
+    "complete_acquired_scan_retained": true,
+    "reset_restores_full_scan": true,
+    "display_thinning_retains_real_precursor": true
+  },
+  "verification": {
+    "pytest_test_functions": 1343,
+    "pytest_subtests": 3118,
+    "junit_test_cases": 4461,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "actual_survey_preview_verified": true,
+    "measured_red_stick_and_no_full_height_marker_pixel_checked": true,
+    "qt_and_openms_paths_separate": true
+  }
+}

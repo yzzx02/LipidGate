@@ -20,7 +20,9 @@ import sys
 POLICY_MODULES = (
     "scoring", "gate_policy", "resolution_policy", "oxidized_fragment_policy",
     "chain_utils", "matching", "record_facts", "indexed_library", "ranking_policy",
-    "scoring_policy", "evidence_policy", "search",
+    "scoring_policy", "evidence_policy", "search", "search_plan", "native_plan",
+    "sphingolipid_scoring",
+    "equivalent_candidates", "native_engine", "prepared_scoring",
 )
 
 

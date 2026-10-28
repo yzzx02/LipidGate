@@ -9,6 +9,75 @@ from lipidgate.ms2.rules import DEFAULT_RULES
 from lipidgate.ms2.scoring import score_candidate
 
 
+def test_peak_facts_expire_at_end_of_each_search():
+    calls = []
+    @record_facts.cached_spectrum_fact
+    def base(spectrum):
+        calls.append(spectrum)
+        return max(p.intensity for p in spectrum.peaks)
+    @record_facts.with_search_facts
+    def search(self, spectrum):
+        record_facts.enable_spectrum_facts(spectrum)
+        assert base(spectrum) == base(spectrum)
+        return base(spectrum)
+    spectrum = ExperimentalSpectrum('scope', 500., 1., '+', normalize_peaks([(100., 5.)]))
+    assert search(object(), spectrum) == 5.
+    assert len(calls) == 1
+    spectrum.peaks = normalize_peaks([(100., 10.)])
+    assert search(object(), spectrum) == 10.
+    assert len(calls) == 2
+    assert record_facts._current_spectrum_facts.get() is None
+
+
+def test_custom_peak_values_retain_uncached_reference_calls():
+    class Number(float):
+        pass
+    from lipidgate.ms2.models import ExperimentalPeak
+    spectrum = ExperimentalSpectrum('custom', 500., 1., '+', [ExperimentalPeak(100., Number(5.), 1.)])
+    calls = []
+    @record_facts.cached_spectrum_fact
+    def value(spectrum):
+        calls.append(spectrum)
+        return spectrum.peaks[0].intensity
+    @record_facts.with_search_facts
+    def search(self, spectrum):
+        record_facts.enable_spectrum_facts(spectrum)
+        value(spectrum)
+        value(spectrum)
+    search(object(), spectrum)
+    assert len(calls) == 2
+    assert record_facts._current_spectrum_facts.get() is None
+
+
+def test_match_decisions_are_reused_only_within_a_candidate_call():
+    calls=[]
+    @record_facts.cached_match_fact
+    def count(record,matches):
+        calls.append(matches)
+        return len(matches)
+    @record_facts.with_record_facts
+    def score(spectrum,record,matches):
+        assert count(record,matches)==len(matches)
+        return count(record,matches)
+    record=object();matches=(object(),object())
+    assert score(None,record,matches)==2
+    assert len(calls)==1
+    assert score(None,record,matches)==2
+    assert len(calls)==2
+    assert record_facts._current_facts.get() is None
+
+
+def test_mutable_matches_keep_reference_behavior_inside_a_scope():
+    @record_facts.cached_match_fact
+    def count(record,matches):return len(matches)
+    @record_facts.with_record_facts
+    def score(spectrum,record,matches):
+        before=count(record,matches)
+        matches.append(object())
+        return before,count(record,matches)
+    assert score(None,object(),[object()])==(1,2)
+
+
 def test_candidate_scores_refresh_after_custom_record_edits():
     record = LibraryRecord(1, "PC", "PC(34:1)", "PC(16:0_18:1)", 818.593,
                            "[M+CH3COO]-", fragments=[
@@ -113,3 +182,29 @@ def test_fragment_facts_keep_occurrences_matched_state_and_lifetime():
     assert score(None, record) == 3
     assert score(None, record) == 6
     assert record_facts._current_facts.get() is None
+
+
+@pytest.mark.parametrize("adduct", ["[M+H]+", "[M-H]-"])
+def test_static_pool_routing_shares_matched_states_only_within_one_score(adduct):
+    calls = []
+    fragment = FragmentRecord(100, "support", "Common")
+    duplicate = FragmentRecord(100, "support", "Common")
+    record = LibraryRecord(1, "PC", "PC", "PC", 500, adduct)
+
+    @record_facts.cached_fragment_fact(matched_independent=True)
+    def route(record, fragment, *, matched):
+        calls.append(id(fragment))
+        return ("other",)
+
+    @record_facts.with_record_facts
+    def score(spectrum, record):
+        assert route(record, fragment, matched=False) == ("other",)
+        assert route(record, fragment, matched=True) == ("other",)
+        assert route(record, duplicate, matched=True) == ("other",)
+
+    score(None, record)
+    assert calls == [id(fragment), id(duplicate)]
+    score(None, record)
+    assert len(calls) == 4
+    assert record_facts._current_facts.get() is None
+# Query facts are scoped to one canonical invocation, never to a saved result.

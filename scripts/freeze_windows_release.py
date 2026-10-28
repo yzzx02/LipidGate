@@ -67,6 +67,7 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
     from lipidgate.ms2.indexed_library import INDEX_FORMAT_VERSION, RECORD_ENCODING, MAX_CACHED_BLOCKS, BLOCK_SIZE
     from lipidgate.ms2.library import LIBRARY_CACHE_VERSION
     from lipidgate.ms2.provenance import code_fingerprint, sha256
+    from lipidbench.utils.chromatographic_peaks import PEAK_BOUNDARY_VERSION
 
     suites = list(ET.parse(tests_xml).getroot().iter("testsuite"))
     if not suites or any(int(s.get("failures",0))+int(s.get("errors",0)) for s in suites):
@@ -86,6 +87,12 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
     if tuple(map(int, version.split("."))) >= (1, 0, 2) and not all(frozen.get(key) for key in
             ("project_file_verified", "isotope_export_verified")):
         raise ValueError("Named project recovery and measured isotope export must pass before packaging")
+    if tuple(map(int, version.split("."))) >= (1, 0, 6) and (
+            not all(frozen.get(key) for key in ("ms1_survey_verified", "ms1_boundary_verified"))
+            or frozen.get("ms1_boundary_version") != PEAK_BOUNDARY_VERSION):
+        raise ValueError("EIC-click MS1 surveys and measured-boundary correction must pass before packaging")
+    if tuple(map(int, version.split("."))) >= (1, 0, 7) and not frozen.get("isotope_detail_verified"):
+        raise ValueError("Measured isotope details must pass before packaging")
     rules = code_fingerprint(root / "src" / "lipidgate" / "ms2")
     verification = dict(junit_test_cases=tests, skipped=sum(int(s.get("skipped",0)) for s in suites),
                         failures=0, errors=0, frozen=frozen)
@@ -112,6 +119,9 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
             numeric_kernel=json.loads(kernel_manifest.read_text(encoding="utf-8")),
             policy_extensions=json.loads(policy_manifest.read_text(encoding="utf-8")),
         )
+        bridge_manifest = native_dir / "search_bridge.json"
+        if bridge_manifest.is_file():
+            manifest["native_backends"]["CPython_numeric_adapter"] = json.loads(bridge_manifest.read_text(encoding="utf-8"))
     for mode in ("positive","negative"):
         prebuilt = root / "build" / "prebuilt_libraries"
         metadata = json.loads((prebuilt / f"current_{mode}.catalog.json").read_text())

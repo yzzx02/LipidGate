@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import argparse
+import math
 from pathlib import Path
 import site
 
@@ -107,14 +108,13 @@ def _feature_rt_bounds(feature) -> tuple[float, float]:
         box = hull.getBoundingBox()
         lower = float(box.minPosition()[0])
         upper = float(box.maxPosition()[0])
-        if upper >= lower:
+        if math.isfinite(lower) and math.isfinite(upper) and upper > lower:
             bounds.append((lower, upper))
     if bounds:
         return min(lower for lower, _ in bounds), max(upper for _, upper in bounds)
 
-    rt = float(feature.getRT())
-    width = max(float(feature.getWidth()), 0.0)
-    return rt - width / 2.0, rt + width / 2.0
+    # FWHM does not locate integration edges. No hull means no measured bounds.
+    return math.nan, math.nan
 
 
 def _consensus_feature_dataframe(feature_maps, consensus_map):
@@ -129,15 +129,16 @@ def _consensus_feature_dataframe(feature_maps, consensus_map):
         for handle in consensus_feature.getFeatureList():
             feature = feature_lookup.get((int(handle.getMapIndex()), int(handle.getUniqueId())))
             if feature is not None:
-                member_bounds.append(_feature_rt_bounds(feature))
+                lower, upper = _feature_rt_bounds(feature)
+                if math.isfinite(lower) and math.isfinite(upper):
+                    member_bounds.append((lower, upper))
         if member_bounds:
             bounds_by_id[int(consensus_feature.getUniqueId())] = (
                 min(lower for lower, _ in member_bounds),
                 max(upper for _, upper in member_bounds),
             )
         else:
-            rt = float(consensus_feature.getRT())
-            bounds_by_id[int(consensus_feature.getUniqueId())] = (rt, rt)
+            bounds_by_id[int(consensus_feature.getUniqueId())] = (math.nan, math.nan)
 
     table = consensus_map.get_df()
     table["consensus_uid"] = table.index.map(str)
@@ -270,8 +271,50 @@ def filter_feature_map_by_height(feature_map, minimum):
     return filtered
 
 
+def _local_split_detector(experiment, ms1_exp, oms, params):
+    """Re-detect a clear split in a small ROI; use DDA metadata to avoid blind repeats.
+
+    This never uses library names or MS2 scores. An MS1-only file has no DDA
+    requests and retains the complete local-redetection path.
+    """
+    import numpy as np
+    survey_times = np.asarray([scan.getRT() for scan in ms1_exp])
+    requests = []
+    previous = None
+    for scan in experiment:
+        if scan.getMSLevel() == 1:
+            previous = scan.getRT()
+        elif scan.getMSLevel() == 2 and previous is not None:
+            requests.extend((float(precursor.getMZ()), previous) for precursor in scan.getPrecursors()
+                            if precursor.getMZ() > 0)
+    requests.sort()
+    masses = np.asarray([mass for mass, _ in requests])
+    def redetect(lower, upper, target_mz):
+        if requests:
+            tolerance = target_mz * max(15., params["mz_tol"]) * 1e-6
+            start = int(np.searchsorted(masses, target_mz - tolerance, side="left"))
+            stop = int(np.searchsorted(masses, target_mz + tolerance, side="right"))
+            if not any(lower <= rt <= upper for _, rt in requests[start:stop]):
+                return oms.FeatureMap()
+        local = oms.MSExperiment()
+        lo = int(np.searchsorted(survey_times, lower, side="left"))
+        hi = int(np.searchsorted(survey_times, upper, side="right"))
+        for index in range(lo, hi):
+            scan = oms.MSSpectrum(ms1_exp[index])
+            mz, intensity = scan.get_peaks()
+            left, right = np.searchsorted(mz, [target_mz - 3.5, target_mz + 3.5])
+            # Retain real flanking centroids: an isolated target must not become
+            # an artificial first/last spectral point after ROI cropping.
+            left, right = max(0, int(left) - 1), min(len(mz), int(right) + 1)
+            scan.set_peaks((mz[left:right], intensity[left:right]))
+            local.addSpectrum(scan)
+        return detect_feature_map(local, **params, refine_bounds=False)
+    redetect.trigger = "ms2_precursor_metadata" if requests else "clear_eic_valley"
+    return redetect
+
+
 def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
-                       min_peak_height=0.0):
+                       min_peak_height=0.0, refine_bounds=True):
     """OpenMS detection, followed by raw-EIC quantification of existing apices."""
     oms = _get_oms()
     ms1_exp = oms.MSExperiment()
@@ -282,6 +325,8 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
         return oms.FeatureMap()
     mass_traces = []
     mtd = oms.MassTraceDetection()
+    if not refine_bounds:
+        mtd.setLogType(oms.LogType.NONE)
     mtd_par = mtd.getDefaults()
     mtd_par.setValue(b"mass_error_ppm", mz_tol)
     mtd_par.setValue(b"noise_threshold_int", noise)
@@ -294,6 +339,8 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     mass_traces_deconvol = []
     epd = oms.ElutionPeakDetection()
+    if not refine_bounds:
+        epd.setLogType(oms.LogType.NONE)
     epd_par = epd.getDefaults()
     epd_par.setValue(b"min_fwhm", min_fwhm)
     epd_par.setValue(b"max_fwhm", max_fwhm)
@@ -303,6 +350,8 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     feature_map = oms.FeatureMap()
     ffm = oms.FeatureFindingMetabo()
+    if not refine_bounds:
+        ffm.setLogType(oms.LogType.NONE)
     ffm_par = ffm.getDefaults()
     ffm_par.setValue(b"local_rt_range", 8.0)
     ffm_par.setValue(b"local_mz_range", 3.5)
@@ -314,11 +363,15 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     feature_map = filter_feature_map_by_height(feature_map, min_peak_height)
     feature_map.setUniqueIds()
+    if not refine_bounds:
+        return feature_map
     from lipidbench.utils.feature_quantification import refine_feature_map
 
+    split_detector = _local_split_detector(exp, ms1_exp, oms, dict(mz_tol=mz_tol,
+        min_fwhm=min_fwhm, max_fwhm=max_fwhm, noise=noise, sn=sn, min_peak_height=min_peak_height))
+
     return refine_feature_map(
-        ms1_exp, feature_map, oms=oms, mz_tol=mz_tol, min_fwhm=min_fwhm,
-        max_fwhm=max_fwhm, min_peak_height=min_peak_height, sn=sn,
+        ms1_exp, feature_map, oms=oms, mz_tol=mz_tol, split_detector=split_detector,
     )
 
 
@@ -348,6 +401,10 @@ def single_feature_dataframe(feature_map, source_file=None):
         for key in QUANTIFICATION_META:
             if feature.metaValueExists(key):
                 row[key] = feature.getMetaValue(key)
+        if not (math.isfinite(lower) and math.isfinite(upper)):
+            row["peak_boundary_method"] = "unresolved_detector_bounds"
+            row["peak_boundary_status"] = "unresolved"
+            row.setdefault("peak_boundary_reason", "missing_detector_bounds")
         rows.append(row)
     columns = ["Feature_ID", "native_uid", "mz", "RT", "RTmin", "RTmax", "RT_unit", "intensity", "FWHM", "charge", "quality"]
     if source_file is not None:
@@ -377,7 +434,8 @@ def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000,
         feature_map = detect_feature_map(exp, mz_tol=mz_tol, min_fwhm=min_fwhm,
                                          max_fwhm=max_fwhm, noise=noise, sn=sn,
                                          min_peak_height=min_peak_height)
-        feature_map.setUniqueIds()
+        # Detection assigned real IDs, including local redetections. Reassigning
+        # them here would invalidate each split feature's parent reference.
         feature_map.setPrimaryMSRunPath([filename.encode()])
         feature_maps.append(feature_map)
         native = single_feature_dataframe(feature_map, file.name)

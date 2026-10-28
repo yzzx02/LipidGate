@@ -57,17 +57,20 @@ def build_original_rank_tiers(
         if scores_tied(result.total_score, highest_score)
     ]
     maximum_fragments_by_class: dict[str, int] = {}
+    fragment_counts = {}
     for result in raw_top_tier:
         result_class = class_key(result.record.compound_class)
+        count = multiplicity_adjusted_fragment_count(result)
+        fragment_counts[id(result)] = count
         maximum_fragments_by_class[result_class] = max(
             maximum_fragments_by_class.get(result_class, 0),
-            multiplicity_adjusted_fragment_count(result),
+            count,
         )
 
     top1_tier = [
         result
         for result in raw_top_tier
-        if multiplicity_adjusted_fragment_count(result)
+        if fragment_counts[id(result)]
         == maximum_fragments_by_class[class_key(result.record.compound_class)]
     ]
     top1_ids = {id(result) for result in top1_tier}

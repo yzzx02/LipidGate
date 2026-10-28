@@ -14,6 +14,7 @@ from .chain_utils import (
     extract_fragment_chain_token,
 )
 from .models import FragmentMatch, FragmentRecord, LibraryRecord
+from .record_facts import cached_record_fact, cached_fragment_fact, cached_match_fact
 
 
 CHAIN_LEVEL_INFO_MISSING_REASON = "missing_chain_level_information"
@@ -166,6 +167,7 @@ def _normalized_class_text(text: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "", text.upper())
 
 
+@cached_record_fact
 def record_polarity(record: LibraryRecord) -> str:
     adduct = str(record.adduct or "").strip()
     if adduct.endswith("+"):
@@ -175,6 +177,7 @@ def record_polarity(record: LibraryRecord) -> str:
     return "+" if str(record.polarity or "").strip().startswith("+") else "-"
 
 
+@cached_record_fact
 def get_chain_evidence_profile(record: LibraryRecord) -> ChainEvidenceProfile | None:
     class_key = normalized_class_key(record.compound_class)
     if class_key == "PE" and str(record.adduct).strip() == "[M+Na]+":
@@ -190,6 +193,7 @@ def get_chain_evidence_profile(record: LibraryRecord) -> ChainEvidenceProfile | 
     )
 
 
+@cached_fragment_fact
 def fragment_is_chain_evidence(record: LibraryRecord, fragment: FragmentRecord) -> bool:
     profile = get_chain_evidence_profile(record)
     if profile is None:
@@ -198,9 +202,15 @@ def fragment_is_chain_evidence(record: LibraryRecord, fragment: FragmentRecord) 
 
 
 def _compact_name(name: object) -> str:
-    return re.sub(r"\s+", "", str(name or "")).upper()
+    return _compact_name_text(str(name or ""))
 
 
+@lru_cache(maxsize=4096)
+def _compact_name_text(text: str) -> str:
+    return re.sub(r"\s+", "", text).upper()
+
+
+@cached_match_fact
 def positive_phospholipid_chain_resolution(
     record: LibraryRecord, matches: Sequence[FragmentMatch],
 ) -> tuple[str, str] | None:
@@ -267,6 +277,12 @@ def required_chain_evidence_hits(record: LibraryRecord, profile: ChainEvidencePr
     raise ValueError(f"Unsupported chain evidence coverage: {profile.required_coverage}")
 
 
+@cached_record_fact
+def _library_profile_required_hits(record):
+    profile = get_chain_evidence_profile(record)
+    return 0 if profile is None else required_chain_evidence_hits(record, profile)
+
+
 def profile_chain_resolution(
     record: LibraryRecord,
     matches: Sequence[FragmentMatch],
@@ -279,7 +295,7 @@ def profile_chain_resolution(
     decision = positive_phospholipid_chain_resolution(record, matches)
     if decision is not None:
         return decision
-    required_hits = required_chain_evidence_hits(record, profile)
+    required_hits = _library_profile_required_hits(record)
     if required_hits <= 0:
         if profile.applies_without_library_evidence and profile.species_fallback_without_chain:
             return "species_level", CHAIN_LEVEL_INFO_MISSING_REASON

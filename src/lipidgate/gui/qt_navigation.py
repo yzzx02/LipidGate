@@ -352,7 +352,6 @@ class NavigationPlot(QtWidgets.QWidget):
         self._history = [self.limits]
         self._history_position = 0
         self.canvas = _Canvas(self)
-        self.canvas.setToolTip("选中特征显示明确的加合物连线；轴上右键：右拖/上拖放大，左拖/下拖缩小；纵轴固定最低值；左键拖动平移；图内滚轮缩放")
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 2)
         toolbar.setSpacing(3)
