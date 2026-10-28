@@ -39,6 +39,18 @@ def bank(tmp_path):
     return IndexedLibrary(path)
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows runtime dependency check')
+def test_windows_adapter_has_no_external_compiler_runtime_dependency(bridge):
+    pefile = pytest.importorskip('pefile')
+    binary = pefile.PE(bridge.__file__, fast_load=True)
+    try:
+        binary.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+        dependencies = {entry.dll.decode('ascii').lower() for entry in binary.DIRECTORY_ENTRY_IMPORT}
+    finally:
+        binary.close()
+    assert not any(name.startswith(('libwinpthread', 'libstdc++', 'libgcc')) for name in dependencies), dependencies
+
+
 @pytest.mark.parametrize('kind',[float,np.float32,np.float64])
 @pytest.mark.parametrize('unit',['da','ppm'])
 def test_adapter_exactly_matches_C_ABI_for_overlaps_duplicates_and_ties(tmp_path,native,bridge,kind,unit):

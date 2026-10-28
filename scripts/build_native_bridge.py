@@ -12,11 +12,16 @@ def ensure_bridge(root: Path, compiler=None, *, force=False):
     source_hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
     flags=['-std=c++17','-O3','-shared','-ffp-contract=off','-fno-fast-math']
     flags+=['-static-libgcc','-static-libstdc++'] if sys.platform=='win32' else ['-fPIC','-fvisibility=hidden']
+    # Match the numeric kernel: MinGW's static C++ archive may itself need
+    # winpthreads. Resolve both archives as a group after the source objects.
+    link_flags=(['-Wl,-Bstatic,--start-group','-lstdc++','-lwinpthread',
+                 '-Wl,--end-group,-Bdynamic'] if sys.platform=='win32' else [])
     identity=dict(api_version=1,python_abi=list(sys.version_info[:2]),platform=sys.platform,machine=platform.machine())
     if not force and not compiler and binary.is_file() and manifest.is_file():
         prior=json.loads(manifest.read_text(encoding='utf-8'))
         if (all(prior.get(k)==v for k,v in identity.items()) and prior.get('source_sha256')==source_hashes
-                and prior.get('flags')==flags and prior.get('binary_sha256')==hashlib.sha256(binary.read_bytes()).hexdigest()):
+                and prior.get('flags')==flags and prior.get('link_flags')==link_flags
+                and prior.get('binary_sha256')==hashlib.sha256(binary.read_bytes()).hexdigest()):
             return binary
     compiler=compiler or os.environ.get('CXX') or shutil.which('g++') or shutil.which('clang++')
     if not compiler and sys.platform=='win32':
@@ -29,9 +34,9 @@ def ensure_bridge(root: Path, compiler=None, *, force=False):
     command=[compiler,*flags,'-I'+sysconfig.get_path('include'),*(str(p) for p in sources)]
     if sys.platform=='win32':command.append(str(Path(sys.base_prefix)/'libs'/f'python{sys.version_info.major}{sys.version_info.minor}.lib'))
     elif sys.platform=='darwin':command+=['-undefined','dynamic_lookup']
-    subprocess.run([*command,'-o',str(target)],check=True,env=env)
+    subprocess.run([*command,*link_flags,'-o',str(target)],check=True,env=env)
     shutil.copy2(target,binary)
-    manifest.write_text(json.dumps(dict(identity,source_sha256=source_hashes,flags=flags,binary_name=binary.name,
+    manifest.write_text(json.dumps(dict(identity,source_sha256=source_hashes,flags=flags,link_flags=link_flags,binary_name=binary.name,
         binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         compiler=subprocess.check_output([compiler,'--version'],text=True).splitlines()[0]),indent=2)+'\n',encoding='utf-8')
     print('Native CPython adapter:',binary.name,binary.stat().st_size,flush=True)
