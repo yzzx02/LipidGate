@@ -1,0 +1,99 @@
+{
+  "revision": "lpc_na_20261028",
+  "revision_date": "2026-10-28",
+  "preceding_revision": "glc_gp_20261021",
+  "preceding_manifest": "library_revision_glc_gp_20261021.json",
+  "last_local_executable_manifest": "release_v1.0.7.json",
+  "base_source_commit": "3719a62ce6c83622afdd7eaf5f6d541ad7a7a827",
+  "development_branch": "codex/search-scoring-20261022",
+  "application_source_version": "1.0.7",
+  "release_kind": "Unreleased source and verified local indexes; existing executable unchanged; no GitHub publication",
+  "ms2_rules_sha256": "80706606939590f79e53774e106c34a6a8cfbf1ebb700951f21fedd498b64477",
+  "product_code_sha256": "01f86efadaefc99a23551c941e68d4a8febb7e76d99c97152835bd3259195024",
+  "ms1_runtime_sha256": "4b70197b18fe7ff8eaf85f198a4d9af9cb68c9446f2f87f8196330f04cb8717f",
+  "cache_version": 43,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "raw_total_records": 2330152,
+  "runtime_total_records": 2342572,
+  "compound_classes": 166,
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241973,
+      "normalized_records": 1254393,
+      "classes": 110,
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "index_sha256": "6d635e9196416377ffdf919afafbe76b6df6fccdf064ef8377bd197500cf4007",
+      "index_bytes": 74473472
+    },
+    "negative": {
+      "raw_source_records": 1088179,
+      "normalized_records": 1088179,
+      "classes": 118,
+      "source_gzip_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+      "source_gzip_bytes": 39395074,
+      "index_sha256": "f26be7426830050d9d323c8f7afd7e32d984a3167a25365024605936e8967f9d",
+      "index_bytes": 79130624
+    }
+  },
+  "curation": {
+    "status": "verified",
+    "scope": "LPC [M+Na]+ only",
+    "preserved_unrelated_positive_records": 1241896,
+    "unrelated_blocks_and_order": "preserved verbatim",
+    "added_records": 77,
+    "negative_source_content": "unchanged",
+    "whitelist_sha256": "0887380afa365926ea62f15d119b3d364de2f69a124a05c78adb7933f817cda3",
+    "chain_scope": "C10-C26, DB0-6, restricted to TRUE single-chain whitelist entries",
+    "fragments_per_record": 5,
+    "pool_counts": {
+      "HG": 1,
+      "FAH": 0,
+      "Other": 4
+    },
+    "pool_weights": {
+      "HG": 75,
+      "FAH": 0,
+      "Other": 25
+    },
+    "mandatory_hg": "NL C3H9N",
+    "hg_loss_da": 59.0734992945,
+    "other_support": [
+      "precursor",
+      "NL205.0479892",
+      "m/z104.1069905",
+      "m/z86.0964258"
+    ],
+    "position_claim": false,
+    "fragments_reference": "docs/lpc_sodium_fragments.md"
+  },
+  "ms1_policy": {
+    "boundary_version": 5,
+    "membership_version": 4,
+    "boundary_start": "actual native hull and apex; retain reasonable endpoints",
+    "split_requirement": "clear sustained raw-EIC valley plus a real local OpenMS detection; no synthetic feature IDs",
+    "native_split_provenance": "detector-origin, real parent native UID, seed and trigger retained through export",
+    "parameter_scope": "FWHM detection parameters are used only inside native detection; no post-detection width gate or width-derived bounds",
+    "identity_link": "one same-file native feature within mass tolerance and the exact measured native-anchored EIC apex",
+    "integration_and_association": "link restoration never widens quantitative boundaries or changes MS2 scores"
+  },
+  "verification": {
+    "pytest_test_functions": 1341,
+    "pytest_subtests": 3118,
+    "junit_test_cases": 4459,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "commands": [
+      "python -m pytest -q",
+      "python scripts/build_prebuilt_libraries.py",
+      "python scripts/check_repository_hygiene.py --include-untracked",
+      "git diff --check"
+    ],
+    "actual_production_run_verified": true,
+    "native_original_fields_and_split_parent_ids_preserved": true,
+    "gui_real_input_boundary_shading_verified": true,
+    "gui_pyopenms_import_absent": true
+  }
+}
