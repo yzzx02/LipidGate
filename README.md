@@ -6,7 +6,7 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 下载与运行
 
-从 [v1.0.3 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.3) 下载 **LipidGate-v1.0.3-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
+从 [v1.0.8 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.8) 下载 **LipidGate-v1.0.8-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
 
 1. 点击「新建项目」，在独立文件夹保存 `.lipidgate` 项目文件，再导入同一 LC 方法、同一离子模式的 mzML。已有项目通过「打开项目」选择具体文件恢复，旧版 `lipidgate.project.json` 也可打开。
 2. 设置 MS1 参数；默认使用 pyOpenMS，也可导入 MS-DIAL 特征表。
@@ -28,9 +28,9 @@ MS1 EIC 按需读取，默认显示 RT ±1 min；未关联的注释也能查看�
 
 结果导出区分 MS1 前体证据和检测峰关联状态，并保留实际峰面积。确认前体并不等于存在可积分的检测峰。每个 Feature 的「同位素」只保存代表 MS2 前一张 MS1 中的一组实测 m/z 与相对强度，附 RT、来源文件和提取状态。最终 CSV / Excel 不导出扫描号，逐谱证据不重复同位素；项目审计仍保留扫描记录。旧项目可直接从原始 mzML 补充，无需重新鉴定。
 
-源码开发版按合格 Top1 的支持样本数选择主鉴定，每个样本最多贡献一次；样本内有高置信分歧或 Top1 并列时不强行投票。同名候选汇总为最佳完整记录，FA、NAE 独立于主候选。CSV、Excel 和浏览器主表均为每个特征一行，其他候选和高置信差异单独保留；普通浏览按需读取逐谱审计，详见 [特征级汇总](docs/feature_top3_results.md)。
+主鉴定按合格 Top1 的支持样本数选择主鉴定，每个样本最多贡献一次；样本内有高置信分歧或 Top1 并列时不强行投票。同名候选汇总为最佳完整记录，FA、NAE 独立于主候选。CSV、Excel 和浏览器主表均为每个特征一行，其他候选和高置信差异单独保留；普通浏览按需读取逐谱审计，详见 [特征级汇总](docs/feature_top3_results.md)。
 
-特征导航图在选中特征时，以细灰线连接当前可见、证据完整且离子解释唯一的加合物峰。鼠标悬停可查看各峰的 Adduct；普通结果表保留 Adduct，不增加联系列或联系工作表。关联与读取失败原因保存在项目及审计中，不参与谱库筛选或评分。当前 v1.0.3 程序包尚未包含这些源码改动，详见 [方法与验证](docs/adduct_relationships.md)。
+特征导航图在选中特征时，以细灰线连接当前可见、证据完整且离子解释唯一的加合物峰。鼠标悬停可查看各峰的 Adduct；普通结果表保留 Adduct，不增加联系列或联系工作表。关联与读取失败原因保存在项目及审计中，不参与谱库筛选或评分。详见 [方法与验证](docs/adduct_relationships.md)。
 
 ## 资源使用
 
@@ -42,7 +42,7 @@ Windows 包携带紧凑运行索引和已编译的检索扩展，索引按需还
 
 开发环境使用 Python 3.13 构建并验证；项目声明支持 Python 3.10 及以上，其他版本需自行验证。Windows 普通用户优先下载程序包。参与开发、文件命名和提交范围见 [贡献指南](CONTRIBUTING.md)。
 
-可下载 Release 中的 **LipidGate-v1.0.3-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
+可下载 Release 中的 **LipidGate-v1.0.8-Source.zip**，它包含实际谱库文件；也可通过 Git LFS 克隆：
 
 ```powershell
 git lfs install
@@ -58,7 +58,7 @@ python -m lipidgate gui
 
 首次从 MSP 生成索引是开发构建步骤，需要额外时间和内存；后续运行复用索引。GitHub 自动生成的 `Source code (zip/tar.gz)` 可能只有 Git LFS 指针，请使用提供的 Source 包或执行 `git lfs pull`。
 
-v1.0.3 Windows 版已内置 C++ 批量匹配内核及直接编译的评分、门控和排序等策略，保留原规则、候选次序和 Python/NumPy 数值行为。源码环境可在生成索引前执行 `python scripts/build_native_search.py` 和 `python scripts/build_native_policy.py`；需要 GCC/Clang C++17 编译器和 Cython 3.3.0，Windows 可使用 Rtools45。未构建或不兼容的扩展使用 Python 源码。详见 [构建说明](docs/windows_exe.md) 与 [完整检索及 LipidIN 原生 EQ 实测](docs/native_search_benchmark.md)。
+v1.0.8 Windows 版已内置 C++ 批量匹配内核及直接编译的评分、门控和排序等策略，保留原规则、候选次序和 Python/NumPy 数值行为。源码环境可在生成索引前执行 `python scripts/build_native_search.py` 和 `python scripts/build_native_policy.py`；需要 GCC/Clang C++17 编译器和 Cython 3.3.0，Windows 可使用 Rtools45。未构建或不兼容的扩展使用 Python 源码。详见 [构建说明](docs/windows_exe.md) 与 [完整检索及 LipidIN 原生 EQ 实测](docs/native_search_benchmark.md)。
 
 ```powershell
 python -m lipidgate --help
