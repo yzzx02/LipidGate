@@ -1,0 +1,158 @@
+{
+  "revision": "ether_lyso_20261106",
+  "release": "1.0.9",
+  "preceding_source_checkpoint": "lpe_positive_mass_pending_20261102.json",
+  "ms2_rules_sha256": "09aff9c9543d8cd2125305f865f4c52ccd3356461a6d46e286d9688a12d8e755",
+  "libraries": {
+    "positive": {
+      "source_records": 1241973,
+      "changed_records": 171,
+      "source_before_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "curation_stages": [
+        {
+          "target_records": 54,
+          "changed_records": 54,
+          "preserved_records": 1241919,
+          "preserved_records_sha256": "b6f611e753acf68f8970c7c1e5f8fd2166b3c939517a20a105fd3afe4c6a8581",
+          "source_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+          "output_sha256": "810ef8e40d77f899839ff9c95cfda591a6ed69c1ebf5803f41ed5b5e761484d6",
+          "output_bytes": 23894586,
+          "fragments_per_target": 5,
+          "pool_counts": {
+            "HG": 1,
+            "precursor": 1,
+            "Other": 3
+          },
+          "pool_weights": {
+            "HG": 60,
+            "precursor": 20,
+            "Other": 20
+          },
+          "scope": "LPC-O/P [M+H]+ only; source identities, unrelated blocks and their order preserved"
+        },
+        {
+          "target_records": 117,
+          "changed_records": 117,
+          "preserved_records": 1241856,
+          "preserved_records_sha256": "9e3a61cfa07d73317864cf9b706d2401e6116829bcf38bf18bddea980a88be7b",
+          "source_sha256": "810ef8e40d77f899839ff9c95cfda591a6ed69c1ebf5803f41ed5b5e761484d6",
+          "output_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+          "output_bytes": 23894631,
+          "fragments_per_target": 5,
+          "pool_counts": {
+            "HG": 2,
+            "Other": 3
+          },
+          "pool_weights": {
+            "HG": 75,
+            "Other": 25
+          },
+          "scope": "LPE-P [M+H]+ only; correct NL172.013675/NL154.003110 and labels, retain two-HG gate and source identities/order"
+        }
+      ],
+      "total_index_records": 1254393,
+      "preserved_index_records": 1254222,
+      "changed_index_records": {
+        "LPC-O": 54,
+        "LPE-P": 117
+      },
+      "unchanged_precursor_order": true,
+      "source_identity_fields_preserved": true,
+      "index_sha256": "28a52e46531bc73f5b977ca1b186a5e97c572392a87e5e7d98cd936b4a9bc0cf",
+      "index_bytes": 74473472,
+      "rules_sha256": "09aff9c9543d8cd2125305f865f4c52ccd3356461a6d46e286d9688a12d8e755"
+    },
+    "negative": {
+      "source_records": 1088179,
+      "changed_records": 246,
+      "source_before_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "curation_stages": [
+        {
+          "target_records": 138,
+          "changed_records": 138,
+          "preserved_records": 1088041,
+          "preserved_records_sha256": "8450062b9ffdb6b3b415a820a4ac54308471a311dfdd8a87cd97c7de8ac14d63",
+          "source_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+          "output_sha256": "5ec8c417c4e0d11218479109c1741adab2a8f67f7cb5edb596fb0af9761f8b62",
+          "output_bytes": 39394121,
+          "fragments_per_target": 7,
+          "pool_counts": {
+            "precursor": 1,
+            "HG": 2,
+            "Other": 4
+          },
+          "pool_weights": {
+            "precursor": 60,
+            "HG": 20,
+            "Other": 20
+          },
+          "scope": "LPE-O [M-H]- only; source identities, unrelated blocks and their order preserved"
+        },
+        {
+          "target_records": 108,
+          "changed_records": 108,
+          "preserved_records": 1088071,
+          "preserved_records_sha256": "3dee5f3c27453bf9e1f6cc79687d99ce4aecf5befcd9634b07bfa2fa621cda0d",
+          "source_sha256": "5ec8c417c4e0d11218479109c1741adab2a8f67f7cb5edb596fb0af9761f8b62",
+          "output_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+          "output_bytes": 39394998,
+          "fragments_per_target": 8,
+          "pool_counts": {
+            "HG": 1,
+            "Other": 7
+          },
+          "pool_weights": {
+            "HG": 75,
+            "Other": 25
+          },
+          "scope": "LPC-O formate/acetate only; source identities, unrelated blocks and their order preserved"
+        }
+      ],
+      "total_index_records": 1088179,
+      "preserved_index_records": 1087933,
+      "changed_index_records": {
+        "LPE-O": 138,
+        "LPC-O": 108
+      },
+      "unchanged_precursor_order": true,
+      "source_identity_fields_preserved": true,
+      "index_sha256": "0320fe772ea688ae15dfc9bdc7dd751edb0f137064fa5cf6cd2a3af7741af09b",
+      "index_bytes": 79130624,
+      "rules_sha256": "09aff9c9543d8cd2125305f865f4c52ccd3356461a6d46e286d9688a12d8e755"
+    }
+  },
+  "measured_spectrum_replay": {
+    "positive_ether_lyso": {
+      "compared_queries": 824,
+      "exact_output_matches": 824,
+      "candidate_counts": {
+        "historical/LPC-O": 136,
+        "historical/LPE-P": 99,
+        "historical/LPE-O": 16,
+        "current_defaults/LPC-O": 92,
+        "current_defaults/LPE-P": 77,
+        "current_defaults/LPE-O": 9
+      }
+    },
+    "negative_lpc": {
+      "compared_queries": 220,
+      "exact_output_matches": 220,
+      "candidate_counts": {
+        "historical/LPC-O": 64,
+        "current_defaults/LPC-O": 53
+      }
+    },
+    "negative_lpe": {
+      "compared_queries": 412,
+      "exact_output_matches": 412,
+      "candidate_counts": {
+        "historical/LPE-O": 194,
+        "current_defaults/LPE-O": 140
+      }
+    }
+  }
+}
