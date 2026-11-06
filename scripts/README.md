@@ -1,6 +1,21 @@
 # Maintenance tools
 
 - `build_prebuilt_libraries.py`: runtime mass indexes and catalogs.
+- `curate_positive_lpe.py`: positive LPE-P-only correction to
+  NL172.013675/NL154.003110 with formula annotations. Preserve the existing
+  two-HG gate, HG75/Other25 and all unrelated blocks/order.
+- `curate_positive_lpc_ether.py`: five-ion positive LPC-O/P curation.
+ 184-only gate, HG60 / optional precursor20 / Other20, no water-loss or240 support. Preserve source
+ identities and verify every unrelated block/order before installation.
+- `curate_negative_lpc.py`: negative ether LPC curation to the eight-ion
+  M-CH3-only HG75/Other25 definition. NL89 is from the neutral demethylated
+  ion and is independent of formate/acetate choice. Verify unaffected blocks
+  and order before installation.
+- `curate_negative_lpe.py`: revise only the existing negative LPE-O blocks to
+  precursor/HG/Other60/20/20, remove NL43 and153, and make140/NL61 the two HG ions.
+  Verify every unaffected block and its order in a separate deterministic
+  output before installation. The earlier `curate_negative_lpe_o_library.py`
+  is a historical RO-mass correction, not the current seven-ion definition.
 - `curate_negative_ptdglc.py`: rename historical PtdGlc to Glc-GP and build
   Glc-GP / 6-Ac-Glc-GP `[M-H]-` on the explicit C14–C26/DB0–6 whitelist.
   Use production MSP comments and the documented HG/FAH/Other roles.

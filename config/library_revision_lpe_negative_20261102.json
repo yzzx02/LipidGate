@@ -1,0 +1,319 @@
+{
+  "revision": "lpe_negative_20261102",
+  "revision_date": "2026-11-02",
+  "preceding_revision": "lpc_na_20261028",
+  "preceding_manifest": "library_revision_lpc_na_20261028.json",
+  "last_local_executable_manifest": "release_v1.0.8.json",
+  "base_source_commit": "402bbdd18779db5e5c6be68825e899a0045e3d94",
+  "development_branch": "codex/release-v1.0.8",
+  "application_source_version": "1.0.8",
+  "release_kind": "Unreleased source/library revision with verified rebuilt indexes; existing v1.0.8 executable and manifest unchanged; no publication",
+  "ms2_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+  "product_code_sha256": "9cb6ed4bc11c013bbdba403f8710281071cc0fa14917995ec500825beaf52217",
+  "ms1_runtime_sha256": "fbaaec5313595ecef78a28003e515dea00b335fbc75531eca924d8cc8895a7cb",
+  "cache_version": 43,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "raw_total_records": 2330152,
+  "runtime_total_records": 2342572,
+  "compound_classes": 166,
+  "libraries": {
+    "positive": {
+      "raw_source_records": 1241973,
+      "normalized_records": 1254393,
+      "classes": 110,
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "index_sha256": "c81446fb627a0d0be7a3dcf9e57aff03cacbdde9180a48ef74de7555b7d49dea",
+      "index_bytes": 74473472
+    },
+    "negative": {
+      "raw_source_records": 1088179,
+      "normalized_records": 1088179,
+      "classes": 118,
+      "source_gzip_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_gzip_bytes": 39394134,
+      "index_sha256": "d6337b843d2afbc6afd513dfad3f7651ce5e8cd18eca2fb5cfb8da03e69726b6",
+      "index_bytes": 79130624
+    }
+  },
+  "curation": {
+    "target_records": 138,
+    "changed_records": 138,
+    "preserved_records": 1088041,
+    "preserved_records_sha256": "8450062b9ffdb6b3b415a820a4ac54308471a311dfdd8a87cd97c7de8ac14d63",
+    "source_sha256": "93a604bed64b51c5600a1a53f4099b2eb94b89ff3751e1c4c5e3309cabe83b4e",
+    "output_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+    "output_bytes": 39394134,
+    "fragments_per_target": 8,
+    "pool_counts": {
+      "precursor": 1,
+      "HG": 2,
+      "Other": 5
+    },
+    "pool_weights": {
+      "precursor": 60,
+      "HG": 20,
+      "Other": 20
+    },
+    "scope": "LPE-O [M-H]- only; source identities, unrelated blocks and their order preserved",
+    "status": "verified then installed",
+    "positive_source_content": "unchanged",
+    "source_identities_formulas_precursors_order": "preserved",
+    "unrelated_record_lines_and_order": "full streaming comparison; line endings/blank separators canonicalized",
+    "annotation_correction": "196.0380: [C5H11NO5P]-; legacy label lacked one oxygen; mass unchanged"
+  },
+  "policy": {
+    "scope": "single-composition LPE-O [M-H]- only",
+    "remove": "NL43 and RO mandatory gate",
+    "required_groups": [
+      "observed MS2 precursor peak",
+      "at least one HG peak"
+    ],
+    "metadata_satisfies_precursor": false,
+    "pool_weights": {
+      "precursor": 60,
+      "HG": 20,
+      "Other": 20
+    },
+    "primary_score_audit_field": "fah_score (precursor evidence for this class)",
+    "HG": [
+      {
+        "mz": 140.0118,
+        "name": "[C2H7NO4P]-"
+      },
+      {
+        "neutral_loss_da": 61.05276384961,
+        "name": "[M-H-C2H7NO]-"
+      }
+    ],
+    "Other": [
+      "78.9591 [PO3]-",
+      "96.9696 [H2PO4]-",
+      "152.9953 [C3H6O5P]-",
+      "196.0380 [C5H11NO5P]-",
+      "composition-specific RO-"
+    ],
+    "resolution": "species_level",
+    "source_identity": "single O entry; no duplicate P record",
+    "saturated_output": "LPE(O-16:0)",
+    "unsaturated_output": "LPE(O-16:1)/LPE(P-16:0)",
+    "unsaturated_relation": "same carbon; P DB = O DB - 1",
+    "ecn_chain_count": 1,
+    "reference": "docs/ms2_final_policy.md"
+  },
+  "verification": {
+    "pytest_test_functions": 1363,
+    "pytest_subtests": 3118,
+    "junit_test_cases": 4481,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "warnings": 4641,
+    "full_suite_seconds": 204.391,
+    "regression_scope": "206 selected frozen MS2 spectra; 139 historical outputs plus 67 saturated-precursor matches; no new MS1 feature/area claims",
+    "historical_parameters": {
+      "precursor_ppm": 10,
+      "fragment_da": 0.01,
+      "minimum_relative_intensity": 0.001,
+      "min_score": 50
+    },
+    "current_defaults": {
+      "precursor_ppm": 5,
+      "fragment_ppm": 15,
+      "minimum_relative_intensity": 0.002,
+      "min_score": 50
+    },
+    "paired_emission_counts": [
+      {
+        "protocol": "historical",
+        "cohort": "previously_reported_negative_lpe",
+        "spectra": 139,
+        "before_emitted": 139,
+        "after_emitted": 130,
+        "retained": 130,
+        "lost": 9,
+        "gained": 0
+      },
+      {
+        "protocol": "historical",
+        "cohort": "saturated_precursor",
+        "spectra": 67,
+        "before_emitted": 0,
+        "after_emitted": 64,
+        "retained": 0,
+        "lost": 0,
+        "gained": 64
+      },
+      {
+        "protocol": "current_defaults",
+        "cohort": "previously_reported_negative_lpe",
+        "spectra": 139,
+        "before_emitted": 82,
+        "after_emitted": 100,
+        "retained": 74,
+        "lost": 8,
+        "gained": 26
+      },
+      {
+        "protocol": "current_defaults",
+        "cohort": "saturated_precursor",
+        "spectra": 67,
+        "before_emitted": 0,
+        "after_emitted": 40,
+        "retained": 0,
+        "lost": 0,
+        "gained": 40
+      }
+    ],
+    "historical_lost_spectra": 9,
+    "historical_lost_reason": "all lack a matched actual MS2 precursor peak under the matching threshold",
+    "indexed_full_output_parity": {
+      "native_calls": 401,
+      "native_nonfallback": 401,
+      "compared_queries": 412,
+      "installed_vs_reference_equal": 412,
+      "installed_vs_target_equal": 412
+    },
+    "indexed_gate_probes": 8,
+    "normalized_index_preservation": {
+      "positive": {
+        "mode": "positive",
+        "precursor_entries_and_order_exact": true,
+        "total_records": 1254393,
+        "preserved_normalized_records": 1254393,
+        "changed_target_records": 0,
+        "source_identity_and_nonfragment_fields_preserved": true,
+        "positive_search_plans_semantically_equal": true
+      },
+      "negative": {
+        "mode": "negative",
+        "precursor_entries_and_order_exact": true,
+        "total_records": 1088179,
+        "preserved_normalized_records": 1088041,
+        "changed_target_records": 138,
+        "source_identity_and_nonfragment_fields_preserved": true,
+        "positive_search_plans_semantically_equal": null
+      }
+    },
+    "production_final_export": {
+      "production_final_export": true,
+      "ecn_enabled": true,
+      "measured_ms1_claim": false,
+      "names": [
+        "LPE(O-16:1)/LPE(P-16:0)",
+        "LPE(O-16:0)"
+      ],
+      "compositions": [
+        {
+          "name": "LPE(O-16:1)/LPE(P-16:0)",
+          "total_C": 16,
+          "total_DB": 1
+        },
+        {
+          "name": "LPE(O-16:0)",
+          "total_C": 16,
+          "total_DB": 0
+        }
+      ]
+    },
+    "interpretation": "Candidate emission regression on selected spectra, not independent structural truth or FDR calibration",
+    "commands": [
+      "python -m pytest -q",
+      "python scripts/build_prebuilt_libraries.py",
+      "python verify_indexed.py (external audit directory)",
+      "python verify_final_export.py (external audit directory)",
+      "python scripts/check_repository_hygiene.py --include-untracked",
+      "git diff --check"
+    ]
+  },
+  "external_audit": {
+    "directory": "D:\\lipid_benchmark_full_20260505_1453\\lpe_negative_revision_20261102",
+    "files": {
+      "baseline.json": {
+        "sha256": "e90bac692fadab1d68eaa23319096f4c9141b56e432bd0b1f3e2127af200e11d",
+        "bytes": 109
+      },
+      "revised_negative.msp.curation.json": {
+        "sha256": "8a388aae87ccaf38ec97a498b49872f6cb0020fee24512516793fdd2397eb386",
+        "bytes": 677
+      },
+      "before_lpe.msp": {
+        "sha256": "93321e5d86b572804ca3b63e0190c7918e2f7922c586315cbb00946356bac9d6",
+        "bytes": 78907
+      },
+      "before_results.json": {
+        "sha256": "78a7a66443144f361f2c64734c30e64686c2691e86f78291b37a9cea735469b1",
+        "bytes": 978776
+      },
+      "after_results.json": {
+        "sha256": "4b4f640bca16460850731a2edb0e118fedb32942d88188ee6550fd15fde272a5",
+        "bytes": 1313495
+      },
+      "after_index_results.json": {
+        "sha256": "4b4f640bca16460850731a2edb0e118fedb32942d88188ee6550fd15fde272a5",
+        "bytes": 1313495
+      },
+      "indexed_verification.json": {
+        "sha256": "89759809b4affaa7c011584b130703246629f2f4f7a292bc4dc4bac43c1e1af6",
+        "bytes": 162
+      },
+      "final_export_verification.json": {
+        "sha256": "b8abdac890f859ef7d88be324d3e589712bdc7015beb1c647b78fe38f9d11450",
+        "bytes": 380
+      },
+      "pytest.xml": {
+        "sha256": "97417e9c04f048e4c6c5876e914bfaa8f43bb17f4318e52f870f6ff757ab6c7d",
+        "bytes": 199364
+      },
+      "lost_original_spectra.csv": {
+        "sha256": "db7f352f432ec83287a4335351d7a62d234c46b007b5f89c06536a5cc8eb58b6",
+        "bytes": 1063
+      },
+      "compare_lpe.py": {
+        "sha256": "0a5d75331bb315e261ad219bf95a4a86cdf89b5949c6278aff3ff36a5b0703ed",
+        "bytes": 2693
+      },
+      "verify_indexed.py": {
+        "sha256": "1e71324e4fc586478176d5ffeabb9ceff5feee7bcea8bd061378f88aa7664ad1",
+        "bytes": 4967
+      },
+      "verify_final_export.py": {
+        "sha256": "20cadbce85c59349b025ae883ca74bf22062316ce1d96299874e19c782cbbbbb",
+        "bytes": 1546
+      },
+      "finalize_revision.py": {
+        "sha256": "ef721ce1377aed6bb499bd7c62ecff1d342a51d9ed07ecfd75808f836671510e",
+        "bytes": 13137
+      },
+      "revised_lpe.msp": {
+        "sha256": "e95434ca0ce04302c3e9baeb156e433d29036ca23f51c51b21f143f2bb66ffde",
+        "bytes": 68559
+      },
+      "composition_pool_audit.json": {
+        "sha256": "34628ad88e7b8d0f93392cb83750b70d18930d82e1b84660545a2703ff697564",
+        "bytes": 30900
+      },
+      "verify_preserved_indexes.py": {
+        "sha256": "344292c0f679ccef97b489441d64412219841b805133c90efabdc8649f55dc71",
+        "bytes": 3373
+      },
+      "positive_index_preservation.json": {
+        "sha256": "f0a66f339ef2caa9e5f4d65f1f5620573ae59c63d7ed6ce16b5374133418bae4",
+        "bytes": 291
+      },
+      "negative_index_preservation.json": {
+        "sha256": "67b54c7119894cf1c5bb2863cf97c2c11da0b2ba3a022f7c410d23f87542e2bb",
+        "bytes": 293
+      },
+      "review_20261102_lpe_negative/all_139_spectra.jsonl.gz": {
+        "sha256": "0bce43197f8f052c640b2b37740b405a354695040036681aae87927b5b3330f1",
+        "bytes": 102720
+      },
+      "review_20261102_saturated_lpe_negative/audited_spectra.jsonl.gz": {
+        "sha256": "6b5bf522d4fd43273588d82c16a4894840ecd154574bb2c0ea00d4a50a94c9e6",
+        "bytes": 38310
+      }
+    }
+  }
+}

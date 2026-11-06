@@ -1,0 +1,149 @@
+{
+  "revision": "ether_lyso_pending_20261102",
+  "date": "2026-11-02",
+  "status": "Verified source-only revision; full MSP payloads, production indexes and executable intentionally not rebuilt at user request",
+  "application_source_version": "1.0.8",
+  "preceding_source_checkpoint": "lpe_negative_pending_20261102.json",
+  "preceding_library_checkpoint": "library_revision_lpe_negative_20261102.json",
+  "ms2_rules_sha256": "e666d16576d7a95162c9c28fa7d4b26fe1732d3e8c6b8c12e90f3187935dbd1e",
+  "product_code_sha256": "6006b816d316eb21b3f26907a38883babf539b5102713bdd6ebf71d6800b3360",
+  "ms1_runtime_sha256": "fbaaec5313595ecef78a28003e515dea00b335fbc75531eca924d8cc8895a7cb",
+  "libraries": {
+    "positive": {
+      "source_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_bytes": 23895196,
+      "existing_index_sha256": "c81446fb627a0d0be7a3dcf9e57aff03cacbdde9180a48ef74de7555b7d49dea",
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    },
+    "negative": {
+      "source_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_bytes": 39394134,
+      "existing_index_sha256": "d6337b843d2afbc6afd513dfad3f7651ce5e8cd18eca2fb5cfb8da03e69726b6",
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    }
+  },
+  "negative_LPE": {
+    "fragments": 7,
+    "pool_weights": {
+      "precursor": 60,
+      "HG": 20,
+      "Other": 20
+    },
+    "required": [
+      "actual MS2 precursor",
+      "at least one140/NL61"
+    ],
+    "removed": [
+      "NL43",
+      "153"
+    ]
+  },
+  "negative_LPC": {
+    "source_records": 108,
+    "normalized_fragments": 8,
+    "pool_counts": {
+      "HG": 1,
+      "Other": 7
+    },
+    "pool_weights": {
+      "HG": 75,
+      "Other": 25
+    },
+    "required_HG": "[M-CH3]- only",
+    "Other": [
+      "78.9591",
+      "168.0431",
+      "224.0693",
+      "[M-CH3]- minus89.084064",
+      "composition-specific RO-",
+      "composition-specific RO-H2 mass candidate",
+      "optional intact adduct precursor"
+    ],
+    "no_precursor_gate": true,
+    "no_chain_gate": true,
+    "RCOO_control_added": false,
+    "NL89": "from neutral demethylated ion; same product for formate/acetate; preserves existing matching source masses within0.002Da"
+  },
+  "naming": {
+    "scope": "negative ether LPE/LPC only",
+    "saturated_example": "LPC(O-16:0)",
+    "unsaturated_example": "LPC(O-16:1)/LPC(P-16:0)",
+    "P_DB": "O_DB-1",
+    "carbon_count": "one chain",
+    "source_identity": "single original O record retained",
+    "resolution": "species_level; no vinyl/sn/double-bond position claim"
+  },
+  "positive_content": {
+    "source_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+    "source_matches_v1_0_8": true,
+    "normalized_target_records": 309,
+    "all_equal_pre_conversation_index": true,
+    "counts": {
+      "('LPC-O', '[M+H]+')": 54,
+      "('LPE-O', '[M+H]+')": 138,
+      "('LPE-P', '[M+H]+')": 117
+    },
+    "LPC_P_source_records": 0,
+    "actual_full_query_outputs_equal": 308,
+    "full_query_output_sha256": "13d3ece99f3dcc953baf2d8968d69e918c44c2fb7e7cf70229797cbd8b8dcf6b",
+    "positive_policy_module_has_no_working_diff": true,
+    "existing_LPE_normalizer_origin_commit": "2405811e (2026-09-30)",
+    "audit_directory": "D:\\lipid_benchmark_full_20260505_1453\\review_20261102_positive_ether_lyso"
+  },
+  "verification": {
+    "test_functions": 1379,
+    "subtests": 3118,
+    "junit_cases": 4497,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "full_suite_seconds": 120.582,
+    "junit_sha256": "4463514cb6c976d62592fac6aed2cdcbdceea4b27dab8847c6e00cc58a0a8914",
+    "negative_LPC_spectra": 110,
+    "negative_LPC_query_comparisons": 220,
+    "negative_LPC_counts": [
+      {
+        "protocol": "historical",
+        "queries": 110,
+        "before_emitted": 64,
+        "after_emitted": 64,
+        "before_candidate_rows": 64,
+        "after_candidate_rows": 64
+      },
+      {
+        "protocol": "current_defaults",
+        "queries": 110,
+        "before_emitted": 53,
+        "after_emitted": 53,
+        "before_candidate_rows": 53,
+        "after_candidate_rows": 53
+      }
+    ],
+    "negative_LPC_emitted_score_changes": 62,
+    "negative_LPE_full_outputs_equal": 412,
+    "indexed_native_fixture_tests": "strict M-CH3 gate and exact full output equality passed",
+    "production_CSV_ECN": {
+      "records_checked": 108,
+      "pool_counts": {
+        "HG": 1,
+        "Other": 7
+      },
+      "normalization_idempotent": true,
+      "production_final_export": true,
+      "ecn_enabled": true,
+      "names": [
+        "LPC(O-16:0)",
+        "LPC(O-16:1)/LPC(P-16:0)"
+      ],
+      "one_chain_carbon": 16,
+      "db_values": [
+        0,
+        1
+      ]
+    }
+  },
+  "deployment": "Installed source payload remains previous LPE eight-ion/LPC six-ion definitions; new imports normalize to LPE7/LPC8. Existing production indexes carry the old rule fingerprint and have not been relabelled as rebuilt.",
+  "audit_directory": "D:\\lipid_benchmark_full_20260505_1453\\lpc_negative_revision_20261102"
+}

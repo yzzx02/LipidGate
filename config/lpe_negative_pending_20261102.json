@@ -1,0 +1,68 @@
+{
+  "revision": "lpe_negative_without153_pending_20261102",
+  "date": "2026-11-02",
+  "status": "Verified seven-ion source rule; full MSP payload and indexes intentionally NOT rebuilt at user request",
+  "preceding_eight_ion_checkpoint": "library_revision_lpe_negative_20261102.json",
+  "application_source_version": "1.0.8",
+  "executable_rebuilt": false,
+  "ms2_rules_sha256": "115f6d06d1435c4c564d762b9e8b9a27f11dcbee9ff84d79e6b5e5c593e1d740",
+  "product_code_sha256": "8f9e088e39aeb76b9da508c9f73355f31bd288cb48da5d627d5c5790263aaba6",
+  "ms1_runtime_sha256": "fbaaec5313595ecef78a28003e515dea00b335fbc75531eca924d8cc8895a7cb",
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_gzip_bytes": 23895196,
+      "existing_index_sha256": "c81446fb627a0d0be7a3dcf9e57aff03cacbdde9180a48ef74de7555b7d49dea",
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_step": false
+    },
+    "negative": {
+      "source_gzip_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_gzip_bytes": 39394134,
+      "existing_index_sha256": "d6337b843d2afbc6afd513dfad3f7651ce5e8cd18eca2fb5cfb8da03e69726b6",
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_step": false
+    }
+  },
+  "intended_LPE_fragments": 7,
+  "pool_counts": {
+    "precursor": 1,
+    "HG": 2,
+    "Other": 4
+  },
+  "pool_weights": {
+    "precursor": 60,
+    "HG": 20,
+    "Other": 20
+  },
+  "removed": [
+    "NL43",
+    "152.9953"
+  ],
+  "Other": [
+    "78.9591",
+    "96.9696",
+    "196.0380",
+    "composition-specific RO-"
+  ],
+  "physical_source_LPE_payload": "preceding eight-ion checkpoint still installed, including153; import normalization now removes153",
+  "indexed_rule_compatibility": "existing full indexes describe preceding eight-ion rule; not valid for new source fingerprint; do not relabel old indexes as rebuilt",
+  "verification": {
+    "pytest_test_functions": 1363,
+    "pytest_subtests": 3118,
+    "junit_cases": 4481,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "d7db744dd8fc40b4f32497a9548277e83e2e207dc1c00845894b75376e27451d",
+    "measured_spectra": 206,
+    "protocols": 2,
+    "compared_queries": 412,
+    "output_names_and_candidate_order_preserved": true,
+    "emitted_candidate_rows": 334,
+    "emitted_rows_with_score_change": 37,
+    "regression_result_sha256": "21c0a455e57692c9e239ccbb0856cf4ddf30361408e605b38546dd41dba6f967"
+  },
+  "LPC_negative_rule": "unchanged; read-only measured-spectrum review",
+  "audit_directory": "D:\\lipid_benchmark_full_20260505_1453\\review_20261102_lpc_negative"
+}

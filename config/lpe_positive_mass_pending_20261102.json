@@ -1,0 +1,232 @@
+{
+  "revision": "lpe_positive_mass_pending_20261102",
+  "date": "2026-11-02",
+  "application_source_version": "1.0.8",
+  "status": "Verified source-only LPC weight and LPE-P mass corrections; full MSP payloads/indexes/executable deliberately not rebuilt",
+  "preceding_source_checkpoint": "lpc_positive_602020_pending_20261102.json",
+  "ms2_rules_sha256": "54b6dbeba0cffe92f90572b1fea97adb5d22c873af845d1071d814f6ed856ffc",
+  "product_code_sha256": "0d125e221d66b39766e2b796916dbf870b8a631856bb20b0857e5ecd2e109720",
+  "ms1_runtime_sha256": "fbaaec5313595ecef78a28003e515dea00b335fbc75531eca924d8cc8895a7cb",
+  "libraries": {
+    "positive": {
+      "source_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_bytes": 23895196,
+      "existing_index_sha256": "c81446fb627a0d0be7a3dcf9e57aff03cacbdde9180a48ef74de7555b7d49dea",
+      "existing_index_bytes": 74473472,
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    },
+    "negative": {
+      "source_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_bytes": 39394134,
+      "existing_index_sha256": "d6337b843d2afbc6afd513dfad3f7651ce5e8cd18eca2fb5cfb8da03e69726b6",
+      "existing_index_bytes": 79130624,
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    }
+  },
+  "positive_LPC": {
+    "scope": "single-composition LPC-O/P [M+H]+ only",
+    "source_O_records": 54,
+    "source_P_records": 0,
+    "normalized_fragments": 5,
+    "required_HG": "184.0733 [C5H15NO4P]+ only",
+    "pool_weights": {
+      "HG": 60,
+      "precursor": 20,
+      "Other": 20
+    },
+    "pool_counts": {
+      "HG": 1,
+      "precursor": 1,
+      "Other": 3
+    },
+    "precursor_optional": true,
+    "precursor_internal_field": "fah; precursor evidence, without chain evidence",
+    "precursor_quality": "existing secondary saturation half=0.05 against spectrum base peak",
+    "Other": [
+      "86.0964",
+      "104.1070",
+      "124.9998"
+    ],
+    "removed": [
+      "water loss"
+    ],
+    "ion240_added": false,
+    "naming": {
+      "saturated": "LPC(O-16:0)",
+      "unsaturated": "LPC(O-16:1)/LPC(P-16:0)",
+      "P_DB": "O_DB-1",
+      "explicit_imported_P_O_equivalent_DB": "P_DB+1",
+      "one_chain": true,
+      "preserves_source_identity_formula_class_precursor": true,
+      "resolution": "species_level"
+    }
+  },
+  "negative_LPE": {
+    "fragments": 7,
+    "pool_weights": {
+      "precursor": 60,
+      "HG": 20,
+      "Other": 20
+    },
+    "required": [
+      "actual MS2 precursor",
+      "at least one140/NL61"
+    ],
+    "removed": [
+      "NL43",
+      "153"
+    ]
+  },
+  "negative_LPC": {
+    "source_records": 108,
+    "normalized_fragments": 8,
+    "pool_counts": {
+      "HG": 1,
+      "Other": 7
+    },
+    "pool_weights": {
+      "HG": 75,
+      "Other": 25
+    },
+    "required_HG": "[M-CH3]- only",
+    "Other": [
+      "78.9591",
+      "168.0431",
+      "224.0693",
+      "[M-CH3]- minus89.084064",
+      "composition-specific RO-",
+      "composition-specific RO-H2 mass candidate",
+      "optional intact adduct precursor"
+    ],
+    "no_precursor_gate": true,
+    "no_chain_gate": true,
+    "RCOO_control_added": false,
+    "NL89": "from neutral demethylated ion; same product for formate/acetate; preserves existing matching source masses within0.002Da"
+  },
+  "positive_LPE": {
+    "scope": "117 existing LPE-P [M+H]+ import definitions only;138 LPE-O definitions retained",
+    "HG_losses": [
+      {
+        "formula": "C3H9O6P",
+        "mass": 172.01367500849
+      },
+      {
+        "formula": "C3H7O5P",
+        "mass": 154.00311032403
+      }
+    ],
+    "backbone": "C3H6O2=74.03677943338, dehydrated glycerol; not free glycerol92.04734411784",
+    "mechanism": "backbone plus H3PO4/HPO3; nitrogen retained in products",
+    "P18_0_HG_products": [
+      294.3155,
+      312.3261
+    ],
+    "removed_displaced_HG_products": [
+      294.2917,
+      312.3023
+    ],
+    "source_identity_formula_precursor_order_preserved": true,
+    "source_records_added": 0,
+    "pool_weights": {
+      "HG": 75,
+      "Other": 25
+    },
+    "pool_counts": {
+      "HG": 2,
+      "Other": 3
+    },
+    "required": "both HG products, unchanged",
+    "Other": [
+      "[M+H-C3H6O2]+",
+      "water loss",
+      "intact precursor"
+    ],
+    "LPE_O": "NL141.01909474069 and existing precursor/water support; unchanged",
+    "PE_P_double_chain": "unchanged",
+    "reference": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8581249/",
+    "reference_limit": "Section3.1/Figure1C provide nominal products and mechanism. Accurate masses are elemental-balance calculations verified with measured high-resolution data, not four-decimal quotations."
+  },
+  "verification": {
+    "test_functions": 1402,
+    "subtests": 3118,
+    "junit_cases": 4520,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "4dd030a22adb42d5bd1a7603684e78a175489d617cb5b043cff4f4a724c937aa",
+    "full_suite_seconds": 131.869,
+    "positive_queries_compared": 824,
+    "positive_normalized_unrelated_records_equal": 192,
+    "positive_LPC_LPE_O_emitted_rows_equal": 253,
+    "positive_LPE_P_new_candidate_spectra": {
+      "historical": 99,
+      "current_defaults": 77
+    },
+    "measured_mass_hypotheses": 293,
+    "dual_HG_hit_counts": {
+      "old_wide": {
+        "0": 285,
+        "1": 8
+      },
+      "recalculated_wide": {
+        "0": 181,
+        "1": 12,
+        "2": 100
+      },
+      "old_15ppm": {
+        "0": 288,
+        "1": 5
+      },
+      "recalculated_15ppm": {
+        "0": 184,
+        "1": 27,
+        "2": 82
+      }
+    },
+    "negative_full_query_outputs": {
+      "LPC": {
+        "full_query_outputs_equal": 220,
+        "sha256": "9ec0fa58d8390920c37078ade23883e132e226586a80915855c80c8cb248d20c"
+      },
+      "LPE": {
+        "full_query_outputs_equal": 412,
+        "sha256": "21c0a455e57692c9e239ccbb0856cf4ddf30361408e605b38546dd41dba6f967"
+      }
+    },
+    "native_fixture": "Both new masses required; old shifted masses rejected; exact native/reference result equality",
+    "future_curator": "Only tiny fixtures; separate destination, unchanged blocks/order and deterministic gzip verified",
+    "production_CSV_ECN": {
+      "passed": true,
+      "names": [
+        "LPE(P-16:0)",
+        "LPE(P-18:0)",
+        "LPE(P-18:1)",
+        "LPE(P-20:0)"
+      ],
+      "carbon": [
+        16,
+        18,
+        18,
+        20
+      ],
+      "db": [
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    "independent_raw_example_verification": {
+      "spectra": 6,
+      "files": 5,
+      "fresh_hashes_match": true,
+      "arrays_native_ids_RT_match": true,
+      "sha256": "af35ef2fba2462a7182d1543df27d2722c7407882795919507e5cab2f34efc8c"
+    }
+  },
+  "caveat": "Candidate-spectrum counts in a309-record selected-class replay are not confirmed unique lipids, standard-based accuracy or FDR. Raw MS2 precursor metadata, without full-project MS1 refinement/quantitation.",
+  "deployment": "Existing complete positive MSP still has old LPE-P masses and six-ion LPC. Importer applies new five-ion LPC and five-ion corrected LPE-P rules. Old production indexes retain old rule identity. No full payload/index/executable rebuild.",
+  "audit_directory": "D:\\lipid_benchmark_full_20260505_1453\\lpe_positive_fragment_audit_20261102"
+}

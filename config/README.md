@@ -2,7 +2,29 @@
 
 - `single_chain_whitelist.csv`: the explicit production chain whitelist used by
   the MG/NAGly and Glc-GP curators; this is source input and must be tracked.
-- `release_v1.0.8.json`: current Windows/source release, with passing unit and
+- `release_v1.0.9.json`: Windows and source release with rebuilt libraries
+  and frozen runtime verification.
+- `library_revision_ether_lyso_20261106.json`: LPC/LPE payload curation,
+  index fingerprints and measured-spectrum replay for v1.0.9.
+- `lpe_positive_mass_pending_20261102.json`: source checkpoint before the v1.0.9 rebuild,
+  correcting positive LPE-P neutral-loss masses/labels with the existing
+  two-HG gate, retaining the confirmed LPC60/20/20 policy; full rebuild deferred.
+- `lpc_positive_602020_pending_20261102.json`: preceding source checkpoint,
+  protonated ether LPC HG60/optional precursor20/Other20 with only184 required;
+  full library/index rebuilding remains deferred.
+- `lpc_positive_pending_20261102.json`: preceding source checkpoint, adding
+  protonated ether LPC184-only gating, O/P report names and removal of water
+  loss, with full library/index rebuilding still deferred.
+- `ether_lyso_pending_20261102.json`: preceding negative LPC M-CH3-only HG75 /
+  Other25 and LPE seven-ion source policies, with unchanged positive content
+  verification. Full library and index rebuilding remains deferred.
+- `lpe_negative_pending_20261102.json`: preceding seven-ion LPE checkpoint,
+  removing153 before the LPC policy update; its recorded source hash is historical.
+- `library_revision_lpe_negative_20261102.json`: preceding eight-ion checkpoint
+  for negative ether LPE precursor/HG gates, pools and O/P output names, with
+  its source-library/index fingerprints and paired measured-spectrum verification.
+  The published v1.0.8 executable and manifest retain their release identity.
+- `release_v1.0.8.json`: preceding Windows/source release, with passing unit and
   frozen-runtime checks, executable/library hashes and boundary cache version 8.
   Earlier release manifests and GitHub tags are retained for comparison.
 - `ms1_abnormal_interval_review_20261028.json`: preceding source checkpoint.

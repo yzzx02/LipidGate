@@ -16,6 +16,12 @@ new benchmark explicitly justifies a change.
 - `ranking_policy.py`: Top1 tie handling and effective fragment counts.
 - `library_fragment_policy.py`: runtime normalization of curated library fragments.
 - `nae_precursor.py`: explicit single-precursor NAE import definitions.
+- `positive_lpc_ether.py`: protonated ether LPC184-only HG policy and O/P
+  reporting, preserving a single source identity.
+- `negative_lpc.py`: negative ether-LPC M-CH3-only HG gate and unresolved
+  O/P report names.
+- `negative_lpe.py`: negative ether-LPE fragment definitions and unresolved
+  O/P report names, retaining one source composition.
 - `positive_single_chain_h.py`: protonated MG/single-acyl NAGly fragment
   definitions and the single-chain NAGly HG admission/resolution policy.
 - `search.py`: spectrum orchestration, shared-peak iteration, and result export.
@@ -24,6 +30,128 @@ new benchmark explicitly justifies a change.
 - `search_plan.py` and `native_plan.py`: prepare and read optional numeric
   occurrence columns and conservative necessary-evidence programs. They may
   reject impossible candidates but never award scores or select a rank.
+
+## Protonated LPE-P mass correction (2026-11-02)
+
+- The two HG losses are dehydrated glycerol backbone C3H6O2 (74.0367794)
+  plus H3PO4 (97.9768956) or HPO3 (79.9663309): NL172.0136750 and
+  NL154.0031103. Nitrogen stays in the product ion. Do not use the old
+  N-containing neutral formulas C3H11NO5P/C3H9NO4P (172.0374845/154.0269198).
+- For LPE(P-18:0) [M+H]+466.3292, the HG products are294.3155 and312.3261,
+  not294.2917 and312.3023. Use formula-based loss labels for all chain
+  compositions, not fixed nominal294/312 names. The ordinary NL74.0368
+  support is392.2924 for this composition and has a corrected loss label.
+- Retain the existing requirement to match both HG ions, HG75/Other25,
+  precursor, water loss, original source identity/formula/order, and all
+  positive LPE-O definitions. This correction does not revise positive
+  PE-P support or the agreed negative-mode LPE policy.
+- Morel et al.(2021), section3.1/Figure1C, describe LPE-P glycerol/phosphate
+  loss with alkyl-chain/ethanolamine rearrangement:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC8581249/ . Accurate masses here
+  follow the nitrogen-retaining elemental balance and measured high-resolution
+  spectra; nominal294.3/312.3 in the paper alone cannot establish four decimals.
+- In293 existing precursor-mass hypotheses, both corrected masses match
+  100 spectra under +/-0.01Da or82 under15ppm (>=0.1% base peak), compared
+  with zero dual hits for the old masses. Complete selected-library replay
+  returns99/77 P candidates under historical/default settings, including the
+  configured precursor tolerance, intensity threshold and score>=50.
+  These are candidate-spectrum counts, without standard-based accuracy/FDR.
+
+See `docs/lpe_positive_fragments.md` for mass balance and measured examples.
+The v1.0.9 payload and index fingerprints are recorded in
+`config/library_revision_ether_lyso_20261106.json`.
+
+## Protonated ether LPC (2026-11-02)
+
+- Applies to single-composition `LPC-O/P [M+H]+`. Preserve the existing54 O
+  source compositions; do not generate duplicate P entries. Explicit imported
+  P records use O-equivalent DB=P DB+1 for their unresolved report name.
+- Require only a matched184.0733 `[C5H15NO4P]+` HG ion. No intact precursor,
+  water-loss,240, chain or auxiliary-signature gate. Weights are HG60,
+  optional precursor20 and Other20. The precursor uses the secondary-pool
+  intensity function (half-saturation0.05) against the spectrum base peak;
+  HG uses the existing primary function. Its internal `fah` field denotes
+  precursor support, without a chain-evidence or precursor gate.
+- Other contains86.0964,104.1070 and124.9998. The precursor is scored separately.
+  The authoritative five-ion definition removes water loss and excludes240.
+  In the frozen historical LPC spectra, water loss matched only7/138 under
+  +/-0.01Da and>=0.1% base peak, with detected median5.66% intensity.
+- Saturated O outputs `LPC(O-16:0)`; nonzero O-equivalent DB outputs one
+  unresolved pair, e.g. `LPC(O-16:1)/LPC(P-16:0)`. Preserve source class,
+  identity, formula, precursor and evidence audit. Species composition and
+  ECN count one chain, without a vinyl-ether/sn/double-bond position claim.
+- Both reference and necessary-evidence search programs require184. The
+  generic prepared lyso decision is bypassed for this explicit policy.
+- Removing water loss does not relax precursor/fragment tolerances or the
+  configured minimum score. A failed mass window is not an extra fragment
+  gate. Do not infer complete detection from a candidate-selected replay.
+
+The five-ion source definitions and their indexes ship in v1.0.9.
+
+## Negative ether LPC (2026-11-02)
+
+- Applies only to single-composition `LPC-O` formate/acetate anions. Preserve
+  all108 existing source identities and their order. Do not generate duplicate
+  P entries; positive LPC-O/P and LPE-O/P are outside this policy.
+- Require a matched `[M-CH3]-` ion as the sole HG. Neither168 nor the intact
+  adduct precursor can substitute. Weights are HG75 / Other25, without FAH
+  or chain-position evidence. Keep the existing quality/count saturation.
+- Other includes78.9591,168.0431,224.0693, NL89.084064 from `[M-CH3]-`,
+  the composition-specific RO- and RO-H2 mass candidates, and the optional
+  intact adduct precursor. RO-H2 is a mass hypothesis, without a claimed
+  formation mechanism. Do not add the weak RCOO- audit control as an ether ion.
+- Compute demethylation from neutral `C(c+8)H(2c-2d+20)NO6P`, including the
+  electron mass. NL89 has the same product mass for formate and acetate;
+  replace the legacy adduct-dependent Common loss with this definition.
+  Reuse existing source peak masses within0.002Da for unaffected assignments.
+- Report DB0 as `LPC(O-16:0)`; for DB>=1 report one unresolved pair, such as
+  `LPC(O-16:1)/LPC(P-16:0)`. Preserve the O source identity and evidence audit.
+  Species-level composition and ECN count one chain, without a vinyl-ether,
+  sn-position or chain-fragment claim.
+- Reference and necessary-evidence search programs require M-CH3. The generic
+  prepared lyso decision is bypassed for this class; numeric matching remains
+  available, followed by the reference final decision.
+- Fragmentation context: Khaselev and Murphy(2000), DOI
+  https://doi.org/10.1016/S1044-0305(99)00158-0, and Ventura et al.(2024),
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC11593930/, section2.4/Figure S5.
+  The specific gate/weights and unresolved output policy are user-defined.
+
+The eight-ion source definitions and the required M-CH3 gate ship in v1.0.9.
+
+## Negative ether LPE (2026-11-02)
+
+- Applies only to single-composition `LPE-O [M-H]-`. Preserve the 138 existing
+  source identities, formulas, precursors and source order. Positive LPE-O/P
+  retains its separate definitions. No negative P records are generated.
+- Require an actual matched MS2 `[M-H]-` peak and at least one HG observation:
+  m/z140.0118 or `[M-H-C2H7NO]-` (NL61.05276385). Precursor metadata alone
+  cannot satisfy the precursor gate. A numerical score cannot bypass either
+  gate. Remove NL43 and m/z152.9953 from the scoring spectrum.
+- The precursor occupies the existing primary `fah` score field (60), HG20,
+  and Other20. This field represents precursor evidence for this class,
+  without a fatty-acyl or chain-fragment claim. Other contains78.9591,
+  96.9696,196.0380 and the composition-specific ether RO- ion.
+  RO- is ordinary support, with no chain gate. Correct the source annotation
+  at196.0380 to `[C5H11NO5P]-` (the legacy label omitted an oxygen); keep
+  its mass. Keep the existing intensity quality functions and
+  three-observation Other saturation.
+- Report species-level composition without a missing-chain downgrade. For
+  DB0 emit `LPE(O-16:0)`; for DB>=1 emit, for example,
+  `LPE(O-16:1)/LPE(P-16:0)`. These are two unresolved interpretations of one
+  formula, not two chains or a demonstrated vinyl-ether/sn/double-bond position.
+  Keep the source O identity in `library_species_name` and in evidence audit.
+  ECN totals count16 carbons and1 O-equivalent double bond for that example.
+- Both reference and numeric search plans retain the precursor/HG gates.
+  Records requiring a precursor use the reference final decision rather than
+  the generic prepared phospholipid decision that omits precursor gates.
+- The revised gates and weights are user-defined. Supporting fragmentation
+  context: Ventura et al.(2024), Figure4, DOI
+  https://doi.org/10.3390/ijms252212077. Saturated O spectra observed in the
+  biological benchmark support a separate admission route when RO- is absent;
+  this selected-spectrum regression is not a standard-based FDR calibration.
+
+The seven-ion source definitions, including removal of m/z 153, ship
+with the rebuilt v1.0.9 indexes.
 
 ## LPC sodium (2026-10-28)
 

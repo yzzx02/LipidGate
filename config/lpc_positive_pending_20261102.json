@@ -1,0 +1,231 @@
+{
+  "revision": "lpc_positive_pending_20261102",
+  "date": "2026-11-02",
+  "status": "Verified source-only revision; full MSP payloads, production indexes and executable intentionally not rebuilt at user request",
+  "application_source_version": "1.0.8",
+  "preceding_source_checkpoint": "ether_lyso_pending_20261102.json",
+  "ms2_rules_sha256": "cf227a5fee745d9f18abf5d99fc1f6ba0eab38153252abe9068c55668367ea39",
+  "product_code_sha256": "b72824bf3bfa4269c8b93546f96999cf03ca1388a10ab69a4744973077486d0c",
+  "ms1_runtime_sha256": "fbaaec5313595ecef78a28003e515dea00b335fbc75531eca924d8cc8895a7cb",
+  "libraries": {
+    "positive": {
+      "source_sha256": "52904aa6b52d2537dd3130b9c4e2fe88e2db28b08f3916249fc3c8f9681baf8d",
+      "source_bytes": 23895196,
+      "existing_index_sha256": "c81446fb627a0d0be7a3dcf9e57aff03cacbdde9180a48ef74de7555b7d49dea",
+      "existing_index_bytes": 74473472,
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    },
+    "negative": {
+      "source_sha256": "6161cabcd0e5890b48450778289fbdc80804421038e4df3bfb12571df64860d6",
+      "source_bytes": 39394134,
+      "existing_index_sha256": "d6337b843d2afbc6afd513dfad3f7651ce5e8cd18eca2fb5cfb8da03e69726b6",
+      "existing_index_bytes": 79130624,
+      "existing_index_rules_sha256": "4430789210ff38a3e3e527f12359b55520501677a34ffce2da7512fa1a1a420b",
+      "rebuilt_this_revision": false
+    }
+  },
+  "positive_LPC": {
+    "scope": "single-composition LPC-O/P [M+H]+ only",
+    "source_O_records": 54,
+    "source_P_records": 0,
+    "source_compositions_expanded": false,
+    "normalized_fragments": 5,
+    "required_HG": "184.0733 [C5H15NO4P]+ only",
+    "pool_weights": {
+      "HG": 75,
+      "Other": 25
+    },
+    "pool_counts": {
+      "HG": 1,
+      "Other": 4
+    },
+    "Other": [
+      "86.0964",
+      "104.1070",
+      "124.9998",
+      "optional intact precursor"
+    ],
+    "no_precursor_gate": true,
+    "no_chain_gate": true,
+    "no_water_loss_gate": true,
+    "ion240_added": false,
+    "removed": [
+      "precursor water loss"
+    ],
+    "water_loss_observations": {
+      "spectra": 138,
+      "matches": 7,
+      "fraction": 0.050724637681159424,
+      "tolerance_Da": 0.01,
+      "min_base_peak_fraction": 0.001,
+      "median_detected_relative_percent": 5.6605265186310865
+    },
+    "naming": {
+      "saturated": "LPC(O-16:0)",
+      "unsaturated": "LPC(O-16:1)/LPC(P-16:0)",
+      "P_DB": "O_DB-1",
+      "explicit_imported_P_O_equivalent_DB": "P_DB+1",
+      "one_chain": true,
+      "preserves_source_identity_formula_class_precursor": true,
+      "resolution": "species_level"
+    }
+  },
+  "negative_LPE": {
+    "fragments": 7,
+    "pool_weights": {
+      "precursor": 60,
+      "HG": 20,
+      "Other": 20
+    },
+    "required": [
+      "actual MS2 precursor",
+      "at least one140/NL61"
+    ],
+    "removed": [
+      "NL43",
+      "153"
+    ]
+  },
+  "negative_LPC": {
+    "source_records": 108,
+    "normalized_fragments": 8,
+    "pool_counts": {
+      "HG": 1,
+      "Other": 7
+    },
+    "pool_weights": {
+      "HG": 75,
+      "Other": 25
+    },
+    "required_HG": "[M-CH3]- only",
+    "Other": [
+      "78.9591",
+      "168.0431",
+      "224.0693",
+      "[M-CH3]- minus89.084064",
+      "composition-specific RO-",
+      "composition-specific RO-H2 mass candidate",
+      "optional intact adduct precursor"
+    ],
+    "no_precursor_gate": true,
+    "no_chain_gate": true,
+    "RCOO_control_added": false,
+    "NL89": "from neutral demethylated ion; same product for formate/acetate; preserves existing matching source masses within0.002Da"
+  },
+  "verification": {
+    "test_functions": 1395,
+    "subtests": 3118,
+    "junit_cases": 4513,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "full_suite_seconds": 126.351,
+    "junit_sha256": "4bb87843cdf46039824495aeb80de900d04f3d88764fc2ed11a5da3498860a57",
+    "positive_query_comparisons": 308,
+    "positive_protocols": [
+      {
+        "protocol": "historical",
+        "queries": 154,
+        "before_emitted": 154,
+        "after_emitted": 154,
+        "before_LPC_rows": 138,
+        "after_LPC_rows": 138
+      },
+      {
+        "protocol": "current_defaults",
+        "queries": 154,
+        "before_emitted": 103,
+        "after_emitted": 103,
+        "before_LPC_rows": 94,
+        "after_LPC_rows": 94
+      }
+    ],
+    "positive_LPC_emitted_score_changes": 1,
+    "positive_LPE_query_rows_unchanged": 25,
+    "positive_LPE_normalized_records_unchanged": 255,
+    "positive_full_output_sha256": "a605c3c70534509b64f4d486d5544eb691add60d5c615c119d9cd571479d0a0b",
+    "negative_full_output_regression": {
+      "LPC": {
+        "full_query_outputs_unchanged": 220,
+        "sha256": "9ec0fa58d8390920c37078ade23883e132e226586a80915855c80c8cb248d20c"
+      },
+      "LPE": {
+        "full_query_outputs_unchanged": 412,
+        "sha256": "21c0a455e57692c9e239ccbb0856cf4ddf30361408e605b38546dd41dba6f967"
+      }
+    },
+    "production_CSV_ECN": {
+      "records_checked": 54,
+      "normalization_idempotent": true,
+      "fragments": 5,
+      "pool_counts": {
+        "HG": 1,
+        "Other": 4
+      },
+      "production_final_export": true,
+      "ecn_enabled": true,
+      "names": [
+        "LPC(O-16:0)",
+        "LPC(O-16:1)/LPC(P-16:0)"
+      ],
+      "one_chain_carbon": 16,
+      "db_values": [
+        0,
+        1
+      ],
+      "positive_LPE_normalized_records_unchanged": 255
+    },
+    "native_fixture": "184-only gates and exact full reference/native indexed results passed",
+    "future_curator": "Separate-destination tiny fixture; unrelated blocks/order/idempotence verified; not run on installed libraries"
+  },
+  "detection_audit": {
+    "physical_mass_query_spectra": 522,
+    "existing_LPC_compositions": 54,
+    "audit_composition_domain": "union of existing LPC-O54 and existing LPE-O composition grid, translated to LPC formula; hypotheses only",
+    "queried_compositions": 144,
+    "observations": 522,
+    "current_library_with_184_wide": 143,
+    "outside_library_with_184_wide": 5,
+    "outside_library_with_184_15ppm": 4,
+    "outside_library_compositions": {
+      "LPC(O-26:5)": 3,
+      "LPC(O-27:5)": 1,
+      "LPC(O-28:3)": 1
+    },
+    "current_library_HG_supported_not_in_historical_output": 5,
+    "outside_library_note": "Mass+184 opportunities are not confirmed structures or missed native features; no MS1 detection/refinement/quantitation was rerun",
+    "tolerance_categories": {
+      "raw_MS2": {
+        "(True, True)": 95,
+        "(True, False)": 33,
+        "(False, True)": 6,
+        "(False, False)": 4
+      },
+      "historical_reported": {
+        "(True, True)": 98,
+        "(True, False)": 36,
+        "(False, True)": 3,
+        "(False, False)": 1
+      }
+    },
+    "raw_MS2_default_omission_causes": {
+      "emitted": 94,
+      "184_missing_at15ppm_and0.2pct": 33,
+      "precursor_outside5ppm": 10,
+      "score_below50": 1
+    },
+    "outside_library_candidates_within5ppm": 0,
+    "interpretation": "Mass+HG opportunities are hypotheses, not confirmed missed LPC features. One existing-composition opportunity competes with isobaric LPE-O20:0 and remains assigned to LPE in the four-class replay.",
+    "raw_and_reported_precursor_provenance": "Replay uses measured raw MS2 precursor; historical reports may contain MS1-refined precursors. No full MS1/project rerun.",
+    "independent_raw_verification": {
+      "files": 16,
+      "spectra": 522,
+      "fresh_file_hashes_match": true,
+      "reader": "pyOpenMS independent of XML decoder",
+      "sha256": "11f0f5e39ab82dc11f48a5c054f3212792be90c17e45e97ce9eb5d5b5037171e"
+    }
+  },
+  "deployment": "Installed positive LPC payload remains six-ion; importer normalizes to five ions. Installed negative LPE/LPC payloads remain eight/six-ion; importer uses seven/eight ions. Existing full indexes retain their old rule fingerprint. No full library/index/executable rebuild.",
+  "audit_directory": "D:\\lipid_benchmark_full_20260505_1453\\lpc_positive_revision_20261102"
+}

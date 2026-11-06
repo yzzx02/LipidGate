@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## 1.0.9 — 2026-11-06
+
+- Correct protonated LPE-P HG losses to C3H9O6P (172.013675) and C3H7O5P
+  (154.003110), retaining nitrogen in the chain/ethanolamine products.
+  P-18:0 products are 294.3155/312.3261. Replace nominal 294/312 annotations
+  with loss formulas; keep the existing two-HG gate, weights and LPE-O policy.
+
+- Align protonated ether LPC output with negative-mode O/P ambiguity names.
+  Require only m/z 184.0733 with HG/optional precursor/Other weights of 60/20/20.
+  Other contains m/z 86, 104 and 125. Remove the sparsely observed water-loss
+  fragment. Keep source compositions and audit identities.
+
+- Revise negative ether LPC to require only the demethylated M-CH3 HG ion,
+  with HG/Other weights of 75/25. Treat m/z 168, 78 and 224, NL89 from M-CH3,
+  ether-chain RO-/RO-H2 and the intact precursor as ordinary support.
+  Report unresolved O/P names using the O-equivalent composition, counting
+  one chain in ECN. This resolves the negative LPC-O admission defect
+  reported in [issue #5](https://github.com/yzzx02/LipidGate/issues/5).
+
+- Revise negative ether LPE to require an observed MS2 precursor and at least
+  one of m/z 140.0118 or NL61.0528, with precursor/HG/Other weights of 60/20/20.
+  Remove NL43 and m/z 153. Retain RO- and m/z 196, 78 and 96 as ordinary support.
+  Saturated compositions report as LPE(O-C:0). Nonzero unsaturation reports one unresolved
+  LPE(O-C:D)/LPE(P-C:D-1) identity with the original O library provenance.
+  The library retains its 138 compositions.
+
+- Bundle the revised MSP payloads, rebuilt indexes and verified native
+  search and policy modules. Record the release identities in
+  `config/release_v1.0.9.json`.
+
 ## 1.0.8 — 2026-10-28
 
 Freeze the current search optimizations, native-first MS1 boundaries, result
