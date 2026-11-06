@@ -42,6 +42,9 @@ from .library_fragment_policy import (
 )
 from .models import FragmentRecord, LibraryRecord
 from .nae_precursor import normalize_nae_record
+from .negative_lpe import normalize_negative_lpe_record
+from .negative_lpc import normalize_negative_lpc_record
+from .positive_lpc_ether import normalize_positive_ether_lpc
 from .positive_single_chain_h import normalize_protonated_single_chain_record
 from .positive_lpc_sodium import normalize_lpc_sodium
 from .chain_labels import annotate_record_chain_labels
@@ -1221,9 +1224,9 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
-    return normalize_lpc_sodium(normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
+    return normalize_positive_ether_lpc(normalize_negative_lpc_record(normalize_negative_lpe_record(normalize_lpc_sodium(normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
-                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz))))))
+                   fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))))))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:

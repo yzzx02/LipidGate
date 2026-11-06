@@ -957,7 +957,7 @@ class SearchSelectionTests(unittest.TestCase):
         examples = [
             ("LPE", "LPE(0:0/18:1)", "LPE(18:1)"),
             ("LDMPE", "LDMPE(18:1/0:0)", "LDMPE(18:1)"),
-            ("LPE-O", "LPE(O-18:2)", "LPE-O(18:2)"),
+            ("LPE-O", "LPE(O-18:2)", "LPE(O-18:2)/LPE(P-18:1)"),
         ]
         for record_id, (compound_class, source_name, expected_name) in enumerate(examples, start=86):
             with self.subTest(compound_class=compound_class):

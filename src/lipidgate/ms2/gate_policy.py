@@ -50,6 +50,9 @@ from .models import (
 )
 from .oxidized_chain_evidence import oxidized_chain_requirements, oxidized_chain_missing_groups
 from .positive_gm3 import is_positive_gm3
+from .negative_lpe import is_negative_lpe
+from .negative_lpc import is_negative_lpc
+from .positive_lpc_ether import is_positive_ether_lpc
 from .positive_pc_sodium import is_positive_pc_sodium, HG_NAMES as PC_SODIUM_HG_NAMES
 from .positive_pe_cer import is_positive_pe_cer, from_name as pe_cer_from_name
 from .positive_pe_sodium import is_positive_pe_sodium, HG_NAMES as PE_SODIUM_HG_NAMES
@@ -349,6 +352,8 @@ def required_negative_hg_hits(
 ) -> int:
     if hg_fragment_count <= 0:
         return 0
+    if is_negative_lpe(record) or is_negative_lpc(record):
+        return 1
     configured_minimum = max(int(getattr(rule, "negative_hg_min_matches", 0)), 0)
     if configured_minimum > 0:
         return min(hg_fragment_count, configured_minimum)
@@ -401,6 +406,15 @@ def derive_required_groups(
     else:
         supports_required_groups = bool(fah_tokens) or allow_lyso_hg_only or allow_loss_only or positive_rco_gate_available
     required_groups: List[str] = []
+    if is_positive_ether_lpc(record):
+        return ([], hg_fragment_count, 0, 0, True, False, False, False, False,
+                True, ["hg"])
+    if is_negative_lpc(record):
+        return ([], hg_fragment_count, 0, 0, False, False, False, False, False,
+                True, ["hg"])
+    if is_negative_lpe(record):
+        return ([], hg_fragment_count, 0, 0, False, False, False, False, False,
+                True, ["precursor", "hg"])
     if positive_hg_or_loss_gate:
         if hg_fragment_count > 0:
             required_groups.append("hg")
@@ -510,6 +524,15 @@ def missing_required_groups(
     matches: Sequence[FragmentMatch],
 ) -> List[str]:
     missing = []
+    if is_negative_lpc(record) or is_positive_ether_lpc(record):
+        return [] if _matched_hg_fragment_count(record, matches) >= 1 else ["hg"]
+    if is_negative_lpe(record):
+        if not any(m.fragment.fragment_type == "Precursor Ion"
+                   and abs(m.fragment.mz-record.precursor_mz) <= 1e-6 for m in matches):
+            missing.append("precursor")
+        if _matched_hg_fragment_count(record, matches) < 1:
+            missing.append("hg")
+        return missing
     if is_positive_pe_sodium(record):
         if sodium_phospholipid_missing_hg(record, matches):
             missing.append("hg")

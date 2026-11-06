@@ -69,21 +69,25 @@ def curate_positive_lyso_pe_fragments(
             ion(WATER_MONOISOTOPIC_MASS, "[M+H-H2O]+", "Common"),
             ion(0, "[M+H]+", "Common"),
         ]
-    glycerol_phosphate_plus_pe = (
-        3 * CARBON_MONOISOTOPIC_MASS + 11 * HYDROGEN_MONOISOTOPIC_MASS
-        + NITROGEN_MONOISOTOPIC_MASS + 5 * OXYGEN_MONOISOTOPIC_MASS
-        + PHOSPHORUS_MONOISOTOPIC_MASS
+    # Morel et al. (2021): loss of the dehydrated glycerol backbone
+    # C3H6O2 plus H3PO4 or HPO3. Nitrogen stays in the product ion.
+    # "Glycerol backbone" here is 74.0368 Da, not free glycerol (92.0473).
+    glycerol_backbone = (
+        3 * CARBON_MONOISOTOPIC_MASS + 6 * HYDROGEN_MONOISOTOPIC_MASS
+        + 2 * OXYGEN_MONOISOTOPIC_MASS
     )
-    glycerol_phosphate_plus_pe_minus_water = (
-        3 * CARBON_MONOISOTOPIC_MASS + 9 * HYDROGEN_MONOISOTOPIC_MASS
-        + NITROGEN_MONOISOTOPIC_MASS + 4 * OXYGEN_MONOISOTOPIC_MASS
-        + PHOSPHORUS_MONOISOTOPIC_MASS
+    phosphoric_acid = (
+        3 * HYDROGEN_MONOISOTOPIC_MASS + PHOSPHORUS_MONOISOTOPIC_MASS
+        + 4 * OXYGEN_MONOISOTOPIC_MASS
+    )
+    metaphosphoric_acid = (
+        HYDROGEN_MONOISOTOPIC_MASS + PHOSPHORUS_MONOISOTOPIC_MASS
+        + 3 * OXYGEN_MONOISOTOPIC_MASS
     )
     return [
-        ion(glycerol_phosphate_plus_pe, "LPE-P diagnostic 294", "Diagnostic_HG"),
-        ion(glycerol_phosphate_plus_pe_minus_water, "LPE-P diagnostic 312", "Diagnostic_HG"),
-        ion(3 * CARBON_MONOISOTOPIC_MASS + 6 * HYDROGEN_MONOISOTOPIC_MASS
-            + 2 * OXYGEN_MONOISOTOPIC_MASS, "[P-chain+PEtn]+", "Common"),
+        ion(glycerol_backbone + phosphoric_acid, "[M+H-C3H9O6P]+", "Diagnostic_HG"),
+        ion(glycerol_backbone + metaphosphoric_acid, "[M+H-C3H7O5P]+", "Diagnostic_HG"),
+        ion(glycerol_backbone, "[M+H-C3H6O2]+", "Common"),
         ion(WATER_MONOISOTOPIC_MASS, "[M+H-H2O]+", "Common"),
         ion(0, "[M+H]+", "Common"),
     ]

@@ -15,6 +15,9 @@ import zlib
 from . import safe_pickle
 from .chain_utils import extract_fragment_chain_token
 from .esterified_ceramide import is_esterified_ceramide
+from .negative_lpe import is_negative_lpe
+from .negative_lpc import is_negative_lpc
+from .positive_lpc_ether import is_positive_ether_lpc
 from .evidence_policy import (
     LOSS_FRAGMENT_TYPES, POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
     _fragment_counts_as_effective_loss, _fragment_counts_as_hg,
@@ -123,6 +126,13 @@ def evidence_program(record):
     """Compile only checks that every emitted result must satisfy."""
     if len(record.fragments) > 64:
         return ACCEPT
+    if is_negative_lpc(record) or is_positive_ether_lpc(record):
+        return _and(ACCEPT, _mask(record, lambda f: _fragment_counts_as_hg(record, f)))
+    if is_negative_lpe(record):
+        precursor = _mask(record, lambda f: f.fragment_type == 'Precursor Ion'
+                          and abs(f.mz-record.precursor_mz) <= 1e-6)
+        hg = _mask(record, lambda f: _fragment_counts_as_hg(record, f))
+        return _and(_and(ACCEPT, precursor), hg)
     key = f'{record.compound_class}_{record.adduct}'
     if is_esterified_ceramide(record.compound_class, record.lipid_chain_name):
         key = f'Cer-esterified_{record.adduct}'

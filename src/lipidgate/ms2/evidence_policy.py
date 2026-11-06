@@ -9,6 +9,9 @@ from .esterified_ceramide import is_esterified_ceramide
 from .models import FragmentMatch, FragmentRecord, LibraryRecord
 from .negative_cer_hsu2016 import is_simple_negative_cer, logical_negative_cer_fragment_types
 from .negative_gm3 import is_negative_gm3
+from .negative_lpe import HG_NAMES as NEGATIVE_LPE_HG_NAMES, is_negative_lpe
+from .negative_lpc import HG_NAME as NEGATIVE_LPC_HG_NAME, is_negative_lpc
+from .positive_lpc_ether import HG_NAME as POSITIVE_LPC_HG_NAME, is_positive_ether_lpc
 from .negative_hexcer import is_negative_hexcer, logical_fragment_types
 from .oxidized_fragment_policy import parent_class_key, is_oxidized_precursor_water_loss
 from .positive_gm3 import is_positive_gm3
@@ -233,7 +236,8 @@ def _record_precursor_ion_fragments(record: LibraryRecord) -> List[FragmentRecor
 def _requires_precursor_fragment(record: LibraryRecord) -> bool:
     class_key = _normalized_class_key(record.compound_class)
     return (
-        _normalized_compound_class(record.compound_class) in PRECURSOR_FRAGMENT_REQUIRED_CLASSES
+        is_negative_lpe(record)
+        or _normalized_compound_class(record.compound_class) in PRECURSOR_FRAGMENT_REQUIRED_CLASSES
         or (
             class_key == "ADGGA"
             and not _is_positive_adduct(record.adduct)
@@ -306,6 +310,12 @@ def _record_has_candidate_hg(record: LibraryRecord) -> bool:
 
 @cached_fragment_fact
 def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> bool:
+    if is_positive_ether_lpc(record):
+        return fragment.fragment_type == "Diagnostic_HG" and fragment.name == POSITIVE_LPC_HG_NAME
+    if is_negative_lpc(record):
+        return fragment.fragment_type == "Diagnostic_HG" and fragment.name == NEGATIVE_LPC_HG_NAME
+    if is_negative_lpe(record):
+        return fragment.fragment_type == "Diagnostic_HG" and fragment.name in NEGATIVE_LPE_HG_NAMES
     if _is_positive_ps_record(record):
         return _is_positive_ps_headgroup_loss(fragment)
     if _is_positive_mg_record(record):
@@ -364,6 +374,16 @@ def _scoring_pools_for_fragment(
 
 @cached_fragment_fact(matched_independent=True)
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
+    if is_positive_ether_lpc(record):
+        if fragment.fragment_type == "Precursor Ion" and abs(fragment.mz-record.precursor_mz) <= 1e-6:
+            return "fah"  # Secondary precursor pool; no chain evidence or gate.
+        return "hg" if _fragment_counts_as_hg(record, fragment) else "other"
+    if is_negative_lpc(record):
+        return "hg" if _fragment_counts_as_hg(record, fragment) else "other"
+    if is_negative_lpe(record):
+        if fragment.fragment_type == "Precursor Ion" and abs(fragment.mz-record.precursor_mz) <= 1e-6:
+            return "fah"  # Existing primary-pool field; the evidence is precursor, not a chain ion.
+        return "hg" if _fragment_counts_as_hg(record, fragment) else "other"
     if _normalized_class_key(record.compound_class).startswith("OX") and is_oxidized_precursor_water_loss(fragment):
         return "other"
     if (
@@ -441,6 +461,8 @@ def _chain_evidence_count_for_matches(
 
 
 def _record_expected_fah_tokens(record: LibraryRecord) -> List[str]:
+    if is_negative_lpe(record) or is_negative_lpc(record) or is_positive_ether_lpc(record):
+        return []
     tokens: List[str] = []
     seen = set()
     for fragment in record.fragments:

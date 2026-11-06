@@ -1,3 +1,5 @@
+import pytest
+
 from lipidgate.ms2.library import normalize_imported_record
 from lipidgate.ms2.models import ExperimentalSpectrum, FragmentRecord, LibraryRecord, normalize_peaks
 from lipidgate.ms2.rules import DEFAULT_RULES
@@ -27,7 +29,7 @@ def test_plasmalogen_and_ether_lyso_pe_use_distinct_diagnostic_gates():
     plasmalogen = _lyso_record("LPE-P")
     ether = _lyso_record("LPE-O")
     assert [(round(f.mz, 4), f.fragment_type) for f in plasmalogen.fragments] == [
-        (294.2917, "Diagnostic_HG"), (312.3023, "Diagnostic_HG"),
+        (294.3155, "Diagnostic_HG"), (312.3261, "Diagnostic_HG"),
         (392.2924, "Common"), (448.3186, "Common"),
         (466.3292, "Common"),
     ]
@@ -35,15 +37,19 @@ def test_plasmalogen_and_ether_lyso_pe_use_distinct_diagnostic_gates():
         (325.3101, "Diagnostic_HG"), (448.3186, "Common"),
         (466.3292, "Common"),
     ]
-    complete_p = [(294.2917, 100), (312.3023, 50), (392.2924, 15),
+    complete_p = [(294.3155, 100), (312.3261, 50), (392.2924, 15),
                   (448.3186, 8), (466.3292, 30)]
-    missing_p_gate = [peak for peak in complete_p if peak[0] != 312.3023]
+    missing_p_gate = [peak for peak in complete_p if peak[0] != 312.3261]
     complete_o = [(325.3101, 100), (448.3186, 8), (466.3292, 30)]
     assert _score(plasmalogen, complete_p).passed_required_gates
     assert not _score(plasmalogen, missing_p_gate).passed_required_gates
     assert not _score(ether, complete_p).passed_required_gates
     assert _score(ether, complete_o).passed_required_gates
     assert not _score(plasmalogen, complete_o).passed_required_gates
+    # The old N-containing neutral losses are 0.0238 Da away and cannot
+    # substitute for either nitrogen-retaining glycerol/phosphate loss.
+    old_masses = [(294.2917,100),(312.3023,50),(392.2924,15),(466.3292,30)]
+    assert not _score(plasmalogen,old_masses).passed_required_gates
 
 
 def test_pi_ammonium_drops_only_four_acyl_neutral_losses():
@@ -66,3 +72,23 @@ def test_pi_ammonium_drops_only_four_acyl_neutral_losses():
     assert len(revised.fragments) == 7
     assert {f.name for f in revised.fragments} == set(fragment_names) - set(fragment_names[4:8])
     assert len(record.fragments) == 11
+
+
+@pytest.mark.parametrize("carbon,db,precursor,products", [
+    (16,0,438.2979,(266.2842,284.2948)),
+    (18,0,466.3292,(294.3155,312.3261)),
+    (18,1,464.3136,(292.2999,310.3105)),
+    (20,0,494.3605,(322.3468,340.3574)),
+])
+def test_lpe_p_backbone_losses_retain_nitrogen_across_chain_compositions(carbon,db,precursor,products):
+    name=f"LPE(P-{carbon}:{db})"
+    record=normalize_imported_record(LibraryRecord(0,"LPE-P",name,name,precursor,"[M+H]+",polarity="+"))
+    hg=[f for f in record.fragments if f.fragment_type=="Diagnostic_HG"]
+    assert [f.mz for f in hg]==list(products)
+    assert [f.name for f in hg]==["[M+H-C3H9O6P]+","[M+H-C3H7O5P]+"]
+    assert precursor-hg[0].mz==pytest.approx(172.01367500849,abs=.000051)
+    assert precursor-hg[1].mz==pytest.approx(154.00311032403,abs=.000051)
+    assert hg[1].mz-hg[0].mz==pytest.approx(18.01056468446,abs=.0001)
+    assert normalize_imported_record(record)==record
+    assert _score(record,[(hg[0].mz,100),(hg[1].mz,50)]).passed_required_gates
+    assert not _score(record,[(hg[0].mz,100)]).passed_required_gates

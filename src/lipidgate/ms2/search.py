@@ -27,6 +27,9 @@ from .fragment_labels import canonical_fragment_label
 from .library import load_library
 from .indexed_library import open_indexed_library, validate_precursor_range
 from .lipid_naming import canonicalize_n_acyl_glycerophospholipid_name, canonicalize_single_chain_name
+from .negative_lpe import reported_name as negative_lpe_reported_name
+from .negative_lpc import reported_name as negative_lpc_reported_name
+from .positive_lpc_ether import reported_name as positive_lpc_reported_name
 from .models import CandidateScore, ExperimentalSpectrum, FragmentMatch, LibraryRecord, PoolScore, FragmentRecord, ExperimentalPeak
 from .ranking_policy import (
     build_original_rank_tiers,
@@ -545,6 +548,10 @@ class LipidMS2Searcher:
 
     @classmethod
     def _reported_name(cls, result: CandidateScore) -> str:
+        ether_name = (negative_lpe_reported_name(result.record) or negative_lpc_reported_name(result.record)
+                      or positive_lpc_reported_name(result.record))
+        if ether_name is not None:
+            return ether_name
         lyso_name = cls._lyso_sum_composition_name(result.record)
         if lyso_name is not None:
             return lyso_name

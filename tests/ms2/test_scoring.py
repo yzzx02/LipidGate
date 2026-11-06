@@ -3453,7 +3453,7 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(result.passed_required_gates)
         self.assertEqual(result.downgrade_reason, "missing_required_fah")
 
-    def test_lpe_o_uses_fah_rule_without_hg_requirement(self) -> None:
+    def test_lpe_o_no_longer_passes_on_legacy_ro_and_common_support(self) -> None:
         ether_lyso_record = LibraryRecord(
             record_id=7,
             compound_class="LPE-O",
@@ -3479,7 +3479,9 @@ class ScoringTests(unittest.TestCase):
         )
         rule = DEFAULT_RULES.get("LPE-O")
         result = score_candidate(spectrum, ether_lyso_record, rule)
-        self.assertTrue(result.passed_required_gates)
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("precursor", result.missing_required_groups)
+        self.assertIn("hg", result.missing_required_groups)
 
     def test_pe_o_can_pass_with_fa_only_when_library_has_no_gate_hg(self) -> None:
         pe_o_record = LibraryRecord(
@@ -3551,7 +3553,7 @@ class ScoringTests(unittest.TestCase):
         self.assertIn("hg", missing_hg.missing_required_groups)
         self.assertTrue(passing.passed_required_gates)
 
-    def test_lpe_o_can_pass_when_fah_and_loss_are_both_matched(self) -> None:
+    def test_lpe_o_legacy_ro_and_loss_do_not_replace_precursor_and_hg(self) -> None:
         ether_lyso_record = LibraryRecord(
             record_id=11,
             compound_class="LPE-O",
@@ -3577,7 +3579,9 @@ class ScoringTests(unittest.TestCase):
         )
         rule = DEFAULT_RULES.get("LPE-O")
         result = score_candidate(spectrum, ether_lyso_record, rule)
-        self.assertTrue(result.passed_required_gates)
+        self.assertFalse(result.passed_required_gates)
+        self.assertIn("precursor", result.missing_required_groups)
+        self.assertIn("hg", result.missing_required_groups)
 
     def test_lyso_can_use_hg_only_when_library_has_no_fah(self) -> None:
         lyso_record = LibraryRecord(

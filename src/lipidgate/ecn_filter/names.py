@@ -116,6 +116,13 @@ def _normalize_chains(chain_text: str, tokens: list[_ChainToken]) -> str:
 
 def parse_lipid_name(lipid_name: object, fallback_subclass: object = "") -> LipidNameInfo:
     text = str(lipid_name or "").strip()
+    # These are two interpretations of one ether composition, not two chains.
+    ether_lyso = re.fullmatch(r"(LPE|LPC)\(O-(\d+):(\d+)\)/\1\(P-(\d+):(\d+)\)", text)
+    if ether_lyso is not None:
+        family = ether_lyso.group(1)
+        carbon, db, p_carbon, p_db = map(int, ether_lyso.groups()[1:])
+        if carbon == p_carbon and db == p_db + 1:
+            return LipidNameInfo(text, carbon, db, family+"-O")
     # TG-EST's inner (FA ...) is a fourth chain, not the outer lipid-name
     # parentheses. Keep its structural grouping and count all four chains.
     tg_est = re.fullmatch(

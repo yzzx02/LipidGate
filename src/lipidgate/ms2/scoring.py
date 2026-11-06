@@ -114,6 +114,9 @@ from .models import (
     PoolScore,
 )
 from .negative_gm3 import is_negative_gm3
+from .negative_lpe import is_negative_lpe
+from .negative_lpc import is_negative_lpc
+from .positive_lpc_ether import is_positive_ether_lpc
 from .negative_hexcer import is_negative_hexcer
 from .oxidized_chain_evidence import oxidized_chain_requirements, oxidized_chain_missing_groups
 from .positive_gm3 import is_positive_gm3
@@ -203,6 +206,10 @@ def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tole
 
 
 def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str, float]:
+    if is_positive_ether_lpc(record):
+        return {"fah": 20.0, "hg": 60.0, "other": 20.0}
+    if is_negative_lpc(record):
+        return {"fah": 0.0, "hg": 75.0, "other": 25.0}
     class_key = _normalized_class_key(record.compound_class)
     adduct = str(record.adduct or "").strip()
     if is_protonated_single_chain_nagly(record):
@@ -668,6 +675,8 @@ def _determine_resolution(
     is_positive_mode: bool,
     positive_loss_can_resolve_chain: bool,
 ) -> Tuple[str, str]:
+    if is_negative_lpe(record) or is_negative_lpc(record) or is_positive_ether_lpc(record):
+        return "species_level", ""
     chain_tokens = _extract_chain_tokens(record.lipid_chain_name)
     if oxidized_chain_requirements(record) is not None:
         if not oxidized_chain_missing_groups(record, matches):

@@ -9,6 +9,8 @@ import math
 from . import scoring as reference
 from .chain_utils import chain_token_counts, extract_chain_tokens, extract_fragment_chain_token, FRAGMENT_CHAIN_TOKEN_RE, canonical_chain_token
 from .models import CandidateScore, FragmentRecord, LibraryRecord
+from .negative_lpc import is_negative_lpc
+from .positive_lpc_ether import is_positive_ether_lpc
 from .native_bridge import load_bridge
 from .record_facts import cached_rule_fact, with_record_facts, get_native_query
 from . import native_engine
@@ -144,6 +146,7 @@ def _prepare(record, rule):
     glyceride = r.is_positive_three_substituent_glyceride(record)
     if ((not glyceride and (key not in CLASSES or record.adduct not in ADDUCTS)) or len(record.fragments) > 64
             or len({id(f) for f in record.fragments}) != len(record.fragments)
+            or is_negative_lpc(record) or is_positive_ether_lpc(record)
             or r._requires_precursor_fragment(record) or r.oxidized_chain_requirements(record) is not None):
         return None
     derived = r._derive_required_groups(record, rule)
