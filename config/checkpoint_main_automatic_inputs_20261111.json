@@ -1,0 +1,67 @@
+{
+  "version": "1.1.0",
+  "checkpoint": "main-automatic-inputs-20261111",
+  "created_at_utc": "2026-11-10T23:40:00.589609+00:00",
+  "artifact": "source checkpoint",
+  "base_commit": "b6912e58849c0442e2dd7f5441d339ffd9980c94",
+  "windows_executable_built": false,
+  "sphingolipid_branch_merged": false,
+  "source_fingerprints": {
+    "application": {
+      "sha256": "6e5efd0f597702bef936e484f682e107ab190a091f30f0cf3f585d948985f360",
+      "files": 115
+    },
+    "ms1_runtime": {
+      "sha256": "28a13b63f00c920d571fd4d0aac8d8a8f097baae325bbb18e43daadc80acdef4",
+      "files": 19
+    },
+    "ms2_unchanged_from_base": {
+      "sha256": "1a3a7f08f2c602113860431ecdea8f789e07955f6b12e171dbd2b8f01b1b22f6",
+      "files": 71
+    }
+  },
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "bytes": 23894631,
+      "raw_source_records": 1254393
+    },
+    "negative": {
+      "source_gzip_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "bytes": 39394998,
+      "raw_source_records": 1088179
+    }
+  },
+  "verified_unchanged_protected_files": 107,
+  "verification": {
+    "tests_passed": 1437,
+    "subtests_passed": 3118,
+    "junit_test_cases": 4555,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "live_automatic_execution": {
+      "pyopenms_worker": {
+        "input_files": 4,
+        "manual_mode_required": false,
+        "features": 6
+      },
+      "xcms": {
+        "input_files": 4,
+        "manual_mode_required": false,
+        "features": 5
+      }
+    },
+    "mixed_ms1_only_and_ms2_inputs_tested": true,
+    "legacy_modes_do_not_override_scan_levels": true,
+    "offscreen_gui_verified": true,
+    "repository_hygiene_problems": 0
+  },
+  "input_policy": {
+    "manual_analysis_mode": false,
+    "scan_inventory": "actual spectrum MS level, including referenced parameter groups",
+    "no_ms2": "MS1 detection, alignment, area matrix and optional mass candidates",
+    "has_ms2": "existing MS2 identification rules, scores and ranking",
+    "low_ms2_score_triggers_ms1_fallback": false
+  }
+}

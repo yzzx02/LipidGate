@@ -172,13 +172,15 @@ def test_plain_workbook_preserves_numeric_values_and_literal_strings(tmp_path):
 
 
 @pytest.mark.parametrize("project_format", ["legacy", "modern"])
+@pytest.mark.parametrize("legacy_mode", [None, "ms1_only"])
 def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
-    tmp_path, monkeypatch, project_format
+    tmp_path, monkeypatch, project_format, legacy_mode
 ):
     import lipidgate.pipeline as pipeline
 
     source = tmp_path / "sample.mzML"
-    source.write_text('<mzML><cvParam accession="MS:1000129"/><spectrum><cvParam accession="MS:1000511" value="1"/></spectrum></mzML>')
+    source.write_text('<mzML><cvParam accession="MS:1000129"/><spectrum><cvParam accession="MS:1000511" value="1"/></spectrum>'
+                      '<spectrum><cvParam accession="MS:1000511" value="2"/></spectrum></mzML>')
     library = tmp_path / "library.msp"
     library.write_text("fixture")
     project = (Project.create(tmp_path / "project/test.lipidgate") if project_format == "modern"
@@ -199,6 +201,8 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
         },
         "filter": {"use_ecn": False, "use_score": False},
     }
+    if legacy_mode:
+        settings['analysis_mode'] = legacy_mode
     calls = []
 
     def detect(**kwargs):
@@ -235,6 +239,7 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
         == 3
     )
     assert (final.output_dir.parent / "provenance.json").exists()
+    assert 'analysis_mode' not in Project.open(project.path).settings
     ms1_metadata = json.loads((final.output_dir.parent / "ms1/feature_table.json").read_text())
     assert ms1_metadata["algorithm"] == "xcms"
     assert Path(ms1_metadata["table"]) == tmp_path / "features.csv"
@@ -249,7 +254,7 @@ def test_ms2_only_input_skips_ms1_extraction_but_keeps_search(tmp_path, monkeypa
     source = tmp_path / "sample.mzML"
     source.write_text(
         '<mzML><cvParam accession="MS:1000129"/>'
-        '<cvParam accession="MS:1000511" value="2"/></mzML>'
+        '<spectrum><cvParam accession="MS:1000511" value="2"/></spectrum></mzML>'
     )
     library = tmp_path / "library.msp"
     library.write_text("fixture")
@@ -315,7 +320,8 @@ def test_peak_truth_is_not_a_product_entry_point():
     assert "project-run" in help_text and "filter-results" in help_text
 
 
-def test_real_project_detection_search_and_export(tmp_path):
+@pytest.mark.parametrize("extra_ms1", [False, True])
+def test_real_project_detection_search_and_export(tmp_path, extra_ms1):
     import numpy as np
 
     oms = pytest.importorskip("pyopenms")
@@ -325,6 +331,7 @@ def test_real_project_detection_search_and_export(tmp_path):
     m = PositivePECer(18, 1, 16, 0)
     sodium_mz = m.precursor_mz + 22.989220702 - 1.007276466621
     exp = oms.MSExperiment()
+    ms1_only = oms.MSExperiment()
     for rt in range(100):
         sp = oms.MSSpectrum()
         sp.setRT(float(rt))
@@ -351,7 +358,19 @@ def test_real_project_detection_search_and_export(tmp_path):
                 np.array([6000.0, y, 0.4 * y, 0.08 * y, 0.95 * y, 0.38 * y, 0.076 * y]),
             )
         )
+        if extra_ms1:
+            # Pose-clustering alignment needs anchors at different RTs; the
+            # original single-compound fixture has only one chromatographic RT.
+            masses, signals = map(list, sp.get_peaks())
+            for mass, apex in ((550.4539, 15), (650.5114, 65), (850.6679, 85)):
+                height = 1.2e6 * np.exp(-0.5 * ((rt - apex) / 4) ** 2)
+                for isotope, factor in enumerate((1., .4, .08)):
+                    masses.append(mass + isotope * 1.00335)
+                    signals.append(height * factor)
+            order = np.argsort(masses)
+            sp.set_peaks((np.array(masses)[order], np.array(signals)[order]))
         exp.addSpectrum(sp)
+        ms1_only.addSpectrum(sp)
         if rt == 40:
             sp = oms.MSSpectrum()
             sp.setRT(40.1)
@@ -382,6 +401,10 @@ def test_real_project_detection_search_and_export(tmp_path):
     library.write_text("\n".join(lines) + "\n\n", encoding="utf-8")
     project = Project.open(tmp_path / "project")
     project.add_files([source])
+    if extra_ms1:
+        survey = tmp_path / "only_ms1.mzML"
+        oms.MzMLFile().store(str(survey), ms1_only)
+        project.add_files([survey])
     settings = {
         "ms1": {
             "enabled": True,
@@ -415,4 +438,8 @@ def test_real_project_detection_search_and_export(tmp_path):
     assert relations.iloc[0].ion_a == '[M+H]+'
     assert relations.iloc[0].ion_b == '[M+Na]+'
     audit = pd.read_csv(result.csv_path.parent / "audit/ion_relationships.csv")
-    assert audit.iloc[0].supported_samples == 1
+    assert audit.iloc[0].supported_samples == 1 + int(extra_ms1)
+    inventory = json.loads((result.csv_path.parent.parent / "scan_inventory.json").read_text(encoding="utf-8"))
+    assert inventory[0]['ms2_scans'] == 1
+    if extra_ms1:
+        assert inventory[1]['ms1_scans'] == 100 and inventory[1]['ms2_scans'] == 0

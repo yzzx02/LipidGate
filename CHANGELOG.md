@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Replace manual MS1 mode selection with automatic execution from observed
+  scan levels. Stream each input once, retain a scan inventory and process
+  MS1-only inputs without requiring valid MS2 settings or an MS2 library.
+- Add Run directly to the import page and share polarity across parameter pages.
+  Preserve polarity when migrating old manual-mode projects. MS2-containing
+  and mixed input sets continue through the existing identification workflow;
+  fragment definitions, scores, ranking and source libraries remain unchanged.
+
 ## 1.1.0 — 2026-11-11
 
 - Add persistent Sample/QC/Blank roles, independent experimental groups,

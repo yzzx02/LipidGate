@@ -209,10 +209,9 @@ class FilterPage(WorkflowPage):
         body.addWidget(
             label("设置分析前参数。运行完成后，自动打开独立结果窗口浏览、筛选及查看谱图。")
         )
-        self.ms1_notice = label("纯 MS1：导出检测峰、峰面积矩阵及质量候选。下方 MS2 分数和 ECN 设置已停用。")
-        self.ms1_notice.setWordWrap(True)
-        self.ms1_notice.hide()
-        body.addWidget(self.ms1_notice)
+        self.input_notice = label("自动按输入文件运行：有 MS2 时继续鉴定；仅有 MS1 时输出峰面积矩阵与一级候选，MS2 分数和 ECN 设置不参与该结果。")
+        self.input_notice.setWordWrap(True)
+        body.addWidget(self.input_notice)
         scoring, scoring_layout = card("候选与分数")
         form = QtWidgets.QFormLayout()
         form.addRow(window.ms2_page.output_topn, window.ms2_page.top_n)
@@ -290,8 +289,7 @@ class FilterPage(WorkflowPage):
                 project_path, settings, progress=self.progress_message.emit
             )
 
-        self.run_progress.start(len(files), settings["ms1"].get("enabled", True),
-                                ms1_only=settings.get("analysis_mode") == "ms1_only")
+        self.run_progress.start(len(files), settings["ms1"].get("enabled", True))
         QtCore.QTimer.singleShot(
             0, lambda: self.window.stack.widget(4).ensureWidgetVisible(self.run_progress)
         )
@@ -342,7 +340,7 @@ class FilterPage(WorkflowPage):
                 self.window.ms2_page,
             ):
                 p.setEnabled(True)
-            self.window._apply_analysis_mode()
+            self.window._refresh_parameter_controls()
 
     def _done(self, payload):
         result = payload
@@ -511,8 +509,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.nav.currentRowChanged.connect(self._navigate)
         self.nav.setCurrentRow(0)
-        self.feature_page.analysis_mode.currentIndexChanged.connect(self._apply_analysis_mode)
-        self._apply_analysis_mode()
+        self.feature_page.ms1_mode.currentIndexChanged.connect(
+            lambda: self._sync_polarity(self.feature_page.ms1_mode, self.ms2_page.mode))
+        self.ms2_page.mode.currentIndexChanged.connect(
+            lambda: self._sync_polarity(self.ms2_page.mode, self.feature_page.ms1_mode))
+        self._refresh_parameter_controls()
         self._apply_style()
 
     def _navigate(self, index):
@@ -564,7 +565,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if library_path == str(default_library):
             library_path = ""
         return {
-            "analysis_mode": f.analysis_mode.currentData(),
             "ms1": {
                 "enabled": f.enabled.isChecked(),
                 "algo": f.algo.currentText(),
@@ -617,11 +617,12 @@ class MainWindow(QtWidgets.QMainWindow):
         a = settings.get("ms1", {})
         b = settings.get("ms2", {})
         c = settings.get("filter", {})
-        index = f.analysis_mode.findData(settings.get("analysis_mode", "ms1_ms2"))
-        if index < 0:
-            raise ValueError("不支持的分析模式")
-        f.analysis_mode.setCurrentIndex(index)
-        f.ms1_mode.setCurrentIndex(f.ms1_mode.findData(a.get("mode", b.get("mode", "negative"))))
+        mode = (a.get("mode", b.get("mode", "negative")) if settings.get("analysis_mode") == "ms1_only"
+                else b.get("mode", a.get("mode", "negative")))
+        if mode not in {"positive", "negative"}:
+            raise ValueError("请选择正或负模式")
+        f.ms1_mode.setCurrentIndex(f.ms1_mode.findData(mode))
+        f.ms1_library.setText(str(default_positive_msp() if mode == "positive" else default_negative_msp()))
         search = a.get("candidate_search", {})
         f.candidate_search.setChecked(search.get("enabled", True))
         f.candidate_ppm.setValue(search.get("ppm", 10.))
@@ -640,7 +641,7 @@ class MainWindow(QtWidgets.QMainWindow):
         f.ms1_min_fraction.setValue(p.get("minFraction", 0.2))
         f.ms1_min_samples.setValue(p.get("minSamples", p.get("min_samples", 1)) or 1)
         f.msdial_table.setText(a.get("msdial_table") or "")
-        m.mode.setCurrentIndex(m.mode.findData(b.get("mode", "negative")))
+        m.mode.setCurrentIndex(m.mode.findData(mode))
         m._on_mode_changed()
         saved_library = b.get("library_path")
         default_name = (
@@ -680,31 +681,20 @@ class MainWindow(QtWidgets.QMainWindow):
         r.use_ecn.setChecked(c.get("use_ecn", False))
         r.rt.setValue(c.get("rt_tolerance", 0.5))
         r.retain_unmodeled.setChecked(c.get("retain_unmodeled", True))
-        self._apply_analysis_mode()
+        self._refresh_parameter_controls()
 
-    def _apply_analysis_mode(self, *_args):
-        f, m, r = self.feature_page, self.ms2_page, self.filter_page
-        only = f.analysis_mode.currentData() == "ms1_only"
-        f.ms1_candidate_card.setVisible(only)
-        f.next_step.setText("下一步：运行分析" if only else "下一步：MS2 参数")
-        if only:
-            f.enabled.setChecked(True)
-            if f.algo.currentText() == "msdial":
-                f.algo.setCurrentText("pyopenms")
-        f.enabled.setEnabled(not only)
-        f.algo.model().item(3).setEnabled(not only)
-        m.setEnabled(not only)
-        m.output_topn.setEnabled(not only)
-        m.top_n.setEnabled(not only and m.output_topn.isChecked())
-        m.workers.setEnabled(not only)
-        r.ms1_notice.setVisible(only)
-        for widget in (r.use_score, r.use_ecn):
-            widget.setEnabled(not only)
-        r.score.setEnabled(not only and r.use_score.isChecked())
+    @staticmethod
+    def _sync_polarity(source, target):
+        index = target.findData(source.currentData())
+        if index >= 0 and index != target.currentIndex():
+            target.setCurrentIndex(index)
+
+    def _refresh_parameter_controls(self):
+        m, r = self.ms2_page, self.filter_page
+        m.top_n.setEnabled(m.output_topn.isChecked())
+        r.score.setEnabled(r.use_score.isChecked())
         for widget in (r.rt, r.retain_unmodeled):
-            widget.setEnabled(not only and r.use_ecn.isChecked())
-        self.nav.item(3).setText("MS2 参数（纯 MS1 跳过）" if only else "MS2 参数")
-        r.run_btn.setText("开始 MS1 分析" if only else "开始分析")
+            widget.setEnabled(r.use_ecn.isChecked())
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.filter_page._thread is not None or self.results_page._jobs:

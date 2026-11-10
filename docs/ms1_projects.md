@@ -1,4 +1,4 @@
-# Sample metadata and pure MS1 analysis
+# Sample metadata and automatic mzML analysis
 
 The import table stores Sample, QC or Blank independently from the experimental
 group. Every new file starts in group **1**, batch 1. Use group 2, 3, etc. for
@@ -11,11 +11,21 @@ Projects use schema 2. Schema-1 projects open with the above defaults and upgrad
 when saved. Source files are never relocated. Each run snapshots its sample
 metadata so later edits do not change the description of historical results.
 
-In **MS1 parameters**, choose **pure MS1**. Choose polarity, pyOpenMS (default),
-XCMS or asari, and the detection parameters. The original combined MS1/MS2 mode
-remains the default for old projects. Pure MS1 skips the MS2 search, MS2 score
-filter and ECN identification filter. Disable candidate search to export peaks
-and areas without requiring a library.
+Import mzML files and click **Run directly** to use the current parameters.
+There is no separate MS1 analysis mode. The runner checks actual MS1/MS2 scan
+levels and polarity in one streaming pass. Files without supported scans are
+reported before detection. Only inputs with MS1 and no MS2 automatically finish
+at peak detection, alignment, areas and optional mass candidates. With MS2
+present, the existing MS2 workflow continues, also accepting mixed input sets
+containing files with only MS1. Low MS2 scores never trigger an MS1 fallback.
+
+Detection defaults to pyOpenMS; XCMS, asari and the existing MS-DIAL table import
+remain available. Polarity is shared by the MS1 and MS2 settings. When inputs
+contain only MS1, detection runs even if an older project disabled it, and MS2
+library settings, MS2 score thresholds and ECN identification filters do not
+affect the MS1 result. Disable candidate search to export peaks and areas without
+requiring a library. Previous manual-mode settings are removed on the next run;
+their selected polarity is preserved, while actual scan levels determine execution.
 
 The optional mass lookup defaults to the existing main library for the selected
 polarity, 10 ppm and at most 10 displayed candidates per feature. A separate
@@ -52,7 +62,7 @@ interface. All R processing remains outside the Qt process.
 The same saved workflow runs with:
 
 ```powershell
-lipidgate project-run --project experiment.lipidgate --ms1-only
+lipidgate project-run --project experiment.lipidgate
 ```
 
 Existing MS2 fragment definitions, admission rules, numeric scoring, ranking and

@@ -11,11 +11,13 @@ from lipidgate.final_results import export_final_results
 from lipidgate.project import Project
 
 
-def check_polarity(path, mode):
+def inspect_mzml(path, mode):
+    """Count actual scan levels while validating polarity in one streamed pass."""
     if mode not in {"positive", "negative"}:
         raise ValueError("无效的离子模式")
     expected = "MS:1000130" if mode == "positive" else "MS:1000129"
-    has_ms1 = False
+    counts = {"ms1_scans": 0, "ms2_scans": 0}
+    spectrum_levels = set()
     in_spectrum = False
     groups = {}
     group_id = None
@@ -23,13 +25,12 @@ def check_polarity(path, mode):
     stack = []
 
     def inspect(accession, value):
-        nonlocal has_ms1
         if accession in {"MS:1000130", "MS:1000129"} and accession != expected:
             raise ValueError(
                 f"{Path(path).name} 与项目离子模式不一致；一个项目仅处理一个模式"
             )
-        if accession == "MS:1000511" and value == "1":
-            has_ms1 = True
+        if accession == "MS:1000511" and value in {"1", "2"}:
+            spectrum_levels.add(value)
 
     # Parse the whole stream, releasing binary arrays as soon as consumed.
     for event, element in ET.iterparse(path, events=("start", "end")):
@@ -38,6 +39,7 @@ def check_polarity(path, mode):
             stack.append(element)
             if name == "spectrum":
                 in_spectrum = True
+                spectrum_levels.clear()
             elif name == "referenceableParamGroup":
                 group_id = element.get("id")
                 group_parameters = []
@@ -58,12 +60,19 @@ def check_polarity(path, mode):
             for parameter in groups[reference]:
                 inspect(*parameter)
         elif name == "spectrum":
+            for level in spectrum_levels:
+                counts[f"ms{level}_scans"] += 1
             in_spectrum = False
         element.clear()
         if len(stack) > 1:
             stack[-2].remove(element)
         stack.pop()
-    return has_ms1
+    return counts
+
+
+def check_polarity(path, mode):
+    """Retain the existing Boolean MS1 check for callers outside the runner."""
+    return bool(inspect_mzml(path, mode)["ms1_scans"])
 
 
 def run_project(project_path, settings, progress=lambda message: None):
@@ -75,13 +84,30 @@ def run_project(project_path, settings, progress=lambda message: None):
     project = Project.open(project_path)
     files = project.mzml_files()
     settings = json.loads(json.dumps(settings))
-    if settings.get("analysis_mode", "ms1_ms2") == "ms1_only":
-        return _run_ms1_project(project, files, settings, progress)
-    if settings.get("analysis_mode", "ms1_ms2") != "ms1_ms2":
-        raise ValueError("分析模式须为 ms1_ms2 或 ms1_only")
-    mode = settings["ms2"]["mode"]
+    # Old projects may contain a manual mode. Preserve their selected polarity,
+    # but derive execution from observed scan levels rather than that switch.
+    legacy_ms1 = settings.pop("analysis_mode", None) == "ms1_only"
+    ms1_options, ms2_options = settings.get("ms1", {}), settings.get("ms2", {})
+    mode = (ms1_options.get("mode", ms2_options.get("mode", "negative")) if legacy_ms1
+            else ms2_options.get("mode", ms1_options.get("mode", "negative")))
     if mode not in {"positive", "negative"}:
         raise ValueError("请选择正或负模式")
+    settings.setdefault("ms1", {})["mode"] = mode
+    settings.setdefault("ms2", {})["mode"] = mode
+    progress("检查输入文件和离子模式…")
+    inventory, ms1_files = [], []
+    for number, file in enumerate(files, 1):
+        levels = inspect_mzml(file, mode)
+        if not any(levels.values()):
+            raise ValueError(f"{file.name} 不含可处理的 MS1 或 MS2 扫描。")
+        if levels["ms1_scans"]:
+            ms1_files.append(file)
+        inventory.append(dict(source_file=file.name, source_path=str(file), **levels))
+        progress(f"检查 已完成 {number}/{len(files)}：{file.name}")
+    if not any(row["ms2_scans"] for row in inventory):
+        progress("输入检查：未检出 MS2，自动完成 MS1 峰检测、对齐和一级候选检索。")
+        return _run_ms1_project(project, files, settings, progress, mode=mode, inventory=inventory)
+    progress("输入检查：检出 MS2，继续现有鉴定流程。")
     options = dict(settings["ms2"])
     library = Path(
         options.get("library_path")
@@ -111,20 +137,16 @@ def run_project(project_path, settings, progress=lambda message: None):
             and not Path(ms1.get("msdial_table") or "").is_file()
         ):
             raise ValueError("请选择有效的 MS-DIAL 特征表")
-    progress("检查输入文件和离子模式…")
-    ms1_files = []
-    for index, file in enumerate(files, 1):
-        if check_polarity(file, mode):
-            ms1_files.append(file)
-        progress(f"检查 已完成 {index}/{len(files)}：{file.name}")
     out = project.root / "runs" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     out.mkdir(parents=True)
     (out / "run_settings.json").write_text(
         json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    (out / "scan_inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "provenance.json").write_text(
         json.dumps(
             {
+                "analysis_mode": "ms1_ms2",
                 "product_code_sha256": code_fingerprint(Path(__file__).parent),
                 "ms1_runtime_sha256": code_fingerprint(
                     Path(__file__).parent.parent / "lipidbench"
@@ -237,20 +259,17 @@ def run_project(project_path, settings, progress=lambda message: None):
     return feature, result, final
 
 
-def _run_ms1_project(project, files, settings, progress):
-    """Pure MS1 never enters the MS2 search or final-identification filters."""
+def _run_ms1_project(project, files, settings, progress, *, mode, inventory):
+    """Inputs without MS2 automatically finish at measured MS1 candidates."""
     import math
     from lipidgate.ms1.detection import default_config
     from lipidgate.ms1.workflow import export_ms1_results
     from lipidgate.paths import default_positive_msp, default_negative_msp
     from lipidgate.ms2.provenance import code_fingerprint
-    ms1 = settings.get("ms1", {})
+    ms1 = settings.setdefault("ms1", {})
     if not ms1.get("enabled", True):
-        raise ValueError("纯 MS1 模式必须启用特征检测。")
-    mode = ms1.get("mode", settings.get("ms2", {}).get("mode", "negative"))
-    if mode not in {"positive", "negative"}:
-        raise ValueError("请选择正模式或负模式")
-    settings.setdefault("ms1", {})["mode"] = mode
+        progress("输入仅含 MS1，自动启用特征检测。")
+    ms1["enabled"] = True
     search = ms1.get("candidate_search", {})
     if not math.isfinite(float(search.get("ppm", 10))) or float(search.get("ppm", 10)) <= 0:
         raise ValueError("一级候选质量容差须大于零。")
@@ -262,16 +281,6 @@ def _run_ms1_project(project, files, settings, progress):
         library = Path(search.get("library_path") or (default_positive_msp() if mode == "positive" else default_negative_msp())).resolve()
         if not library.is_file():
             raise FileNotFoundError(f"一级候选库不存在：{library}")
-    progress("检查输入文件和离子模式…")
-    ms1_files = []
-    for number, file in enumerate(files, 1):
-        if check_polarity(file, mode):
-            ms1_files.append(file)
-        progress(f"检查 已完成 {number}/{len(files)}：{file.name}")
-    if len(ms1_files) != len(files):
-        raise ValueError("纯 MS1 分析要求每个参与文件包含 MS1 扫描；请移除或取消启用 MS2-only 文件。")
-    if ms1.get("algo", "pyopenms") in {"msdial", "ms-dial"}:
-        raise ValueError("纯 MS1 模式请选择 pyOpenMS、XCMS 或 asari 从 mzML 提取实际峰。")
     params = ms1.get("params", {})
     widths = params.get("peakwidth", [params.get("min_fwhm", 5), params.get("max_fwhm", 60)])
     if len(widths) != 2 or not all(math.isfinite(float(value)) and value > 0 for value in widths) or widths[0] > widths[1]:
@@ -280,9 +289,11 @@ def _run_ms1_project(project, files, settings, progress):
     out.mkdir(parents=True)
     samples = project.sample_table()
     (out / "run_settings.json").write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "scan_inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8")
     samples.to_csv(out / "sample_metadata.csv", index=False, encoding="utf-8-sig")
     (out / "provenance.json").write_text(json.dumps(dict(
         analysis_mode="ms1_only", product_code_sha256=code_fingerprint(Path(__file__).parent),
+        ms1_runtime_sha256=code_fingerprint(Path(__file__).parent.parent / "lipidbench"),
         inputs=[dict(path=str(path), bytes=path.stat().st_size, mtime_ns=path.stat().st_mtime_ns) for path in files],
         sample_metadata=samples.to_dict("records")), ensure_ascii=False, indent=2), encoding="utf-8")
     project.settings = settings
@@ -293,7 +304,7 @@ def _run_ms1_project(project, files, settings, progress):
     cfg["parameters"]["xcms"]["sample_metadata"] = samples.to_dict("records")
     progress("提取并对齐 MS1 特征…")
     feature = run_feature_detection_result(algo=ms1.get("algo", "pyopenms"), input_path=files,
-        output_dir=out / "ms1", params=params, config=cfg, progress=progress)
+        output_dir=out / "ms1", params=params, config=cfg, msdial_table=ms1.get("msdial_table"), progress=progress)
     final = export_ms1_results(feature, samples, settings, out / "results", library=library,
         cache_dir=project.root / ".cache" / "ms1_candidates", progress=progress)
     progress("完成")

@@ -12,7 +12,7 @@ def gui_env():
     return dict(os.environ,QT_QPA_PLATFORM='offscreen',PYTHONPATH=source)
 
 
-def test_sample_table_bulk_edit_persistence_and_ms1_mode_controls(tmp_path):
+def test_sample_table_bulk_edit_persistence_and_automatic_workflow(tmp_path):
     script=r'''
 import sys
 from pathlib import Path
@@ -47,21 +47,30 @@ assert saved.metadata_for(paths[1])['batch']==3 and saved.metadata_for(paths[1])
 assert saved.metadata_for(paths[2])['sample_type']=='QC'
 assert saved.mzml_files()==paths[1:]
 f=window.feature_page
-f.analysis_mode.setCurrentIndex(f.analysis_mode.findData('ms1_only'))
-assert f.enabled.isChecked() and not f.enabled.isEnabled()
-assert not window.ms2_page.isEnabled()
-assert not window.filter_page.use_score.isEnabled()
-assert f.next_step.text()=='下一步：运行分析'
+assert not hasattr(f,'analysis_mode')
+assert f.enabled.isChecked() and f.enabled.isEnabled()
+assert window.ms2_page.isEnabled()
+assert window.filter_page.use_score.isEnabled()
 f.ms1_mode.setCurrentIndex(f.ms1_mode.findData('positive'))
+assert window.ms2_page._mode_value()=='positive'
 f.candidate_ppm.setValue(8)
 settings=window.analysis_settings()
-assert settings['analysis_mode']=='ms1_only' and settings['ms1']['mode']=='positive'
+assert 'analysis_mode' not in settings and settings['ms1']['mode']=='positive'
 assert settings['ms1']['candidate_search']['ppm']==8
 window.load_project_settings(settings)
-assert f.analysis_mode.currentData()=='ms1_only'
-assert not window.ms2_page.isEnabled()
+assert f.ms1_mode.currentData()=='positive'
+assert window.ms2_page.isEnabled()
+window.ms2_page.mode.setCurrentIndex(window.ms2_page.mode.findData('negative'))
+assert f.ms1_mode.currentData()=='negative'
+window.load_project_settings(dict(settings,analysis_mode='ms1_only'))
+assert f.ms1_mode.currentData()=='positive' and window.ms2_page._mode_value()=='positive'
+assert 'analysis_mode' not in window.analysis_settings()
+called=[]
+window.filter_page.run=lambda:called.append(window.nav.currentRow())
+page.run_button.click()
+assert called==[4]
 window.load_project_settings({})
-assert f.analysis_mode.currentData()=='ms1_ms2' and window.ms2_page.isEnabled()
+assert f.ms1_mode.currentData()=='negative' and window.ms2_page.isEnabled()
 assert 'pyopenms' not in sys.modules
 window.close()
 app.processEvents()

@@ -152,7 +152,8 @@ def test_area_matrix_preserves_missing_values_and_actual_integrals(tmp_path):
     assert groups['group'].tolist()==['1','1']
 
 
-def test_ms1_project_bypasses_ms2_rules_and_writes_complete_workbook(tmp_path,monkeypatch):
+@pytest.mark.parametrize('legacy_mode',[None,'ms1_ms2','ms1_only'])
+def test_ms1_project_bypasses_ms2_rules_and_writes_complete_workbook(tmp_path,monkeypatch,legacy_mode):
     import lipidgate.pipeline as pipeline
     saved,files=project(tmp_path)
     saved.update_samples({files[1]:{'group':'2'},files[2]:{'sample_type':'QC'},files[3]:{'sample_type':'Blank','included':False}})
@@ -167,9 +168,11 @@ def test_ms1_project_bypasses_ms2_rules_and_writes_complete_workbook(tmp_path,mo
     def forbidden(**kwargs):raise AssertionError('Pure MS1 must not call MS2 scoring')
     monkeypatch.setattr(pipeline,'run_feature_detection_result',detect)
     monkeypatch.setattr(pipeline,'run_ms2_feature_annotation_result',forbidden)
-    settings=dict(analysis_mode='ms1_only',ms1=dict(enabled=True,algo='pyopenms',params={},mode='positive',
+    settings=dict(ms1=dict(enabled=False,algo='pyopenms',params={},mode='positive',
         candidate_search=dict(library_path=str(path),ppm=10,max_candidates=10)),
-        ms2=dict(mode='negative',library_path='does-not-exist.msp'),filter=dict(use_score=True,min_score=100,use_ecn=True))
+        ms2=dict(mode='positive',library_path='does-not-exist.msp'),filter=dict(use_score=True,min_score=100,use_ecn=True))
+    if legacy_mode is not None:
+        settings['analysis_mode']=legacy_mode
     feature,ms2,result=pipeline.run_project(saved.path,settings)
     assert ms2 is None and result.analysis_mode=='ms1_only'
     assert len(result.data)==2 and len(result.candidates)==1
@@ -184,6 +187,11 @@ def test_ms1_project_bypasses_ms2_rules_and_writes_complete_workbook(tmp_path,mo
     snapshots=pd.read_excel(result.xlsx_path,sheet_name='样本信息')
     assert snapshots.sample_type.tolist()==['Sample','Sample','QC','Blank']
     assert snapshots.included.tolist()==[True,True,True,False]
+    restored=Project.open_file(saved.path)
+    assert 'analysis_mode' not in restored.settings and restored.settings['ms1']['enabled']
+    inventory=json.loads((result.output_dir.parent/'scan_inventory.json').read_text(encoding='utf-8'))
+    assert [row['ms1_scans'] for row in inventory]==[1,1,1]
+    assert [row['ms2_scans'] for row in inventory]==[0,0,0]
 
 
 def write_ms1_only(path,shift=0.,scale=1.):
@@ -223,7 +231,7 @@ def test_real_ms1_only_detection_alignment_and_candidate_export(tmp_path,monkeyp
     path=library(tmp_path/'original.msp')
     def forbidden(**kwargs):raise AssertionError('MS2 must not run for pure MS1 files')
     monkeypatch.setattr(pipeline,'run_ms2_feature_annotation_result',forbidden)
-    settings=dict(analysis_mode='ms1_only',ms1=dict(enabled=True,algo='pyopenms',mode='positive',
+    settings=dict(ms1=dict(enabled=True,algo='pyopenms',mode='positive',
         params=dict(mz_tol=5.,min_fwhm=5.,max_fwhm=60.,noise=1000.,sn=5.),
         candidate_search=dict(library_path=str(path),ppm=10,max_candidates=10)))
     feature,ms2,result=pipeline.run_project(saved.path,settings)
@@ -282,10 +290,13 @@ def test_empty_detection_exports_without_building_or_claiming_mass_candidates(tm
     assert result.data.empty and result.candidates.empty and result.xlsx_path.is_file()
 
 
-def test_ms1_only_flag_uses_the_production_project_entry_point():
+def test_project_entry_point_requires_no_scan_mode_and_hides_the_legacy_flag():
     from lipidgate.cli import build_parser
-    args=build_parser().parse_args(['project-run','--project','test.lipidgate','--ms1-only'])
-    assert args.ms1_only and args.func.__name__=='_project_run'
+    parser=build_parser()
+    args=parser.parse_args(['project-run','--project','test.lipidgate'])
+    assert not args.ms1_only and args.func.__name__=='_project_run'
+    command=next(action for action in parser._actions if hasattr(action,'choices') and action.choices)
+    assert '--ms1-only' not in command.choices['project-run'].format_help()
 
 
 def test_sample_stem_never_turns_retention_time_into_a_peak_area():
@@ -293,3 +304,28 @@ def test_sample_stem_never_turns_retention_time_into_a_peak_area():
     table=pd.DataFrame({'Feature_ID':['actual'],'mz':[760.5851],'RT':[2.5],'A.mzML':[1234.]})
     _,areas=feature_matrix(table,samples)
     assert areas['RT.mzML'].isna().all() and areas['A.mzML'].tolist()==[1234.]
+
+
+def test_scan_inventory_counts_only_used_scan_groups_and_deduplicates_level_parameters(tmp_path):
+    from lipidgate.pipeline import inspect_mzml
+    path=tmp_path/'levels.mzML'
+    path.write_text('<mzML><referenceableParamGroupList>'
+        '<referenceableParamGroup id="one"><cvParam accession="MS:1000511" value="1"/></referenceableParamGroup>'
+        '<referenceableParamGroup id="two"><cvParam accession="MS:1000511" value="2"/></referenceableParamGroup>'
+        '<referenceableParamGroup id="unused"><cvParam accession="MS:1000129"/></referenceableParamGroup>'
+        '</referenceableParamGroupList><run><spectrumList>'
+        '<spectrum><referenceableParamGroupRef ref="one"/><cvParam accession="MS:1000511" value="1"/></spectrum>'
+        '<spectrum><referenceableParamGroupRef ref="two"/></spectrum>'
+        '</spectrumList></run></mzML>',encoding='utf-8')
+    assert inspect_mzml(path,'positive')==dict(ms1_scans=1,ms2_scans=1)
+
+
+def test_empty_inputs_fail_before_detection_or_library_lookup(tmp_path,monkeypatch):
+    import lipidgate.pipeline as pipeline
+    saved=Project.create(tmp_path/'empty'/'test.lipidgate')
+    path=tmp_path/'no_scans.mzML';path.write_text('<mzML/>')
+    saved.add_files([path])
+    monkeypatch.setattr(pipeline,'run_feature_detection_result',lambda **kw:pytest.fail('no scans to detect'))
+    with pytest.raises(ValueError,match='MS1 或 MS2'):
+        pipeline.run_project(saved.path,dict(ms2=dict(mode='positive',library_path='missing.msp')))
+    assert not (saved.root/'runs').exists()

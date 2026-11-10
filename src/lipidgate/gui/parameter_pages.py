@@ -57,9 +57,6 @@ class FeaturePage(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.enabled = _FeatureToggle("提取并对齐 MS1 特征")
         self.enabled.setChecked(True)
-        self.analysis_mode = QtWidgets.QComboBox()
-        self.analysis_mode.addItem("MS1 + MS2 鉴定", "ms1_ms2")
-        self.analysis_mode.addItem("纯 MS1：峰检测、对齐与质量候选", "ms1_only")
         self.ms1_mode = QtWidgets.QComboBox()
         self.ms1_mode.addItem("负模式", "negative")
         self.ms1_mode.addItem("正模式", "positive")
@@ -117,10 +114,7 @@ class FeaturePage(QtWidgets.QWidget):
         cards.setContentsMargins(0, 0, 0, 0)
         cards.setSpacing(14)
 
-        workflow, grid = self._card("分析模式")
-        grid.addWidget(self._field("选择分析流程", self.analysis_mode), 0, 0, 1, 2)
-        cards.addWidget(workflow)
-        self.ms1_candidate_card, grid = self._card("一级质量候选（纯 MS1）")
+        self.ms1_candidate_card, grid = self._card("一级候选设置（无 MS2 时使用）")
         grid.addWidget(self.candidate_search, 0, 0, 1, 2)
         grid.addWidget(self._field("离子模式", self.ms1_mode), 1, 0)
         grid.addWidget(self._field("候选质量容差", self.candidate_ppm, "ppm"), 1, 1)
@@ -133,7 +127,6 @@ class FeaturePage(QtWidgets.QWidget):
         note.setWordWrap(True)
         grid.addWidget(note, 4, 0, 1, 2)
         cards.addWidget(self.ms1_candidate_card)
-        self.ms1_candidate_card.hide()
 
         basic, grid = self._card("基础参数")
         algorithm = QtWidgets.QHBoxLayout()
@@ -228,7 +221,7 @@ class FeaturePage(QtWidgets.QWidget):
         self.next_step = next_step
         next_step.setObjectName("primaryButton")
         next_step.setFixedSize(196, 40)
-        next_step.clicked.connect(lambda: window.nav.setCurrentRow(4 if self.analysis_mode.currentData() == "ms1_only" else 3))
+        next_step.clicked.connect(lambda: window.nav.setCurrentRow(3))
         footer.addWidget(next_step)
         body.addLayout(footer)
         body.addStretch()

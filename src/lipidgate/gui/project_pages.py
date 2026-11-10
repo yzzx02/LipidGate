@@ -164,7 +164,17 @@ class ImportPage(QtWidgets.QWidget):
         layout.addWidget(info)
         next_btn = QtWidgets.QPushButton("下一步：MS1 参数")
         next_btn.clicked.connect(lambda: window.nav.setCurrentRow(2))
-        layout.addWidget(next_btn)
+        footer = QtWidgets.QHBoxLayout()
+        footer.addWidget(next_btn, 1)
+        self.run_button = QtWidgets.QPushButton("直接运行")
+        self.run_button.setObjectName("primaryButton")
+        self.run_button.clicked.connect(self.run)
+        footer.addWidget(self.run_button, 1)
+        layout.addLayout(footer)
+
+    def run(self):
+        self.window.nav.setCurrentRow(4)
+        self.window.filter_page.run()
 
     def refresh(self):
         self._refreshing = True
