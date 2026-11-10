@@ -102,6 +102,8 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
     if xlsx:
         sheets = {"特征结果": feature_table, "特征候选": annotation_export_table(annotations).drop(columns="scan_id"),
                   "逐谱证据": evidence_table}
+        if not bundle.sample_metadata.empty:
+            sheets["样本信息"] = bundle.sample_metadata.copy()
         paths.append(write_workbook(output_dir / "LipidGate_results.xlsx",
                                     sheets))
     if plots:

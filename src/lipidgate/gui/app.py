@@ -209,6 +209,10 @@ class FilterPage(WorkflowPage):
         body.addWidget(
             label("设置分析前参数。运行完成后，自动打开独立结果窗口浏览、筛选及查看谱图。")
         )
+        self.ms1_notice = label("纯 MS1：导出检测峰、峰面积矩阵及质量候选。下方 MS2 分数和 ECN 设置已停用。")
+        self.ms1_notice.setWordWrap(True)
+        self.ms1_notice.hide()
+        body.addWidget(self.ms1_notice)
         scoring, scoring_layout = card("候选与分数")
         form = QtWidgets.QFormLayout()
         form.addRow(window.ms2_page.output_topn, window.ms2_page.top_n)
@@ -286,7 +290,8 @@ class FilterPage(WorkflowPage):
                 project_path, settings, progress=self.progress_message.emit
             )
 
-        self.run_progress.start(len(files), settings["ms1"].get("enabled", True))
+        self.run_progress.start(len(files), settings["ms1"].get("enabled", True),
+                                ms1_only=settings.get("analysis_mode") == "ms1_only")
         QtCore.QTimer.singleShot(
             0, lambda: self.window.stack.widget(4).ensureWidgetVisible(self.run_progress)
         )
@@ -337,14 +342,14 @@ class FilterPage(WorkflowPage):
                 self.window.ms2_page,
             ):
                 p.setEnabled(True)
+            self.window._apply_analysis_mode()
 
     def _done(self, payload):
         result = payload
         self.window.show_results(str(result.xlsx_path or result.csv_path))
         self.run_progress.finish()
-        self.log.append(
-            f"完成：{result.row_count} 个最终名称\n{result.xlsx_path or result.csv_path}"
-        )
+        label = "个 MS1 特征" if getattr(result, "analysis_mode", "ms1_ms2") == "ms1_only" else "个最终名称"
+        self.log.append(f"完成：{result.row_count} {label}\n{result.xlsx_path or result.csv_path}")
         self.window.status.showMessage("分析完成")
 
 
@@ -468,6 +473,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ms2_page = MS2Page(self)
         self.results_window = ResultsWindow(self)
         self.results_page = self.results_window.page
+        self.ms1_results_window = None
+        self._last_result_mode = "ms2"
         from .project_pages import ProjectPage, ImportPage
 
         self.project = None
@@ -504,6 +511,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.nav.currentRowChanged.connect(self._navigate)
         self.nav.setCurrentRow(0)
+        self.feature_page.analysis_mode.currentIndexChanged.connect(self._apply_analysis_mode)
+        self._apply_analysis_mode()
         self._apply_style()
 
     def _navigate(self, index):
@@ -516,8 +525,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stack.setCurrentIndex(index)
 
     def show_results(self, path=None):
+        from .ms1_results import MS1ResultsWindow, is_ms1_result
+        if (path is not None and is_ms1_result(path)) or (path is None and self._last_result_mode == "ms1"):
+            if self.ms1_results_window is None:
+                self.ms1_results_window = MS1ResultsWindow(self)
+            if path is not None:
+                self.ms1_results_window.load(path)
+            self._last_result_mode = "ms1"
+            self.ms1_results_window.show()
+            self.ms1_results_window.raise_()
+            self.ms1_results_window.activateWindow()
+            return
         if path is not None:
             self.results_page.set_path(path)
+            self._last_result_mode = "ms2"
         first_open = not self.settings.contains("results/geometry")
         if first_open:
             self.results_window.showMaximized()
@@ -543,11 +564,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if library_path == str(default_library):
             library_path = ""
         return {
+            "analysis_mode": f.analysis_mode.currentData(),
             "ms1": {
                 "enabled": f.enabled.isChecked(),
                 "algo": f.algo.currentText(),
                 "params": f._feature_params(f.algo.currentText()),
                 "msdial_table": f.msdial_table.text() or None,
+                "mode": f.ms1_mode.currentData(),
+                "candidate_search": {"enabled": f.candidate_search.isChecked(),
+                    "ppm": f.candidate_ppm.value(), "max_candidates": f.candidate_max.value(),
+                    "library_path": f.ms1_library.text().strip()},
             },
             "ms2": {
                 "mode": m._mode_value(),
@@ -585,9 +611,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # Reset first, so an empty/new project cannot inherit the previous one.
         f, m, r = self.feature_page, self.ms2_page, self.filter_page
         self.results_page.clear()
+        self._last_result_mode = "ms2"
+        if self.ms1_results_window is not None:
+            self.ms1_results_window.hide()
         a = settings.get("ms1", {})
         b = settings.get("ms2", {})
         c = settings.get("filter", {})
+        index = f.analysis_mode.findData(settings.get("analysis_mode", "ms1_ms2"))
+        if index < 0:
+            raise ValueError("不支持的分析模式")
+        f.analysis_mode.setCurrentIndex(index)
+        f.ms1_mode.setCurrentIndex(f.ms1_mode.findData(a.get("mode", b.get("mode", "negative"))))
+        search = a.get("candidate_search", {})
+        f.candidate_search.setChecked(search.get("enabled", True))
+        f.candidate_ppm.setValue(search.get("ppm", 10.))
+        f.candidate_max.setValue(search.get("max_candidates", 10))
+        if search.get("library_path"):
+            f.ms1_library.setText(search["library_path"])
         f.enabled.setChecked(a.get("enabled", True))
         f.algo.setCurrentText(a.get("algo", "pyopenms"))
         p = a.get("params", {})
@@ -640,6 +680,31 @@ class MainWindow(QtWidgets.QMainWindow):
         r.use_ecn.setChecked(c.get("use_ecn", False))
         r.rt.setValue(c.get("rt_tolerance", 0.5))
         r.retain_unmodeled.setChecked(c.get("retain_unmodeled", True))
+        self._apply_analysis_mode()
+
+    def _apply_analysis_mode(self, *_args):
+        f, m, r = self.feature_page, self.ms2_page, self.filter_page
+        only = f.analysis_mode.currentData() == "ms1_only"
+        f.ms1_candidate_card.setVisible(only)
+        f.next_step.setText("下一步：运行分析" if only else "下一步：MS2 参数")
+        if only:
+            f.enabled.setChecked(True)
+            if f.algo.currentText() == "msdial":
+                f.algo.setCurrentText("pyopenms")
+        f.enabled.setEnabled(not only)
+        f.algo.model().item(3).setEnabled(not only)
+        m.setEnabled(not only)
+        m.output_topn.setEnabled(not only)
+        m.top_n.setEnabled(not only and m.output_topn.isChecked())
+        m.workers.setEnabled(not only)
+        r.ms1_notice.setVisible(only)
+        for widget in (r.use_score, r.use_ecn):
+            widget.setEnabled(not only)
+        r.score.setEnabled(not only and r.use_score.isChecked())
+        for widget in (r.rt, r.retain_unmodeled):
+            widget.setEnabled(not only and r.use_ecn.isChecked())
+        self.nav.item(3).setText("MS2 参数（纯 MS1 跳过）" if only else "MS2 参数")
+        r.run_btn.setText("开始 MS1 分析" if only else "开始分析")
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.filter_page._thread is not None or self.results_page._jobs:
@@ -660,6 +725,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         self.settings.setValue("main/geometry", self.saveGeometry())
         self.results_window.close()
+        if self.ms1_results_window is not None:
+            self.ms1_results_window.close()
         super().closeEvent(event)
 
     def _apply_style(self) -> None:

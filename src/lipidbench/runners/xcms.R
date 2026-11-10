@@ -4,6 +4,7 @@ suppressMessages(library(optparse))
 suppressMessages(library(BiocParallel))
 
 option_list <- list(
+  make_option(c("--stdin_config"), action = "store_true", default = FALSE),
   make_option(c("-d", "--dir"), type = "character", help = "mzML 文件夹路径"),
   make_option(c("-o", "--output"), type = "character", help = "输出文件路径"),
   make_option(c("--polarity"), type = "character", default = "positive"),
@@ -20,8 +21,15 @@ option_list <- list(
 )
 register(SerialParam(progressbar = TRUE))
 opt <- parse_args(OptionParser(option_list = option_list))
+if (isTRUE(opt$stdin_config)) {
+    if (!requireNamespace("jsonlite", quietly = TRUE)) stop("Install R package jsonlite for sample metadata")
+    connection <- file("stdin", encoding = "UTF-8")
+    request <- jsonlite::fromJSON(paste(readLines(connection, warn = FALSE), collapse = "\n"), simplifyVector = FALSE)
+    close(connection)
+    for (name in names(request)) opt[[name]] <- request[[name]]
+}
 
-files <- list.files(opt$dir, pattern = "\\.mzML$", full.names = TRUE, ignore.case = TRUE)
+files <- if (!is.null(opt$files)) unlist(opt$files, use.names=FALSE) else list.files(opt$dir, pattern = "\\.mzML$", full.names = TRUE, ignore.case = TRUE)
 raw_data = readMSData(files,mode="onDisk",msLevel=1)
 raw_data <- filterEmptySpectra(raw_data)
 params <- CentWaveParam(
@@ -37,7 +45,36 @@ params <- CentWaveParam(
 )
 xdata <- findChromPeaks(raw_data, params, return.type="XCMSnExp")
 
-pdp <- PeakDensityParam(sampleGroups = rep(1, length(files)), minFraction = opt$frac,
+# Retain actual local IDs, raw RTs, boundaries and areas before RT correction.
+local <- chromPeaks(xdata)
+native <- data.frame(Feature_ID = if (nrow(local)) rownames(local) else character(), source_file = basename(files[as.integer(local[, "sample"])]),
+    mz = local[, "mz"], RT = local[, "rt"] / 60, RTmin = local[, "rtmin"] / 60,
+    RTmax = local[, "rtmax"] / 60, intensity = local[, "into"], maxo = local[, "maxo"],
+    RT_unit = rep("minutes", nrow(local)), check.names = FALSE)
+native_path <- sub("\\.csv$", "_native.csv", opt$output, ignore.case = TRUE)
+write.csv(native, native_path, row.names = FALSE, fileEncoding = "UTF-8")
+if (!nrow(local)) {
+    empty <- data.frame(Row.names=character(), mzmed=numeric(), rtmin=numeric(), rtmed=numeric(), rtmax=numeric(), npeaks=integer())
+    for (name in basename(files)) empty[[name]] <- numeric()
+    write.csv(empty, opt$output, row.names=FALSE, fileEncoding="UTF-8")
+    quit(save="no", status=0)
+}
+
+groups <- rep("1", length(files))
+if (!is.null(opt$samples)) {
+    records <- opt$samples
+    has_samples <- any(vapply(records, function(row) isTRUE(row$included) && row$sample_type == "Sample", logical(1)))
+    has_qc <- any(vapply(records, function(row) isTRUE(row$included) && row$sample_type == "QC", logical(1)))
+    groups <- vapply(basename(files), function(name) {
+        matching <- Filter(function(row) row$source_file == name && isTRUE(row$included), records)
+        if (length(matching) != 1L) stop("Missing or ambiguous sample metadata: ", name)
+        row <- matching[[1]]
+        if ((has_samples && row$sample_type != "Sample") || (!has_samples && has_qc && row$sample_type != "QC")) return(NA_character_)
+        as.character(row$group)
+    }, character(1))
+}
+
+pdp <- PeakDensityParam(sampleGroups = groups, minFraction = opt$frac,
                         minSamples = opt$min_samples, bw = 10, binSize = 0.005)
 xdata <- groupChromPeaks(xdata, param = pdp)
 
@@ -95,4 +132,4 @@ if (!is.na(opt$min_maxo) && "maxo" %in% names(peaktable)) {
     peaktable <- peaktable[!is.na(peaktable$maxo) & peaktable$maxo >= opt$min_maxo, , drop = FALSE]
 }
 
-write.table(peaktable, file = opt$output, sep=",", row.names= FALSE, col.names=TRUE, quote=FALSE)
+write.table(peaktable, file = opt$output, sep=",", row.names= FALSE, col.names=TRUE, quote=TRUE, fileEncoding="UTF-8")

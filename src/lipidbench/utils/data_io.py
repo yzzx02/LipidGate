@@ -59,7 +59,11 @@ def load_asari_results(project_dir, output_dir=None, cleanup_project=True):
 def load_xcms_results(file_path):
     data = pd.read_csv(file_path, index_col=0)
     new_data = {}
-    sample_cols = [col for col in data.columns if col.endswith(".mzML")]
+    sample_cols = [col for col in data.columns if str(col).lower().endswith(".mzml")]
+    if data.empty:
+        empty = pd.DataFrame(columns=["Feature_ID", "mz", "RTmin", "RT", "RTmax", *sample_cols])
+        empty.to_csv(file_path, index=False)
+        return empty
     has_sn = "sn" in data.columns
     has_maxo = "maxo" in data.columns
     has_into = "into" in data.columns

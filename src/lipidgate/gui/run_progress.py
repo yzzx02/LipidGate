@@ -93,7 +93,8 @@ class RunProgressPanel(QtWidgets.QFrame):
         """)
         self._paint_stages()
 
-    def start(self, total_files: int, ms1_enabled: bool = True) -> None:
+    def start(self, total_files: int, ms1_enabled: bool = True, ms1_only: bool = False) -> None:
+        self.stage_labels[2].setText("MS1 候选" if ms1_only else "MS2 匹配")
         self._started = time.monotonic()
         self._file_times.clear()
         self._library_ready_at = None
@@ -121,6 +122,12 @@ class RunProgressPanel(QtWidgets.QFrame):
             self._set_stage(1)
         elif message.startswith("匹配 MS2"):
             self._set_stage(2)
+        elif message.startswith(("MS1 正在检索", "MS1 正在建立")):
+            self._set_stage(2)
+            self.bar.setRange(0, 0)
+        elif message.startswith("MS1 正在导出"):
+            self._set_stage(3)
+            self.bar.setRange(0, 0)
         elif message.startswith("MS2 正在准备谱库缓存"):
             self.bar.setRange(0, 0)
             self.remaining.setText("预计剩余：谱库准备中")

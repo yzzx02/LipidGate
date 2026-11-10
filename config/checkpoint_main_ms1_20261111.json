@@ -1,0 +1,77 @@
+{
+  "version": "1.1.0",
+  "checkpoint": "main-ms1-sample-metadata-20261111",
+  "created_at_utc": "2026-11-10T18:25:54.184392+00:00",
+  "artifact": "source checkpoint",
+  "base_commit": "cc79765b37dfbcf5b53d78ce9d76fb2f15a61255",
+  "windows_executable_built": false,
+  "sphingolipid_branch_merged": false,
+  "source_fingerprints": {
+    "application": {
+      "sha256": "69937db76a1daf72c8f4b154f0f1e0f56461961e45094a6c16b088ebcf65d82f",
+      "files": 115
+    },
+    "ms1_runtime": {
+      "sha256": "28a13b63f00c920d571fd4d0aac8d8a8f097baae325bbb18e43daadc80acdef4",
+      "files": 19
+    },
+    "ms2_unchanged_from_base": {
+      "sha256": "1a3a7f08f2c602113860431ecdea8f789e07955f6b12e171dbd2b8f01b1b22f6",
+      "files": 71
+    }
+  },
+  "protection": {
+    "verified_unchanged_files": 107,
+    "scope": "Existing MS2 Python sources, libraries and config",
+    "reference_release": "v1.0.9",
+    "reference_release_ms2_rules_sha256": "09aff9c9543d8cd2125305f865f4c52ccd3356461a6d46e286d9688a12d8e755"
+  },
+  "libraries": {
+    "positive": {
+      "source_gzip_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "bytes": 23894631,
+      "raw_source_records": 1254393
+    },
+    "negative": {
+      "source_gzip_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "bytes": 39394998,
+      "raw_source_records": 1088179
+    }
+  },
+  "verification": {
+    "test_cases": 4548,
+    "tests_passed": 1430,
+    "subtests_passed": 3118,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "pyopenms_version": "3.4.0",
+    "pyopenms_gui_worker": {
+      "ms1_only_input_files": 4,
+      "features": 6,
+      "candidate_search_disabled_verified": true,
+      "gui_imported_pyopenms": false
+    },
+    "xcms": {
+      "version": "4.8.0",
+      "ms1_only_input_files": 4,
+      "features": 5,
+      "mass_candidates": 21,
+      "native_peaks": 19,
+      "unicode_source_names_preserved": true,
+      "no_ms2_output": true
+    },
+    "offscreen_gui_verified": true,
+    "repository_hygiene_problems": 0
+  },
+  "defaults": {
+    "sample_type": "Sample",
+    "group": "1",
+    "batch": 1,
+    "injection_order": "import order, editable",
+    "analysis_mode": "ms1_ms2",
+    "ms1_candidate_ppm": 10,
+    "max_displayed_ms1_candidates": 10,
+    "automatic_qc_blank_filter": false
+  }
+}

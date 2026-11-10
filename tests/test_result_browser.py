@@ -15,6 +15,27 @@ from lipidgate.gui.result_data import (
 )
 
 
+def test_ms2_export_includes_run_sample_snapshot_without_changing_evidence(tmp_path):
+    from lipidgate.gui.result_data import result_bundle_from_data
+    from lipidgate.gui.result_export_data import export_browser_results
+
+    directory = tmp_path / 'run' / 'results'
+    directory.mkdir(parents=True)
+    snapshot = pd.DataFrame({'source_file': ['a.mzML'], 'sample_type': ['Sample'],
+                             'group': ['2'], 'batch': [3], 'injection_order': [7], 'included': [True]})
+    snapshot.to_csv(directory.parent / 'sample_metadata.csv', index=False)
+    original = rows()
+    path = directory / 'final_identifications.csv'
+    original.to_csv(path, index=False)
+    bundle = result_bundle_from_data(original, path, refresh_membership=False)
+    pd.testing.assert_frame_equal(bundle.sample_metadata, snapshot)
+    evidence = bundle.candidates.copy(deep=True)
+    paths = export_browser_results(bundle, tmp_path / 'export', csv=False, xlsx=True)
+    saved = pd.read_excel(paths[0], sheet_name='样本信息', dtype={'group': str})
+    pd.testing.assert_frame_equal(saved, snapshot)
+    pd.testing.assert_frame_equal(bundle.candidates, evidence)
+
+
 @pytest.mark.parametrize("row,expected", [
     ({"ms1_support_status": "MS1-supported", "matched_name": "PC(34:1)", "scan_id": "scan_1"}, "Linked"),
     ({"ms1_support_status": "MS1-supported", "matched_name": "", "_scan": ""}, "Detected"),

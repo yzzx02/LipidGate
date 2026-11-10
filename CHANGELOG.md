@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 1.1.0 — 2026-11-11
+
+- Add persistent Sample/QC/Blank roles, independent experimental groups,
+  batches, injection order and inclusion in the import table. New samples
+  share group 1; rows can be edited or updated in bulk. Upgrade schema-1
+  projects on save while retaining source paths and existing results.
+- Add a pure MS1 project mode: native peak detection, cross-sample alignment,
+  measured peak-area matrices and optional read-only precursor-mass lookup.
+  Reuse the existing main libraries without changing their contents.
+- Collapse explicit chain alternatives into sum/formula MS1 candidates;
+  retain adducts, formulas, mass errors and candidate counts without MS2 scores,
+  gate-pass flags or chain confirmation. Review/export these results separately.
+- Preserve sample metadata in run snapshots and MS2 exports. Add descriptive
+  QC/Blank and group-area statistics without automatic quality thresholds.
+- Pass sample groups and Unicode input lists to XCMS; retain original local
+  peaks before RT correction. Existing MS2 science, scores, ordering and
+  library fingerprints are unchanged. No sphingolipid branch is merged.
+
 ## 1.0.9 — 2026-11-06
 
 - Correct protonated LPE-P HG losses to C3H9O6P (172.013675) and C3H7O5P

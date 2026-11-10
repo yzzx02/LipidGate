@@ -427,6 +427,7 @@ class ResultBundle:
     ion_relationships: pd.DataFrame = field(default_factory=pd.DataFrame)
     annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
     audit_store: object = field(default=None, repr=False)
+    sample_metadata: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -837,6 +838,9 @@ def result_bundle_from_data(data, path, *, refresh_membership=True):
         data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
+    sample_path = base.parent / "sample_metadata.csv"
+    if sample_path.is_file():
+        bundle.sample_metadata = pd.read_csv(sample_path, dtype={"group": str})
     relations_path = base / "ion_relationships.csv"
     if relations_path.is_file():
         from lipidgate.ion_relationships import confirmed_ion_relationships

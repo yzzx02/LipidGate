@@ -75,6 +75,10 @@ def run_project(project_path, settings, progress=lambda message: None):
     project = Project.open(project_path)
     files = project.mzml_files()
     settings = json.loads(json.dumps(settings))
+    if settings.get("analysis_mode", "ms1_ms2") == "ms1_only":
+        return _run_ms1_project(project, files, settings, progress)
+    if settings.get("analysis_mode", "ms1_ms2") != "ms1_ms2":
+        raise ValueError("分析模式须为 ms1_ms2 或 ms1_only")
     mode = settings["ms2"]["mode"]
     if mode not in {"positive", "negative"}:
         raise ValueError("请选择正或负模式")
@@ -144,6 +148,7 @@ def run_project(project_path, settings, progress=lambda message: None):
     )
     project.settings = settings
     project.save()
+    project.sample_table().to_csv(out / "sample_metadata.csv", index=False, encoding="utf-8-sig")
     feature = None
     external_ms1 = ms1.get("algo") in {"msdial", "ms-dial"}
     if ms1.get("enabled", True) and (ms1_files or external_ms1):
@@ -153,6 +158,7 @@ def run_project(project_path, settings, progress=lambda message: None):
         config = default_config()
         config["parameters"]["asari"]["mode"] = "pos" if mode == "positive" else "neg"
         config["parameters"]["xcms"]["polarity"] = mode
+        config["parameters"]["xcms"]["sample_metadata"] = project.sample_table().to_dict("records")
         feature = run_feature_detection_result(
             algo=ms1["algo"],
             input_path=files if external_ms1 else ms1_files,
@@ -229,3 +235,66 @@ def run_project(project_path, settings, progress=lambda message: None):
                                  mode=mode, progress=progress)
     progress("完成")
     return feature, result, final
+
+
+def _run_ms1_project(project, files, settings, progress):
+    """Pure MS1 never enters the MS2 search or final-identification filters."""
+    import math
+    from lipidgate.ms1.detection import default_config
+    from lipidgate.ms1.workflow import export_ms1_results
+    from lipidgate.paths import default_positive_msp, default_negative_msp
+    from lipidgate.ms2.provenance import code_fingerprint
+    ms1 = settings.get("ms1", {})
+    if not ms1.get("enabled", True):
+        raise ValueError("纯 MS1 模式必须启用特征检测。")
+    mode = ms1.get("mode", settings.get("ms2", {}).get("mode", "negative"))
+    if mode not in {"positive", "negative"}:
+        raise ValueError("请选择正模式或负模式")
+    settings.setdefault("ms1", {})["mode"] = mode
+    search = ms1.get("candidate_search", {})
+    if not math.isfinite(float(search.get("ppm", 10))) or float(search.get("ppm", 10)) <= 0:
+        raise ValueError("一级候选质量容差须大于零。")
+    maximum = search.get("max_candidates", 10)
+    if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
+        raise ValueError("每峰候选数须为正整数。")
+    library = None
+    if search.get("enabled", True):
+        library = Path(search.get("library_path") or (default_positive_msp() if mode == "positive" else default_negative_msp())).resolve()
+        if not library.is_file():
+            raise FileNotFoundError(f"一级候选库不存在：{library}")
+    progress("检查输入文件和离子模式…")
+    ms1_files = []
+    for number, file in enumerate(files, 1):
+        if check_polarity(file, mode):
+            ms1_files.append(file)
+        progress(f"检查 已完成 {number}/{len(files)}：{file.name}")
+    if len(ms1_files) != len(files):
+        raise ValueError("纯 MS1 分析要求每个参与文件包含 MS1 扫描；请移除或取消启用 MS2-only 文件。")
+    if ms1.get("algo", "pyopenms") in {"msdial", "ms-dial"}:
+        raise ValueError("纯 MS1 模式请选择 pyOpenMS、XCMS 或 asari 从 mzML 提取实际峰。")
+    params = ms1.get("params", {})
+    widths = params.get("peakwidth", [params.get("min_fwhm", 5), params.get("max_fwhm", 60)])
+    if len(widths) != 2 or not all(math.isfinite(float(value)) and value > 0 for value in widths) or widths[0] > widths[1]:
+        raise ValueError("峰宽范围无效")
+    out = project.root / "runs" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    out.mkdir(parents=True)
+    samples = project.sample_table()
+    (out / "run_settings.json").write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+    samples.to_csv(out / "sample_metadata.csv", index=False, encoding="utf-8-sig")
+    (out / "provenance.json").write_text(json.dumps(dict(
+        analysis_mode="ms1_only", product_code_sha256=code_fingerprint(Path(__file__).parent),
+        inputs=[dict(path=str(path), bytes=path.stat().st_size, mtime_ns=path.stat().st_mtime_ns) for path in files],
+        sample_metadata=samples.to_dict("records")), ensure_ascii=False, indent=2), encoding="utf-8")
+    project.settings = settings
+    project.save()
+    cfg = default_config()
+    cfg["parameters"]["asari"]["mode"] = "pos" if mode == "positive" else "neg"
+    cfg["parameters"]["xcms"]["polarity"] = mode
+    cfg["parameters"]["xcms"]["sample_metadata"] = samples.to_dict("records")
+    progress("提取并对齐 MS1 特征…")
+    feature = run_feature_detection_result(algo=ms1.get("algo", "pyopenms"), input_path=files,
+        output_dir=out / "ms1", params=params, config=cfg, progress=progress)
+    final = export_ms1_results(feature, samples, settings, out / "results", library=library,
+        cache_dir=project.root / ".cache" / "ms1_candidates", progress=progress)
+    progress("完成")
+    return feature, None, final

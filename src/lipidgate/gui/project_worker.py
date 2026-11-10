@@ -64,6 +64,7 @@ def run_isolated(project_path, settings, progress):
             row_count=result["row_count"],
             xlsx_path=Path(result["xlsx_path"]) if result["xlsx_path"] else None,
             csv_path=Path(result["csv_path"]),
+            analysis_mode=result.get("analysis_mode", "ms1_ms2"),
         )
     finally:
         if process.poll() is None:
@@ -96,6 +97,7 @@ def main(project_path=None):
             row_count=len(result.passed_data),
             xlsx_path=str(result.xlsx_path) if result.xlsx_path else None,
             csv_path=str(result.csv_path),
+            analysis_mode=getattr(result, "analysis_mode", "ms1_ms2"),
         )
     )
     return 0

@@ -57,6 +57,20 @@ class FeaturePage(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.enabled = _FeatureToggle("提取并对齐 MS1 特征")
         self.enabled.setChecked(True)
+        self.analysis_mode = QtWidgets.QComboBox()
+        self.analysis_mode.addItem("MS1 + MS2 鉴定", "ms1_ms2")
+        self.analysis_mode.addItem("纯 MS1：峰检测、对齐与质量候选", "ms1_only")
+        self.ms1_mode = QtWidgets.QComboBox()
+        self.ms1_mode.addItem("负模式", "negative")
+        self.ms1_mode.addItem("正模式", "positive")
+        self.candidate_search = QtWidgets.QCheckBox("检索一级质量候选")
+        self.candidate_search.setChecked(True)
+        self.candidate_ppm = number(10, .01, 1000)
+        self.candidate_max = QtWidgets.QSpinBox()
+        self.candidate_max.setRange(1, 1000)
+        self.candidate_max.setValue(10)
+        self.ms1_library = QtWidgets.QLineEdit(str(default_negative_msp()))
+        self.ms1_mode.currentIndexChanged.connect(self._ms1_mode_changed)
         self.algo = QtWidgets.QComboBox()
         self.algo.addItems(["pyopenms", "asari", "xcms", "msdial"])
         self.ms1_ppm = number(5, 0.1, 1000)
@@ -102,6 +116,24 @@ class FeaturePage(QtWidgets.QWidget):
         cards = QtWidgets.QVBoxLayout(self.parameters)
         cards.setContentsMargins(0, 0, 0, 0)
         cards.setSpacing(14)
+
+        workflow, grid = self._card("分析模式")
+        grid.addWidget(self._field("选择分析流程", self.analysis_mode), 0, 0, 1, 2)
+        cards.addWidget(workflow)
+        self.ms1_candidate_card, grid = self._card("一级质量候选（纯 MS1）")
+        grid.addWidget(self.candidate_search, 0, 0, 1, 2)
+        grid.addWidget(self._field("离子模式", self.ms1_mode), 1, 0)
+        grid.addWidget(self._field("候选质量容差", self.candidate_ppm, "ppm"), 1, 1)
+        grid.addWidget(self._field("每峰最多显示候选数", self.candidate_max), 2, 0)
+        library_row = path_row(self.ms1_library, [
+            ("选择", self._browse_ms1_library, "选择现有 MSP 或 SQLite 库"),
+            ("内置库", self._ms1_mode_changed, "使用当前离子模式的原有库")])
+        grid.addWidget(library_row, 3, 0, 1, 2)
+        note = QtWidgets.QLabel("输出标记为 MS1 候选，保留分子式、加合物和质量误差；不赋予 MS2 分数或链确认。关闭检索可只做峰检测与面积矩阵。")
+        note.setWordWrap(True)
+        grid.addWidget(note, 4, 0, 1, 2)
+        cards.addWidget(self.ms1_candidate_card)
+        self.ms1_candidate_card.hide()
 
         basic, grid = self._card("基础参数")
         algorithm = QtWidgets.QHBoxLayout()
@@ -193,9 +225,10 @@ class FeaturePage(QtWidgets.QWidget):
         footer = QtWidgets.QHBoxLayout()
         footer.addStretch()
         next_step = QtWidgets.QPushButton("下一步：MS2 参数")
+        self.next_step = next_step
         next_step.setObjectName("primaryButton")
         next_step.setFixedSize(196, 40)
-        next_step.clicked.connect(lambda: window.nav.setCurrentRow(3))
+        next_step.clicked.connect(lambda: window.nav.setCurrentRow(4 if self.analysis_mode.currentData() == "ms1_only" else 3))
         footer.addWidget(next_step)
         body.addLayout(footer)
         body.addStretch()
@@ -277,6 +310,15 @@ class FeaturePage(QtWidgets.QWidget):
         )
         if path:
             self.msdial_table.setText(path)
+
+    def _ms1_mode_changed(self, *_args):
+        self.ms1_library.setText(str(default_positive_msp() if self.ms1_mode.currentData() == "positive" else default_negative_msp()))
+
+    def _browse_ms1_library(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择现有一级候选库", self.ms1_library.text(),
+            "现有谱库 (*.msp *.msp.gz *.sqlite)")
+        if path:
+            self.ms1_library.setText(path)
 
     def _on_algo_changed(self, algo):
         self.msdial_row.setEnabled(algo == "msdial")

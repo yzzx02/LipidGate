@@ -198,7 +198,7 @@ page.open_button.click()
 assert '*.lipidgate' in dialogs[-1][-1] and 'lipidgate.project.json' in dialogs[-1][-1]
 assert window.project.path == saved_path and page.path.text() == str(saved_path)
 assert window.analysis_settings() == settings
-assert window.import_page.files.count() == 1
+assert window.import_page.files.rowCount() == 1
 assert loaded_results == [str(newest)] and window.results_window.isVisible()
 window.results_page._configure_eic_sources(ResultBundle.from_frames(pd.DataFrame(), path=newest))
 assert window.results_page.eic_source.count() == 1

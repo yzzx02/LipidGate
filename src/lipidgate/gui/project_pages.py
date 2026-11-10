@@ -1,6 +1,7 @@
 from pathlib import Path
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 from lipidgate.project import PROJECT_SUFFIX, Project
+from lipidgate.samples import SAMPLE_TYPES
 
 
 class ProjectPage(QtWidgets.QWidget):
@@ -118,11 +119,35 @@ class ImportPage(QtWidgets.QWidget):
         self.window = window
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("导入项目文件"))
-        self.files = QtWidgets.QListWidget()
+        self._refreshing = False
+        self.files = QtWidgets.QTableWidget(0, 6)
+        self.files.setHorizontalHeaderLabels(["参与", "文件", "样本类型", "实验分组", "批次", "进样顺序"])
         self.files.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
+        self.files.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.files.verticalHeader().setDefaultSectionSize(42)
+        self.files.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        for column, width in ((0, 55), (2, 140), (3, 95), (4, 80), (5, 105)):
+            self.files.setColumnWidth(column, width)
+        self.files.itemChanged.connect(self._item_changed)
         layout.addWidget(self.files)
+        bulk = QtWidgets.QHBoxLayout()
+        bulk.addWidget(QtWidgets.QLabel("批量设置所选："))
+        self.bulk_type = QtWidgets.QComboBox()
+        self.bulk_type.addItems(["保留类型", *SAMPLE_TYPES])
+        self.bulk_group = QtWidgets.QLineEdit()
+        self.bulk_group.setPlaceholderText("组号，如 1、2、3")
+        self.bulk_group.setMaximumWidth(160)
+        self.bulk_batch = QtWidgets.QSpinBox()
+        self.bulk_batch.setRange(0, 1000000)
+        self.bulk_batch.setSpecialValueText("保留批次")
+        self.apply_button = QtWidgets.QPushButton("应用")
+        self.apply_button.clicked.connect(self.apply_selected)
+        for widget in (self.bulk_type, self.bulk_group, self.bulk_batch, self.apply_button):
+            bulk.addWidget(widget)
+        bulk.addStretch()
+        layout.addLayout(bulk)
         buttons = QtWidgets.QHBoxLayout()
         add = QtWidgets.QPushButton("添加文件")
         add.clicked.connect(self.add)
@@ -132,7 +157,8 @@ class ImportPage(QtWidgets.QWidget):
         buttons.addWidget(remove)
         layout.addLayout(buttons)
         info = QtWidgets.QLabel(
-            "可登记任意类型文件；当前分析引擎读取 mzML，运行前会检查输入类型与离子模式。"
+            "新文件默认 Sample、实验分组 1、批次 1；同组样本共用组号。QC／Blank 与实验分组分别记录。\n"
+            "进样顺序初始按导入次序填写，可按实际采集顺序修改；未勾选的文件保留在项目中，不参与本次分析。"
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -141,9 +167,77 @@ class ImportPage(QtWidgets.QWidget):
         layout.addWidget(next_btn)
 
     def refresh(self):
-        self.files.clear()
-        if self.window.project:
-            self.files.addItems(self.window.project.files)
+        self._refreshing = True
+        try:
+            self.files.setRowCount(0)
+            if not self.window.project:
+                return
+            for path in self.window.project.files:
+                row = self.files.rowCount()
+                self.files.insertRow(row)
+                values = self.window.project.metadata_for(path)
+                enabled = QtWidgets.QTableWidgetItem()
+                enabled.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+                enabled.setCheckState(QtCore.Qt.CheckState.Checked if values["included"] else QtCore.Qt.CheckState.Unchecked)
+                enabled.setData(QtCore.Qt.ItemDataRole.UserRole, path)
+                self.files.setItem(row, 0, enabled)
+                name = QtWidgets.QTableWidgetItem(Path(path).name)
+                name.setToolTip(path)
+                name.setData(QtCore.Qt.ItemDataRole.UserRole, path)
+                name.setFlags(name.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                self.files.setItem(row, 1, name)
+                kind = QtWidgets.QComboBox()
+                kind.addItems(SAMPLE_TYPES)
+                kind.setCurrentText(values["sample_type"])
+                kind.currentTextChanged.connect(lambda value, p=path: self._save_changes({p: {"sample_type": value}}))
+                self.files.setCellWidget(row, 2, kind)
+                group = QtWidgets.QTableWidgetItem(values["group"])
+                self.files.setItem(row, 3, group)
+                for column, key in ((4, "batch"), (5, "injection_order")):
+                    spin = QtWidgets.QSpinBox()
+                    spin.setRange(1, 1000000)
+                    spin.setValue(values[key])
+                    spin.valueChanged.connect(lambda value, p=path, k=key: self._save_changes({p: {k: value}}))
+                    self.files.setCellWidget(row, column, spin)
+        finally:
+            self._refreshing = False
+
+    def _save_changes(self, changes):
+        if self._refreshing or not self.window.project:
+            return
+        try:
+            self.window.project.update_samples(changes)
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(self, "样本信息未保存", str(exc))
+            self.refresh()
+
+    def _item_changed(self, item):
+        if self._refreshing:
+            return
+        path = self.files.item(item.row(), 1).data(QtCore.Qt.ItemDataRole.UserRole)
+        if item.column() == 0:
+            self._save_changes({path: {"included": item.checkState() == QtCore.Qt.CheckState.Checked}})
+        elif item.column() == 3:
+            self._save_changes({path: {"group": item.text()}})
+
+    def selected_paths(self):
+        return [self.files.item(index.row(), 1).data(QtCore.Qt.ItemDataRole.UserRole)
+                for index in self.files.selectionModel().selectedRows()]
+
+    def apply_selected(self):
+        paths = self.selected_paths()
+        if not paths:
+            QtWidgets.QMessageBox.information(self, "选择样本", "请先选择需要批量设置的样本行。")
+            return
+        change = {}
+        if self.bulk_type.currentText() in SAMPLE_TYPES:
+            change["sample_type"] = self.bulk_type.currentText()
+        if self.bulk_group.text().strip():
+            change["group"] = self.bulk_group.text().strip()
+        if self.bulk_batch.value():
+            change["batch"] = self.bulk_batch.value()
+        self._save_changes({path: change for path in paths})
+        self.refresh()
 
     def add(self):
         if self.window.project is None:
@@ -159,9 +253,5 @@ class ImportPage(QtWidgets.QWidget):
     def remove(self):
         if not self.window.project:
             return
-        selected = {i.text() for i in self.files.selectedItems()}
-        self.window.project.files = [
-            p for p in self.window.project.files if p not in selected
-        ]
-        self.window.project.save()
+        self.window.project.remove_files(self.selected_paths())
         self.refresh()
