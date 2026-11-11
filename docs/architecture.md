@@ -4,6 +4,13 @@
 search, then applies score/ECN filtering and exports with `final_results.py`.
 The GUI runs heavy analysis outside the UI process.
 
+Project search passes the original candidate frame directly to final filtering;
+it does not build MS2 presentation summaries or serialize/reload intermediate
+CSVs. Final output is one compact feature table. Full evidence is saved once in
+`results/audit/evaluated.csv`; selected annotation audit records reference those
+source rows instead of duplicating spectrum JSON. Candidate exports are optional.
+Saved representative isotope windows can be reused for the same request.
+
 ## Libraries
 
 The executable ships read-only SQLite indexes containing the same normalized
@@ -86,4 +93,4 @@ All index blocks and earlier record caches use `ms2/safe_pickle.py` to restrict
 decoding to the supported data types. Hash metadata records content identity;
 it is not a substitute for restricting executable serialization constructors.
 
-Release validation and fingerprints are in `config/release_v1.0.3.json`.
+Release validation and fingerprints are in `config/release_v1.1.0.json`.

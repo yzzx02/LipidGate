@@ -76,3 +76,14 @@ tags and assets are retained; upload a new version rather than replacing them.
 
 Private samples and historical detailed benchmarks stay outside the public
 repository. Generated data and previous executables are excluded from packages.
+
+### Same-day consolidated v1.1.0 package
+
+At the user's explicit request, the 2026-11-11 v1.1.0 export refinement is
+consolidated into the same version instead of creating another release.
+The original manifest is preserved under `config/history/`; previous published
+archives and release metadata are backed up before replacement. Rebuild and
+verify the executable, source archive and checksums together, then replace the
+four assets on the existing release. Keep the previous commit identity in the
+historical manifest and move the release tag only after all checks pass.
+This exception does not merge the independent sphingolipid development branch.

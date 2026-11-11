@@ -3,6 +3,7 @@
 import json
 
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 from lipidgate.gui.result_data import ResultBundle, load_result_bundle
 from lipidgate.gui.result_export_data import export_browser_results
 from lipidgate.gui.result_store import AuditCandidateStore
@@ -54,18 +55,22 @@ def test_normal_browser_keeps_one_best_record_and_loads_original_spectrum_on_dem
     assert audit.read_bytes() == original
 
 
-def test_lazy_export_preserves_every_spectrum_and_its_confidence(tmp_path):
+def test_lazy_export_keeps_selected_fragments_without_reading_every_spectrum(tmp_path, monkeypatch):
     data = audit_rows()
     final, audit = saved_results(tmp_path, data)
     bundle = load_result_bundle(final)
-    export_browser_results(bundle, tmp_path/'export', xlsx=False)
-    features = pd.read_csv(tmp_path/'export'/'feature_results.csv')
-    evidence = pd.read_csv(tmp_path/'export'/'spectrum_evidence.csv')
+    monkeypatch.setattr(bundle, 'evidence_rows', lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError('A result export must not materialize the spectrum audit')))
+    export_browser_results(bundle, tmp_path/'export', xlsx=False, candidates=True)
+    features = read_result_table(tmp_path/'export'/'final_identifications.csv')
     selected = pd.read_csv(tmp_path/'export'/'feature_candidates.csv')
     assert len(features) == len(selected) == 1
+    assert features['MS/MS 碎片注释'].tolist() == [data.iloc[-1].matched_fragments]
+    assert not (tmp_path/'export'/'spectrum_evidence.csv').exists()
+    evidence = load_result_bundle(audit).candidates
     assert len(evidence) == len(data)
     assert evidence.final_score.tolist() == data.final_score.tolist()
-    assert evidence['置信度'].tolist() == ['低'] + ['高']*(len(data)-1)
+    assert evidence._confidence.tolist() == ['低'] + ['高']*(len(data)-1)
     assert evidence.matched_fragments.tolist() == data.matched_fragments.tolist()
     assert bundle.audit_store is not None and len(bundle.candidates) == 1
     assert len(load_result_bundle(audit).candidates) == len(data)
@@ -88,6 +93,25 @@ def test_disk_projection_and_eager_selection_have_identical_membership_and_decis
     evidence = lazy.evidence_rows(feature_keys=['ALIGN|another-aligned'])
     assert evidence.scan_id.tolist() == ['another_scan']
     assert len(lazy.evidence_rows(feature_keys=[])) == 0
+
+
+def test_lightweight_plot_rows_keep_all_candidates_without_spectrum_payloads(tmp_path):
+    data = audit_rows(3)
+    alternative = data.iloc[[-1]].copy()
+    alternative['result_rank'] = 2
+    alternative['matched_name'] = 'PC(18:0/16:1)'
+    data = pd.concat([data, alternative], ignore_index=True)
+    final, _ = saved_results(tmp_path, data)
+    bundle = load_result_bundle(final)
+    try:
+        metadata = bundle.audit_store.rows(feature_keys=bundle.features._key, metadata_only=True)
+        evidence = bundle.evidence_rows()
+        columns = ['_audit_row_id', '_key', '_spectrum', 'final_score', 'result_rank', '_confidence']
+        pd.testing.assert_frame_equal(metadata[columns], evidence[columns])
+        assert len(metadata) == len(data)
+        assert not {'ms2_evidence_json', 'matched_fragments'} & set(metadata)
+    finally:
+        bundle.audit_store.close()
 
 
 def test_chunked_store_round_trips_exact_numbers_and_multiline_evidence(tmp_path):

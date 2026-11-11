@@ -156,6 +156,7 @@ def run_project(project_path, settings, progress=lambda message: None):
                         "path": str(p),
                         "bytes": p.stat().st_size,
                         "mtime_ns": p.stat().st_mtime_ns,
+                        "sample_group": project.metadata_for(p)["group"],
                     }
                     for p in files
                 ],
@@ -224,24 +225,22 @@ def run_project(project_path, settings, progress=lambda message: None):
         mzml_input=files,
         feature_table=feature_table,
         output_dir=out / "ms2",
-        export_csv=True,
+        export_csv=False,
         export_xlsx=False,
+        audit_only=True,
         map_to_features=feature is not None,
         min_total_score=0.0,
         progress=progress,
         **options,
     )
-    try:
-        audit = pd.read_csv(out / "ms2/audit/ms2_candidates.csv")
-    except pd.errors.EmptyDataError:
-        audit = pd.DataFrame()
+    audit = result.data
     audit["mode"] = mode
     if feature is None:
         audit["ms1_support_status"] = "MS2-only"
         audit["ms1_support_reason"] = (
             "no_ms1_scans" if ms1.get("enabled", True) else "feature_detection_disabled"
         )
-    progress("应用分数与 ECN 筛选，导出结果…")
+    progress("应用分数与 ECN 筛选，保存结果主表与同位素…")
     filter_settings = {key: value for key, value in settings["filter"].items()
                        if key in {"use_ecn", "use_score", "min_score", "rt_tolerance", "retain_unmodeled"}}
     final = export_final_results(audit, out / "results", export_xlsx=False,

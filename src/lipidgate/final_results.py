@@ -7,9 +7,14 @@ import numpy as np
 import pandas as pd
 
 from lipidgate.ecn_filter import ECNFilterConfig, fit_high_confidence_ecn
-from lipidgate.ms2.search import identification_confidence, prepare_ms2_result_export_df
+from lipidgate.ms2.confidence import identification_confidence
 from lipidgate.ms2.workbook_export import write_workbook
 from lipidgate.ms2.ms1_evidence import restore_ms1_support
+from lipidgate.result_tables import (
+    ISOTOPE_REQUEST_COLUMN, ISOTOPE_RESULT_COLUMNS, RESULT_CSV_NAME,
+    RESULT_SHEET_NAME, RESULT_XLSX_NAME, feature_result_table, isotope_request, result_isotopes,
+)
+from lipidgate.result_file_io import write_result_csv
 
 
 @dataclass
@@ -37,7 +42,7 @@ def filter_results(
         "compound_class",
         "final_score",
     }.issubset(work):
-        raise ValueError("需要原始鉴定审计表（audit/ms2_candidates.csv）")
+        raise ValueError("需要完整鉴定审计表（results/audit/evaluated.csv；也可使用旧版 audit/ms2_candidates.csv）")
     work["置信度"] = [identification_confidence(r) for _, r in work.iterrows()]
     score = pd.to_numeric(
         work.get("final_score", pd.Series(index=work.index, dtype=float)),
@@ -101,6 +106,7 @@ def export_final_results(
     plot_dpi=300,
     export_xlsx=True,
     export_plots=True,
+    export_candidates=False,
 ):
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -112,39 +118,49 @@ def export_final_results(
         rt_tolerance=rt_tolerance,
         retain_unmodeled=retain_unmodeled,
     )
+    # The canonical audit row also identifies every selected annotation and
+    # cached isotope window. No second full MS2 CSV is needed by the project.
+    evaluated["_audit_row_id"] = evaluated.index
     passed = evaluated.loc[evaluated.RT_consistency_pass.fillna(False)].copy()
-    evidence = prepare_ms2_result_export_df(passed)
     from lipidgate.gui.result_data import result_bundle_from_data
-    from lipidgate.feature_annotations import SELECTION_POLICY, annotation_export_table, feature_export_table
+    from lipidgate.feature_annotations import SELECTION_COLUMNS, SELECTION_POLICY, annotation_export_table
     # Production search already records measured EIC membership. Final output
     # uses that evidence without reopening every raw file a second time.
-    bundle = result_bundle_from_data(passed, out / "final_identifications.csv", refresh_membership=False)
-    final = feature_export_table(bundle.features.loc[bundle.features._identified], bundle.annotations)
-    candidate_table = annotation_export_table(bundle.annotations)
-    pending = prepare_ms2_result_export_df(
-        evaluated.loc[
-            evaluated.RT_filter_action.isin(
-                ["unmodeled", "retain_unmodeled", "outside_domain_or_missing_rt"]
-            )
-        ]
-    )
-    csv = out / "final_identifications.csv"
-    final.to_csv(csv, index=False, encoding="utf-8-sig")
-    candidate_table.to_csv(out / "feature_candidates.csv", index=False, encoding="utf-8-sig")
+    bundle = result_bundle_from_data(passed, out / RESULT_CSV_NAME, refresh_membership=False)
+    representatives = bundle.features.loc[bundle.features._identified]
+    isotopes = result_isotopes(representatives, out / RESULT_CSV_NAME)
+    final = feature_result_table(representatives, out / RESULT_CSV_NAME, isotope_fields=isotopes)
+    csv = out / RESULT_CSV_NAME
+    write_result_csv(csv, final)
+    candidate_table = None
+    if export_candidates:
+        candidate_table = annotation_export_table(bundle.annotations).drop(columns="scan_id")
+        candidate_table.to_csv(out / "feature_candidates.csv", index=False, encoding="utf-8-sig")
     audit = out / "audit"
     audit.mkdir(exist_ok=True)
+    for column in (*ISOTOPE_RESULT_COLUMNS, ISOTOPE_REQUEST_COLUMN):
+        if column not in evaluated:
+            evaluated[column] = pd.Series(index=evaluated.index, dtype=object)
+    if not representatives.empty:
+        row_ids = representatives._audit_row_id.astype(int).to_numpy()
+        for column in ISOTOPE_RESULT_COLUMNS:
+            evaluated.loc[row_ids, column] = isotopes[column].to_numpy()
+        evaluated.loc[row_ids, ISOTOPE_REQUEST_COLUMN] = representatives.apply(isotope_request, axis=1).to_numpy()
     evaluated.to_csv(audit / "evaluated.csv", index=False, encoding="utf-8-sig")
-    bundle.annotations.to_csv(audit / "feature_annotations.csv", index=False, encoding="utf-8-sig")
-    models.to_csv(audit / "models.csv", index=False, encoding="utf-8-sig")
-    anchors.to_csv(audit / "anchors.csv", index=False, encoding="utf-8-sig")
-    xlsx = (
-        write_workbook(
-            out / "final_identifications.xlsx",
-            {"最终鉴定": final, "特征候选": candidate_table, "逐谱证据": evidence, "RT未判定": pending},
-        )
-        if export_xlsx
-        else None
-    )
+    # Selected records refer back to the complete canonical audit. Avoid
+    # copying each large spectrum JSON into a second audit table.
+    selection_columns = ["_audit_row_id", "_key", "source_file", "scan_id", "matched_name",
+                         "adduct", "result_rank", "final_score", "_confidence", *SELECTION_COLUMNS]
+    bundle.annotations.reindex(columns=selection_columns).to_csv(
+        audit / "feature_annotations.csv", index=False, encoding="utf-8-sig")
+    if not models.empty:
+        models.to_csv(audit / "models.csv", index=False, encoding="utf-8-sig")
+    if not anchors.empty:
+        anchors.to_csv(audit / "anchors.csv", index=False, encoding="utf-8-sig")
+    sheets = {RESULT_SHEET_NAME: final}
+    if export_candidates:
+        sheets["特征候选"] = candidate_table
+    xlsx = write_workbook(out / RESULT_XLSX_NAME, sheets) if export_xlsx else None
     paths = []
     if export_plots and use_ecn and not models.empty:
         from lipidgate.ecn_filter.plots import plot_ecn_class
@@ -172,6 +188,8 @@ def export_final_results(
                 plot_dpi=plot_dpi,
                 ecn_method="high_confidence_ordered_observed_two_points",
                 feature_selection_policy=SELECTION_POLICY,
+                result_table_schema="feature_results_v3_grouped",
+                export_candidates=export_candidates,
             ),
             indent=2,
         ),

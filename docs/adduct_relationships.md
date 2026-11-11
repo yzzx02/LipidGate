@@ -1,8 +1,8 @@
 # Independent MS1 adduct links
 
-The source development branch establishes adduct links after project MS2
-search and final identification export. The published v1.0.3 executable has not
-been rebuilt for this addition.
+The application establishes adduct links after project MS2 search and final
+identification export. The complete relationship evidence is saved in the project
+audit and confirmed links are available in the result browser.
 
 ## What is inferred
 
@@ -61,8 +61,10 @@ Four aggregate states are retained in the audit:
 
 `audit/ion_relationships.csv` preserves both feature keys, ion hypotheses,
 neutral mass/error, sample counts, shape statistics and per-sample evidence JSON.
-Public `ion_relationships.csv` contains only both feature keys, both ion forms
-and neutral mass for accepted links. Every shared native sample must have
+The navigator derives accepted feature keys, ion forms and neutral masses
+directly from that audit; new runs do not write a duplicate top-level
+`ion_relationships.csv`. Older top-level link files remain readable.
+Every shared native sample must have
 verified EIC support. A connected component is omitted if ion assignments
 conflict, multiple features compete for the same ion form, or its neutral masses
 are inconsistent. A missing/read-failed trace cannot establish a public link.

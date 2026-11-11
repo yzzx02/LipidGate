@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 import pytest
 
 from lipidgate import openms_runtime
@@ -180,9 +181,9 @@ def test_reopening_all_detector_tables_keeps_unidentified_peaks_areas_and_eviden
     for key in ("Feature_ID", "scan_id", "final_score", "passed_required_gates", "ms2_evidence_json"):
         assert candidate[key] == evidence.iloc[0][key]
     export_browser_results(bundle, tmp_path / "export", xlsx=False)
-    exported = pd.read_csv(tmp_path / "export/feature_results.csv")
+    exported = read_result_table(tmp_path / "export/final_identifications.csv")
     if native:
-        assert exported["Peak area"].tolist() == [12345, 67890]
+        assert exported["a.mzML"].tolist() == [12345, 67890]
     else:
         assert exported["a.mzML"].tolist() == [12345, 67890]
         assert exported["b.mzML"].tolist() == [23456, 0]

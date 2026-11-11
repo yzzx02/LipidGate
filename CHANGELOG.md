@@ -4,6 +4,16 @@
 
 ## 1.1.0 — 2026-11-11
 
+- Consolidate the same-day result export changes into this release: one shared
+  main table with 12 base columns, measured isotope text, matched MS/MS fragment
+  annotations and measured sample areas; export selected candidates only on request.
+- Place explicit experimental groups above sample names in CSV and Excel;
+  QC/Blank roles with their default group are labeled from saved sample metadata.
+  Preserve current labels when re-exporting without modifying saved measurements.
+- Retain complete per-spectrum evidence once in the project audit, reference
+  selected records by audit row ID, and skip redundant intermediate CSV exports.
+  Keep identification policies, scores, candidate order and source libraries unchanged.
+
 - Add persistent Sample/QC/Blank roles, independent experimental groups,
   batches, injection order and inclusion in the import table. New samples
   share group 1; rows can be edited or updated in bulk. Upgrade schema-1

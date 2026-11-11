@@ -1,4 +1,5 @@
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 import pytest
 
 from lipidgate.gui.result_data import ResultBundle
@@ -72,17 +73,18 @@ def test_tied_candidates_are_capped_by_three_identities_without_changing_raw_ran
 def test_browser_export_keeps_one_quantitation_row_and_traceable_candidate_records(tmp_path):
     aligned=pd.DataFrame([dict(Feature_ID='F100',mz=760.5,RT=10.,**{'a.mzML':1000.,'d.mzML':600.})])
     bundle=ResultBundle.from_frames(cohort(),aligned_features=aligned)
-    export_browser_results(bundle,tmp_path,xlsx=False)
-    quantitative=pd.read_csv(tmp_path/'feature_results.csv')
+    export_browser_results(bundle,tmp_path,xlsx=False,candidates=True)
+    quantitative=read_result_table(tmp_path/'final_identifications.csv')
     selected=pd.read_csv(tmp_path/'feature_candidates.csv')
-    evidence=pd.read_csv(tmp_path/'spectrum_evidence.csv')
     assert len(quantitative)==1 and quantitative['a.mzML'].tolist()==[1000.]
     assert quantitative['d.mzML'].tolist()==[600.]
     assert quantitative.Annotation.tolist()==['PC(14:1/20:0)']
-    assert quantitative['合格 Top1 支持样本数'].tolist()==[2]
+    assert '其他高置信注释' in quantitative['鉴定提示'].iloc[0]
+    assert selected['合格 Top1 支持样本数'].iloc[0]==2
     assert len(selected)==4 and selected['结果类型'].tolist()==['特征候选']+['高置信差异']*3
     assert 'a.mzML' not in selected and 'd.mzML' not in selected
-    assert len(evidence)==len(cohort())
+    assert not (tmp_path/'spectrum_evidence.csv').exists()
+    assert len(bundle.evidence_rows())==len(cohort())
 
 
 def test_final_export_uses_the_same_selector_and_keeps_same_name_at_separate_peaks(tmp_path):
@@ -90,10 +92,10 @@ def test_final_export_uses_the_same_selector_and_keeps_same_name_at_separate_pea
     another=row('PC(16:0/18:1)',scan='another_peak',feature='F200',score=80)
     another['rt_minutes']=12.
     data=pd.concat([data,pd.DataFrame([another])],ignore_index=True)
-    result=export_final_results(data,tmp_path,use_ecn=False,export_xlsx=False,export_plots=False)
+    result=export_final_results(data,tmp_path,use_ecn=False,export_xlsx=False,export_plots=False,export_candidates=True)
     final=result.passed_data
-    assert len(final)==2 and final['原始归并特征 ID'].tolist()==['F100','F200']
-    assert final.matched_name.tolist()==['PC(14:1/20:0)','PC(16:0/18:1)']
+    assert len(final)==2 and final['Feature ID'].tolist()==['100','200']
+    assert final.Annotation.tolist()==['PC(14:1/20:0)','PC(16:0/18:1)']
     selected = pd.read_csv(tmp_path/'feature_candidates.csv')
     assert selected.loc[selected.matched_name.eq('PC(16:0/18:1)'),'原始归并特征 ID'].tolist()==['F100','F200']
     assert selected.loc[selected['结果类型'].eq('高置信差异'),'source_file'].tolist()==['a.mzML','a.mzML','c.mzML']
@@ -109,9 +111,9 @@ def test_final_main_table_does_not_repeat_areas_for_independent_candidates(tmp_p
                          row('NAE(18:2)', score=100, result_rank_scope='nae', counts_toward_topn=False)])
     data.loc[2, 'compound_class'] = 'NAE'
     data['sample.mzML'] = 12345.
-    result = export_final_results(data, tmp_path, use_ecn=False, export_xlsx=False, export_plots=False)
+    result = export_final_results(data, tmp_path, use_ecn=False, export_xlsx=False, export_plots=False, export_candidates=True)
     assert len(result.passed_data) == 1
-    assert result.passed_data.matched_name.tolist() == ['PC(16:0/18:1)']
+    assert result.passed_data.Annotation.tolist() == ['PC(16:0/18:1)']
     assert result.passed_data['sample.mzML'].tolist() == [12345.]
     candidates = pd.read_csv(tmp_path/'feature_candidates.csv')
     assert len(candidates) == 3 and 'sample.mzML' not in candidates
@@ -122,11 +124,11 @@ def test_single_sample_saved_area_is_exported_without_an_alignment_matrix(tmp_pa
                          row('PC(16:1/18:0)', rank=2, score=79, ms1_feature_area=66091.5703125)])
     original = data.copy(deep=True)
     result = export_final_results(data, tmp_path/'final', use_ecn=False, export_xlsx=False, export_plots=False)
-    assert result.passed_data['Peak area'].tolist() == [66091.5703125]
+    assert result.passed_data['a.mzML'].tolist() == [66091.5703125]
     bundle = ResultBundle.from_frames(data)
     export_browser_results(bundle, tmp_path/'browser', xlsx=False)
-    assert pd.read_csv(tmp_path/'browser/feature_results.csv')['Peak area'].tolist() == [66091.5703125]
-    assert 'a.mzML' not in pd.read_csv(tmp_path/'final/feature_candidates.csv')
+    assert read_result_table(tmp_path/'browser/final_identifications.csv')['a.mzML'].tolist() == [66091.5703125]
+    assert not (tmp_path/'final/feature_candidates.csv').exists()
     pd.testing.assert_frame_equal(data, original)
 
 
@@ -135,7 +137,7 @@ def test_raw_precursor_confirmation_cannot_export_a_background_intensity_as_area
     item.update(Feature_ID=None, ms1_support_status='MS2-only', ms1_feature_area=None)
     bundle = ResultBundle.from_frames(pd.DataFrame([item]))
     export_browser_results(bundle, tmp_path, xlsx=False)
-    exported = pd.read_csv(tmp_path/'feature_results.csv')
+    exported = read_result_table(tmp_path/'final_identifications.csv')
     assert 'a.mzML' not in exported or exported['a.mzML'].isna().all()
     assert 'Peak area' not in exported or exported['Peak area'].isna().all()
 
@@ -153,10 +155,11 @@ def test_independent_nae_does_not_take_representative_or_feature_top3(tmp_path):
     assert displayed._display_rank.tolist() == [1, 2, 3, 1]
     assert displayed._candidate_scope.tolist() == ['main']*3 + ['nae']
     assert bundle.spectra('ALIGN|F100').matched_name.tolist() == ['PC(16:0/18:1)']
-    export_browser_results(bundle, tmp_path, xlsx=False)
-    quantitative = pd.read_csv(tmp_path/'feature_results.csv')
-    assert quantitative['Top3 Annotation'].tolist() == ['PC(14:0/20:1)']
+    export_browser_results(bundle, tmp_path, xlsx=False, candidates=True)
+    quantitative = read_result_table(tmp_path/'final_identifications.csv')
+    assert not any(column.startswith('Top') for column in quantitative)
     selected = pd.read_csv(tmp_path/'feature_candidates.csv')
+    assert selected.matched_name.iloc[2] == 'PC(14:0/20:1)'
     assert selected['结果类型'].tolist() == ['特征候选']*3 + ['NAE 独立候选']
 
 

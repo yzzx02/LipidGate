@@ -200,22 +200,6 @@ def annotation_export_table(annotations):
     return result
 
 
-def feature_export_table(features, annotations):
-    """One identified feature per row; alternatives carry no duplicate areas."""
-    result = annotation_export_table(features)
-    if features.empty:
-        return result
-    main = annotations.loc[annotations.feature_result_role.eq("representative")]
-    for rank in (2, 3):
-        selected = main.loc[main.feature_result_rank.eq(rank)].set_index("_key")
-        for title, column in (("Annotation", "matched_name"), ("Adduct", "adduct"),
-                              ("Score", "final_score"), ("Confidence", "_confidence")):
-            result[f"Top{rank} {title}"] = features._key.map(selected[column]).to_numpy()
-    for column, values in measured_feature_areas(features).items():
-        result[column] = values.to_numpy()
-    return result
-
-
 def measured_feature_areas(features):
     """Return measured sample areas, including native single-sample tables.
 
@@ -234,13 +218,13 @@ def measured_feature_areas(features):
     if result:
         local &= texts("_aligned_feature").eq("")
     measured = pd.Series(float("nan"), index=features.index)
-    for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into"):
+    for column in ("ms1_feature_area", "intensity", "Area", "peak_area", "into", "Peak area"):
         if column in features:
             measured = measured.where(measured.notna(), pd.to_numeric(features[column], errors="coerce"))
     measured = measured.where(local)
     if not result:
         return {"Peak area": measured} if any(column in features for column in
-            ("ms1_feature_area", "intensity", "Area", "peak_area", "into")) else {}
+            ("ms1_feature_area", "intensity", "Area", "peak_area", "into", "Peak area")) else {}
     sources = texts("_source") if "_source" in features else texts("source_file")
     for source in sources.loc[local].unique():
         if not source.lower().endswith(".mzml"):

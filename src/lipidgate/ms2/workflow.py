@@ -235,7 +235,13 @@ def run_ms2_feature_annotation_result(
     map_to_features: bool = True,
     workers: int = 1,
     progress=None,
+    audit_only: bool = False,
 ) -> MS2FeatureAnnotationResult:
+    """Search and associate evidence, optionally returning only the raw audit.
+
+    Projects persist the complete evaluated audit once, after filtering. This
+    mode avoids building and serializing intermediate presentation tables.
+    """
     from lipidgate.ms2.feature_linking import (
         ANNOTATION_COLUMNS,
         DETAIL_ANNOTATION_COLUMNS,
@@ -339,44 +345,46 @@ def run_ms2_feature_annotation_result(
             mz_tol_ppm=float(precursor_tolerance_ppm), mz_tol_da=precursor_tolerance_da)
         linked_df = associate_ms2_with_alignment(linked_df, feature_df,
                                                 mz_tol_ppm=float(precursor_tolerance_ppm), mz_tol_da=precursor_tolerance_da)
-        ms2_df = prepare_ms2_result_export_df(linked_df)
-        matched = summarize_feature_annotations(linked_df, include_details=True)
-        orphan_df = linked_df[linked_df["Feature_ID"].isna()
-                             & linked_df["Aligned_Feature_ID"].isna()].copy()
-        orphan = summarize_orphan_annotations(
-            orphan_df=orphan_df,
-            mzml_paths=mzml_paths,
-            mz_tol_ppm=float(precursor_tolerance_ppm),
-            mz_tol_da=precursor_tolerance_da,
-            rt_window_sec=float(rt_window_sec),
-            include_details=True,
-        )
-        records: list[dict] = []
-        for table in (matched, orphan):
-            if not table.empty:
-                records.extend(table.to_dict("records"))
-        detailed_annotations = pd.DataFrame.from_records(records, columns=DETAIL_ANNOTATION_COLUMNS)
-        feature_annotations = detailed_annotations.reindex(columns=ANNOTATION_COLUMNS)
-        if export_csv:
-            annotations_csv_path = out_dir / "feature_ms2_annotations.csv"
-            prepare_ms2_result_export_df(feature_annotations).to_csv(annotations_csv_path, index=False)
-            detailed_annotations.to_csv(out_dir / "aligned_feature_annotations.csv", index=False)
+        if not audit_only:
+            ms2_df = prepare_ms2_result_export_df(linked_df)
+            matched = summarize_feature_annotations(linked_df, include_details=True)
+            orphan_df = linked_df[linked_df["Feature_ID"].isna()
+                                 & linked_df["Aligned_Feature_ID"].isna()].copy()
+            orphan = summarize_orphan_annotations(
+                orphan_df=orphan_df,
+                mzml_paths=mzml_paths,
+                mz_tol_ppm=float(precursor_tolerance_ppm),
+                mz_tol_da=precursor_tolerance_da,
+                rt_window_sec=float(rt_window_sec),
+                include_details=True,
+            )
+            records: list[dict] = []
+            for table in (matched, orphan):
+                if not table.empty:
+                    records.extend(table.to_dict("records"))
+            detailed_annotations = pd.DataFrame.from_records(records, columns=DETAIL_ANNOTATION_COLUMNS)
+            feature_annotations = detailed_annotations.reindex(columns=ANNOTATION_COLUMNS)
+            if export_csv:
+                annotations_csv_path = out_dir / "feature_ms2_annotations.csv"
+                prepare_ms2_result_export_df(feature_annotations).to_csv(annotations_csv_path, index=False)
+                detailed_annotations.to_csv(out_dir / "aligned_feature_annotations.csv", index=False)
     else:
         combined = deduplicate_fa_results(combined)
         combined = annotate_chromatographic_membership(combined, mzml_paths,
                                                       mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da)
-        ms2_df = prepare_ms2_result_export_df(combined)
+        if not audit_only:
+            ms2_df = prepare_ms2_result_export_df(combined)
 
-    if export_csv:
+    audit_table = linked_df if wrote_feature_annotation_table else combined
+    if export_csv and not audit_only:
         audit_dir = out_dir / "audit"
         audit_dir.mkdir(exist_ok=True)
-        audit_table = linked_df if wrote_feature_annotation_table else combined
         audit_table.to_csv(audit_dir / "ms2_candidates.csv", index=False)
         ms2_csv_path = out_dir / "ms2_spectrum_results.csv"
         ms2_df.to_csv(ms2_csv_path, index=False)
 
     xlsx_path = None
-    if export_xlsx:
+    if export_xlsx and not audit_only:
         if wrote_feature_annotation_table:
             xlsx_path = _write_feature_annotation_workbook(
                 out_dir / "ms2_feature_annotation_results.xlsx",
@@ -386,7 +394,8 @@ def run_ms2_feature_annotation_result(
         else:
             xlsx_path = _write_ms2_only_workbook(out_dir / "ms2_spectrum_results.xlsx", ms2_df=ms2_df)
 
-    display_df = prepare_ms2_result_export_df(feature_annotations) if wrote_feature_annotation_table else ms2_df
+    display_df = (audit_table if audit_only else
+                  prepare_ms2_result_export_df(feature_annotations) if wrote_feature_annotation_table else ms2_df)
     primary_output = xlsx_path or annotations_csv_path or ms2_csv_path or out_dir
     message = f"MS2 feature annotation finished: {primary_output} ({len(display_df)} rows)"
     return MS2FeatureAnnotationResult(
@@ -401,7 +410,7 @@ def run_ms2_feature_annotation_result(
         library_path=library,
         output_dir=out_dir,
         row_count=int(len(display_df)),
-        ms2_row_count=int(len(ms2_df)),
+        ms2_row_count=int(len(audit_table)),
         parameters={
             "mzml_files": [str(path) for path in mzml_paths],
             "ms1_support_method": "feature_table_association",
@@ -421,6 +430,7 @@ def run_ms2_feature_annotation_result(
             "export_xlsx": export_xlsx,
             "export_csv": export_csv,
             "map_to_features": map_to_features,
+            "audit_only": audit_only,
             "workers": workers,
             "effective_workers": min(workers, len(mzml_paths)),
         },

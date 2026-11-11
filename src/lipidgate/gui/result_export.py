@@ -18,20 +18,22 @@ class ResultExportDialog(QtWidgets.QDialog):
         self.resize(570, 440)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(13)
-        intro = QtWidgets.QLabel("选择结果范围、格式与图像，然后指定保存文件夹。")
+        intro = QtWidgets.QLabel("默认导出一张结果主表，包含样本面积、同位素和 MS/MS 碎片注释。")
+        intro.setWordWrap(True)
         layout.addWidget(intro)
         self.scope = QtWidgets.QComboBox()
         self.scope.addItems(["当前筛选的特征", "全部特征"])
         layout.addWidget(self._section("结果范围", self.scope))
-        self.csv = QtWidgets.QCheckBox("CSV：特征结果表 + 逐谱证据表")
-        self.csv.setChecked(True)
-        self.xlsx = QtWidgets.QCheckBox("Excel：特征结果 + 逐谱证据")
+        self.csv = QtWidgets.QCheckBox("CSV")
+        self.xlsx = QtWidgets.QCheckBox("Excel")
         self.xlsx.setChecked(True)
+        self.candidates = QtWidgets.QCheckBox("附带候选表（备选鉴定与高置信差异）")
         tables = QtWidgets.QWidget()
         table_layout = QtWidgets.QVBoxLayout(tables)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.addWidget(self.csv)
         table_layout.addWidget(self.xlsx)
+        table_layout.addWidget(self.candidates)
         layout.addWidget(self._section("结果表", tables))
         self.plots = QtWidgets.QCheckBox("生成 ECN 图像")
         self.plots.setEnabled(has_ecn_models(page.bundle.path))
@@ -105,7 +107,8 @@ class ResultExportDialog(QtWidgets.QDialog):
             return
         keys = set(self.page.filtered._key) if self.scope.currentIndex() == 0 else None
         options = dict(feature_keys=keys, csv=self.csv.isChecked(),
-                       xlsx=self.xlsx.isChecked(), plots=self.plots.isChecked(),
+                       xlsx=self.xlsx.isChecked(), candidates=self.candidates.isChecked(),
+                       plots=self.plots.isChecked(),
                        dpi=self.dpi.value(), band=self.band.isChecked())
         self._destination = folder
         self.export_button.setEnabled(False)

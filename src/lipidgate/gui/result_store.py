@@ -98,7 +98,8 @@ class AuditCandidateStore:
                             for record in _records(metadata)))
             db.execute("CREATE INDEX feature_spectrum ON evidence(feature_key, spectrum_key)")
 
-    def rows(self, *, feature_keys=None, spectrum=None, row_ids=None, anchors_only=False):
+    def rows(self, *, feature_keys=None, spectrum=None, row_ids=None, anchors_only=False,
+             metadata_only=False):
         """Read requested evidence, or only lightweight spectrum selector rows."""
         if feature_keys is not None:
             feature_keys = list(feature_keys)
@@ -112,7 +113,7 @@ class AuditCandidateStore:
         for values, argument in ((feature_keys, "feature_keys"), (row_ids, "row_ids")):
             if values is not None and len(values) > 400:
                 options = dict(feature_keys=feature_keys, row_ids=row_ids, spectrum=spectrum,
-                               anchors_only=anchors_only)
+                               anchors_only=anchors_only, metadata_only=metadata_only)
                 parts = [self.rows(**(options | {argument: values[i:i + 400]}))
                          for i in range(0, len(values), 400)]
                 return pd.concat(parts, ignore_index=True).sort_values("_audit_row_id", kind="stable").reset_index(drop=True)
@@ -126,7 +127,7 @@ class AuditCandidateStore:
             parameters.append(spectrum)
         if anchors_only:
             predicates.append("anchor=1")
-        fields = "NULL, normalized" if anchors_only else "payload, normalized"
+        fields = "NULL, normalized" if anchors_only or metadata_only else "payload, normalized"
         records = []
         with self._connection() as db:
             for payload, normalized in db.execute(

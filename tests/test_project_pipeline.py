@@ -85,8 +85,9 @@ def test_empty_export_has_usable_workbook(tmp_path, use_ecn, use_score):
         pd.DataFrame(), tmp_path, use_ecn=use_ecn, use_score=use_score
     )
     wb = load_workbook(result.xlsx_path)
-    assert wb.sheetnames == ["最终鉴定", "特征候选", "逐谱证据", "RT未判定"]
-    assert wb["最终鉴定"].max_column == 17
+    from lipidgate.result_tables import RESULT_COLUMNS
+    assert wb.sheetnames == ["特征结果"]
+    assert wb["特征结果"].max_column == len(RESULT_COLUMNS)
     assert len(result.data) == 0
     wb.close()
 
@@ -186,6 +187,7 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     project = (Project.create(tmp_path / "project/test.lipidgate") if project_format == "modern"
                else Project.open(tmp_path / "project"))
     project.add_files([source])
+    project.update_samples({source: {"group": "对照组"}})
     settings = {
         "ms1": {
             "enabled": True,
@@ -215,10 +217,7 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
 
     def search(**kwargs):
         calls.append(kwargs)
-        out = kwargs["output_dir"] / "audit"
-        out.mkdir(parents=True)
-        candidates().to_csv(out / "ms2_candidates.csv", index=False)
-        return SimpleNamespace(data=pd.DataFrame())
+        return SimpleNamespace(data=candidates())
 
     monkeypatch.setattr(pipeline, "run_feature_detection_result", detect)
     monkeypatch.setattr(pipeline, "run_ms2_feature_annotation_result", search)
@@ -227,7 +226,8 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     assert calls[0]["config"]["parameters"]["asari"]["mode"] == "neg"
     assert calls[0]["input_path"] == [source]
     assert calls[1]["fragment_tolerance_ppm"] == 10
-    assert calls[1]["min_total_score"] == 0 and calls[1]["export_csv"]
+    assert calls[1]["min_total_score"] == 0 and not calls[1]["export_csv"]
+    assert calls[1]["audit_only"] and not calls[1]["export_xlsx"]
     assert calls[1]["map_to_features"]
     assert calls[1]["feature_table"] == tmp_path / "native.csv"
     assert len(final.data) == 5
@@ -240,6 +240,7 @@ def test_project_pipeline_snapshots_parameters_and_uses_raw_audit(
     )
     assert (final.output_dir.parent / "provenance.json").exists()
     assert 'analysis_mode' not in Project.open(project.path).settings
+    assert json.loads((final.output_dir.parent / "provenance.json").read_text())["inputs"][0]["sample_group"] == "对照组"
     ms1_metadata = json.loads((final.output_dir.parent / "ms1/feature_table.json").read_text())
     assert ms1_metadata["algorithm"] == "xcms"
     assert Path(ms1_metadata["table"]) == tmp_path / "features.csv"
@@ -272,16 +273,13 @@ def test_ms2_only_input_skips_ms1_extraction_but_keeps_search(tmp_path, monkeypa
 
     def search(**kwargs):
         searched.append(kwargs)
-        audit = kwargs["output_dir"] / "audit"
-        audit.mkdir(parents=True)
-        candidates().to_csv(audit / "ms2_candidates.csv", index=False)
-        return SimpleNamespace(data=pd.DataFrame())
+        return SimpleNamespace(data=candidates())
 
     monkeypatch.setattr(pipeline, "run_ms2_feature_annotation_result", search)
     feature, _, final = pipeline.run_project(project.root, settings)
     assert feature is None
     assert searched[0]["feature_table"] is None and not searched[0]["map_to_features"]
-    assert final.passed_data.ms1_support_status.eq("MS2-only").all()
+    assert final.data.ms1_support_status.eq("MS2-only").all()
     audit = pd.read_csv(final.output_dir / "audit" / "evaluated.csv")
     assert audit.ms1_support_reason.eq("no_ms1_scans").all()
 
@@ -425,15 +423,16 @@ def test_real_project_detection_search_and_export(tmp_path, extra_ms1):
     feature, _, result = run_project(project.root, settings)
     assert feature.row_count > 0
     assert feature.native_table_path.exists()
-    assert result.passed_data.matched_name.tolist() == [m.name]
-    assert result.passed_data["置信度"].tolist() == ["高"]
-    assert result.passed_data.ms1_support_status.tolist() == ["MS1-supported"]
-    assert result.passed_data.feature_rt.iloc[0] == pytest.approx(40 / 60, abs=0.05)
+    assert result.passed_data.Annotation.tolist() == [m.name]
+    assert result.passed_data.Confidence.tolist() == ["高"]
+    assert result.data.ms1_support_status.tolist() == ["MS1-supported"]
+    assert result.passed_data.RT.iloc[0] == pytest.approx(40 / 60, abs=0.05)
     assert result.xlsx_path is None
     assert result.csv_path.exists()
     # A detected Na/H MS1 pair adds advisory evidence without changing the
     # single H library candidate, its confidence, or the quantitation rows.
-    relations = pd.read_csv(result.csv_path.parent / "ion_relationships.csv")
+    from lipidgate.ion_relationships import confirmed_ion_relationships
+    relations = confirmed_ion_relationships(pd.read_csv(result.csv_path.parent / "audit/ion_relationships.csv"))
     assert len(relations) == 1 and 'status' not in relations
     assert relations.iloc[0].ion_a == '[M+H]+'
     assert relations.iloc[0].ion_b == '[M+Na]+'
@@ -443,3 +442,8 @@ def test_real_project_detection_search_and_export(tmp_path, extra_ms1):
     assert inventory[0]['ms2_scans'] == 1
     if extra_ms1:
         assert inventory[1]['ms1_scans'] == 100 and inventory[1]['ms2_scans'] == 0
+    assert sorted(p.name for p in result.output_dir.glob('*.csv')) == ['final_identifications.csv']
+    assert not list((result.output_dir.parent / 'ms2').rglob('*.csv'))
+    assert not (result.output_dir / 'audit/models.csv').exists()
+    assert not (result.output_dir / 'audit/anchors.csv').exists()
+    assert result.passed_data['MS/MS 碎片注释'].str.len().gt(0).all()

@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 import pytest
 
 from lipidgate.gui.result_data import (
@@ -15,7 +16,7 @@ from lipidgate.gui.result_data import (
 )
 
 
-def test_ms2_export_includes_run_sample_snapshot_without_changing_evidence(tmp_path):
+def test_ms2_export_uses_run_sample_group_header_without_changing_evidence(tmp_path):
     from lipidgate.gui.result_data import result_bundle_from_data
     from lipidgate.gui.result_export_data import export_browser_results
 
@@ -31,8 +32,11 @@ def test_ms2_export_includes_run_sample_snapshot_without_changing_evidence(tmp_p
     pd.testing.assert_frame_equal(bundle.sample_metadata, snapshot)
     evidence = bundle.candidates.copy(deep=True)
     paths = export_browser_results(bundle, tmp_path / 'export', csv=False, xlsx=True)
-    saved = pd.read_excel(paths[0], sheet_name='样本信息', dtype={'group': str})
-    pd.testing.assert_frame_equal(saved, snapshot)
+    saved = read_result_table(paths[0])
+    assert saved.attrs['sample_groups']['a.mzML'] == '2'
+    assert pd.ExcelFile(paths[0]).sheet_names == ['特征结果']
+    pd.testing.assert_frame_equal(pd.read_csv(directory.parent / 'sample_metadata.csv',
+                                            dtype={'group': str}), snapshot)
     pd.testing.assert_frame_equal(bundle.candidates, evidence)
 
 
@@ -115,10 +119,10 @@ def test_undetected_pe_sample_joins_f163_but_keeps_its_own_low_evidence(tmp_path
     assert pd.isna(scan.get("ms1_peak_left_raw_min"))
     assert pd.isna(scan.get("ms1_feature_area"))
     export_browser_results(bundle, tmp_path, xlsx=False)
-    evidence = pd.read_csv(tmp_path / "spectrum_evidence.csv")
-    assert evidence["归并特征 ID"].tolist() == [163, 163]
-    assert evidence["原始归并特征 ID"].tolist() == ["F163", "F163"]
-    assert evidence.loc[evidence.source_file.eq("d.mzML"), "MS1 检测特征状态"].tolist() == ["Not detected"]
+    assert not (tmp_path / "spectrum_evidence.csv").exists()
+    evidence = bundle.evidence_rows()
+    assert evidence._feature.tolist() == ["F163", "F163"]
+    assert ms1_feature_display(evidence.loc[evidence.source_file.eq("d.mzML")].iloc[0]) == "Not detected"
 
 
 def rows():
@@ -264,9 +268,10 @@ def test_feature_export_keeps_per_sample_peak_areas_without_fabricating_orphans(
     ])
     bundle = ResultBundle.from_frames(candidates, aligned_features=aligned)
     export_browser_results(bundle, tmp_path, xlsx=False)
-    exported = pd.read_csv(tmp_path / "feature_results.csv")
+    exported = read_result_table(tmp_path / "final_identifications.csv")
     linked = exported[exported["Feature ID"].eq("11")].iloc[0]
-    assert linked["原始特征 ID"] == "F11"
+    assert "原始特征 ID" not in exported
+    assert bundle.features.loc[bundle.features._display_feature.eq("11"), "_feature"].item() == "F11"
     assert linked["a.mzML"] == 49621.84 and linked["b.mzML"] == 39175.34
     assert linked["c.mzML"] == 0.
     orphan = exported[exported.Annotation.eq("CE 18:2")].iloc[0]
@@ -294,17 +299,18 @@ def test_ms2_only_nearby_scans_share_one_traceable_row():
     assert len(bundle.filter(query="scan_1344")) == 1
 
 
-def test_export_module_writes_feature_and_spectrum_provenance(tmp_path):
+def test_export_module_defaults_to_one_result_table_with_representative_source(tmp_path):
     from lipidgate.gui.result_export_data import export_browser_results
 
     bundle = ResultBundle.from_frames(rows())
     paths = export_browser_results(bundle, tmp_path, csv=True, xlsx=False)
-    assert len(paths) == 3
-    features = pd.read_csv(tmp_path / "feature_results.csv")
-    evidence = pd.read_csv(tmp_path / "spectrum_evidence.csv")
-    assert len(features) == 3 and len(evidence) == 4
-    assert "原始扫描号" not in features and "scan_id" not in evidence
-    assert "归并特征 ID" in evidence
+    assert len(paths) == 1
+    features = read_result_table(tmp_path / "final_identifications.csv")
+    assert len(features) == 3
+    assert "原始扫描号" not in features
+    assert "MS/MS 来源文件" not in features and "MS/MS 碎片注释" in features
+    assert not (tmp_path / "spectrum_evidence.csv").exists()
+    assert not (tmp_path / "feature_candidates.csv").exists()
 
 
 def test_unidentified_comes_only_from_real_feature_table():
@@ -692,6 +698,8 @@ def exercise_workbench(tmp_path, monkeypatch):
         from lipidgate.gui.result_export import ResultExportDialog
 
         dialog = ResultExportDialog(page)
+        assert dialog.xlsx.isChecked() and not dialog.csv.isChecked()
+        assert not dialog.candidates.isChecked()
         dialog.folder.setText(str(tmp_path))
         dialog.csv.setChecked(False)
         dialog._export()
@@ -699,7 +707,7 @@ def exercise_workbench(tmp_path, monkeypatch):
         while dialog._future is not None and time.monotonic() < deadline:
             app.processEvents()
             time.sleep(0.01)
-        assert pd.read_excel(tmp_path / "LipidGate_results.xlsx", sheet_name="特征结果").Annotation.tolist() == [
+        assert read_result_table(tmp_path / "final_identifications.xlsx", sheet_name="特征结果").Annotation.tolist() == [
             "PC(34:1)"
         ]
         path = tmp_path / "input.csv"

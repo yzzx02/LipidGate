@@ -2,6 +2,7 @@ import json
 
 import numpy as np
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 import pytest
 
 from lipidgate.gui.eic_trace import EICTrace
@@ -165,17 +166,18 @@ def test_sidecar_export_and_browser_loading_never_change_search_rows(tmp_path,mo
     from openpyxl import load_workbook
     paths=export_browser_results(bundle,tmp_path/'export',csv=True,xlsx=True,plots=False)
     assert not (tmp_path/'export/ion_relationships.csv').exists()
-    book=load_workbook(tmp_path/'export/LipidGate_results.xlsx')
-    assert book.sheetnames == ['特征结果', '特征候选', '逐谱证据']
+    book=load_workbook(tmp_path/'export/final_identifications.xlsx')
+    assert book.sheetnames == ['特征结果']
     assert '加合物联系' not in next(book['特征结果'].values)
-    exported = pd.read_csv(tmp_path/'export/feature_results.csv')
+    exported = read_result_table(tmp_path/'export/final_identifications.csv')
     assert '加合物联系' not in exported
     assert exported.Adduct.tolist() == ['[M+Na]+']
     assert exported.Score.tolist() == [80.0]
     book.close()
     assert final.csv_path.read_bytes()==csv_before
     assert (tmp_path/'results/audit/evaluated.csv').read_bytes()==audit_before
-    assert len(pd.read_csv(tmp_path/'results/ion_relationships.csv'))==3
+    assert not (tmp_path/'results/ion_relationships.csv').exists()
+    assert len(pd.read_csv(tmp_path/'results/audit/ion_relationships.csv'))==3
 
 
 def exercise_navigation_relationships(output):

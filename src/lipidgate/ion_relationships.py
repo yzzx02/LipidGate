@@ -280,7 +280,6 @@ def export_ion_relationships(native, aligned, output_dir, *, sources, mode, prog
     audit = out / 'audit'
     audit.mkdir(exist_ok=True)
     result.to_csv(audit/'ion_relationships.csv', index=False, encoding='utf-8-sig')
-    links.to_csv(out/'ion_relationships.csv', index=False, encoding='utf-8-sig')
     source_metadata = []
     for path in sources:
         item = dict(path=str(Path(path).resolve()))

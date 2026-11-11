@@ -350,14 +350,23 @@ def _project_self_test(app, window, arguments):
     assert details["同位素"] == isotope_display(isotope)[0]
     before = page.bundle.candidates.copy(deep=True)
     exports = args.project_check_dir / "exports"
-    export_browser_results(page.bundle, exports)
-    features = pd.read_csv(exports / "feature_results.csv")
-    evidence = pd.read_csv(exports / "spectrum_evidence.csv")
-    for table in (features, evidence, *pd.read_excel(exports / "LipidGate_results.xlsx", sheet_name=None).values()):
+    from lipidgate.result_file_io import read_result_table, sample_groups_for_result
+    from lipidgate.result_tables import RESULT_COLUMNS
+    export_browser_results(page.bundle, exports, xlsx=True, candidates=True)
+    features = read_result_table(exports / "final_identifications.csv")
+    excel = read_result_table(exports / "final_identifications.xlsx", sheet_name="特征结果")
+    pd.testing.assert_frame_equal(features, excel, check_dtype=False)
+    assert list(features)[:len(RESULT_COLUMNS)] == list(RESULT_COLUMNS)
+    assert features.attrs["sample_groups"] == sample_groups_for_result(page.bundle.path)
+    with pd.ExcelFile(exports / "final_identifications.xlsx") as book:
+        assert book.sheet_names == ["特征结果", "特征候选"]
+        candidates = pd.read_excel(book, sheet_name="特征候选")
+    for table in (features, candidates):
         assert not any("扫描" in str(column) or "scan" in str(column).lower() for column in table)
         assert "同位素详情 JSON" not in table
     assert features["同位素"].notna().any()
-    assert not any("同位素" in column for column in evidence)
+    assert features["MS/MS 碎片注释"].notna().any()
+    assert not (exports / "spectrum_evidence.csv").exists()
     pd.testing.assert_frame_equal(page.bundle.candidates, before)
     print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
                           latest_result_restored=True, isotope_export_verified=True, isotope_detail_verified=True,

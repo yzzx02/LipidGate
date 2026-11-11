@@ -158,6 +158,10 @@ def confidence_description(row):
 
 
 def ms1_evidence_display(row):
+    saved = text(row.get("MS1 前体证据"))
+    if (saved in {"Confirmed precursor", "Supported", "Detected feature", "Missing", "Unconfirmed"}
+            and text(row.get("ms1_support_status")) not in {"MS1-supported", "MS1-only", "MS2-only"}):
+        return saved
     if text(row.get("ms1_support_reason")) == CONFIRMED_WITHOUT_FEATURE or confirmed_ms1_precursor(row):
         return "Confirmed precursor"
     if text(row.get("ms1_support_status")) == "MS1-supported":
@@ -303,14 +307,15 @@ def normalize_candidates(data):
         "compound_class": ["Lipid Class", "脂质类别"],
         "final_score": ["Score", "得分"],
         "adduct": ["Adduct", "加合物", "加合离子"],
-        "source_file": ["文件", "文件名", "来源文件"],
+        "source_file": ["文件", "文件名", "来源文件", "MS/MS 来源文件"],
         "scan_id": ["Scan", "扫描号"],
         "ms1_support_status": ["MS1 Feature", "MS1 Support", "MS1支持"],
         "precursor_mz": ["母离子 m/z", "m/z", "mz"],
         "rt_minutes": ["MS2时间（归一化min）", "RT"],
         "feature_rt": ["MS1峰顶（归一化min）"],
         "ppm_error": ["质量误差 ppm"],
-        "matched_fragments": ["匹配碎片"],
+        "matched_fragments": ["匹配碎片", "MS/MS 碎片注释"],
+        "置信度": ["Confidence"],
         "total_C": ["总碳数"],
         "total_DB": ["总不饱和度"],
     }.items():
@@ -428,10 +433,12 @@ class ResultBundle:
     annotations: pd.DataFrame = field(default_factory=pd.DataFrame)
     audit_store: object = field(default=None, repr=False)
     sample_metadata: pd.DataFrame = field(default_factory=pd.DataFrame)
+    sample_groups: dict = field(default_factory=dict)
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
                     alignment_mz_ppm=10.0, alignment_mz_da=None):
+        sample_groups = dict(candidates.attrs.get("sample_groups", {}))
         # Reuse the same conservative membership for previously saved audits.
         candidates = associate_ms2_with_alignment(candidates, features,
                                                   mz_tol_ppm=alignment_mz_ppm, mz_tol_da=alignment_mz_da)
@@ -570,6 +577,7 @@ class ResultBundle:
         return cls(
             candidates, representatives, Path(path) if path else None, notice=notice,
             annotations=annotations,
+            sample_groups=sample_groups,
         )
 
     def spectra(self, key):
@@ -764,14 +772,9 @@ def load_result_bundle(path):
         if not explicit_audit and "RT_consistency_pass" in data:
             passed = data["RT_consistency_pass"].astype("string").str.casefold().eq("true").fillna(False)
             data = data.loc[passed].copy()
-    elif path.suffix.lower() in {".xlsx", ".xls"}:
-        with pd.ExcelFile(path) as book:
-            sheet = (
-                "逐谱证据" if "逐谱证据" in book.sheet_names else book.sheet_names[0]
-            )
-            data = pd.read_excel(book, sheet_name=sheet)
     else:
-        data = pd.read_csv(path, low_memory=False)
+        from lipidgate.result_file_io import read_result_table
+        data = read_result_table(path)
     try:
         bundle = result_bundle_from_data(data, path)
         if store is not None:
@@ -840,8 +843,10 @@ def result_bundle_from_data(data, path, *, refresh_membership=True):
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
     sample_path = base.parent / "sample_metadata.csv"
     if sample_path.is_file():
-        bundle.sample_metadata = pd.read_csv(sample_path, dtype={"group": str})
-    relations_path = base / "ion_relationships.csv"
+        bundle.sample_metadata = pd.read_csv(sample_path, dtype={"group": str}, keep_default_na=False)
+    relations_path = base / "audit" / "ion_relationships.csv"
+    if not relations_path.is_file():
+        relations_path = base / "ion_relationships.csv"
     if relations_path.is_file():
         from lipidgate.ion_relationships import confirmed_ion_relationships
         bundle.ion_relationships = confirmed_ion_relationships(pd.read_csv(relations_path, low_memory=False))

@@ -213,6 +213,7 @@ def plot_ecn_class(
     hide_outliers: bool = True,
     dpi: int = 600,
     band_minutes: float | None = None,
+    export_data: bool = True,
 ) -> Path:
     """Write the fixed LipidGate ECN figure for one lipid class.
 
@@ -242,12 +243,13 @@ def plot_ecn_class(
     points = _one_point_per_carbon(plotted_source, rt_column)
     if points.empty:
         return _empty_plot(output_path, f"No retained {lipid_class} ECN points", dpi)
-    points.to_csv(
-        output_root / f"{safe_class}_ECN_scatter_data.csv",
-        index=False,
-        encoding="utf-8-sig",
-    )
-    if hide_outliers and not hidden.empty:
+    if export_data:
+        points.to_csv(
+            output_root / f"{safe_class}_ECN_scatter_data.csv",
+            index=False,
+            encoding="utf-8-sig",
+        )
+    if export_data and hide_outliers and not hidden.empty:
         hidden.to_csv(
             output_root / f"{safe_class}_ECN_hidden_outliers.csv",
             index=False,

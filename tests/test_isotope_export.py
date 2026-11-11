@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+from lipidgate.result_file_io import read_result_table
 import pytest
 
 from lipidgate.ms2.isotope_export import ISOTOPE_SPACING, isotope_snapshot, isotope_export_fields
@@ -124,16 +125,18 @@ def test_export_keeps_unaligned_native_area_alongside_matrix_and_explains_orphan
     ])
     bundle = ResultBundle.from_frames(rows, native, aligned_features=aligned)
     export_browser_results(bundle, tmp_path, xlsx=False)
-    exported = pd.read_csv(tmp_path / "feature_results.csv")
+    exported = read_result_table(tmp_path / "final_identifications.csv")
     local = exported.loc[exported.Annotation.eq("PC(34:1)")].iloc[0]
     assert local["b.mzML"] == 12345 and pd.isna(local["a.mzML"])
     orphan = exported.loc[exported.Annotation.eq("PC(36:1)")].iloc[0]
     assert pd.isna(orphan["a.mzML"]) and pd.isna(orphan["b.mzML"])
-    assert orphan["MS1 Feature"] == "Unlinked"
-    assert orphan["MS1 前体证据"] == "Confirmed precursor"
-    assert "未计算面积" in orphan["面积状态"]
-    assert "峰边界之外" in orphan["MS1 特征说明"]
-    assert exported.loc[exported["原始特征 ID"].eq("F1"), "a.mzML"].item() == 111
+    assert "前体已确认" in orphan["鉴定提示"]
+    assert "未计算面积" in orphan["鉴定提示"]
+    from lipidgate.gui.result_data import ms1_feature_description
+    assert "峰边界之外" in ms1_feature_description(
+        bundle.features.loc[bundle.features.matched_name.eq("PC(36:1)")].iloc[0])
+    assert "MS1 特征说明" not in exported
+    assert exported.loc[exported["Feature ID"].eq("1"), "a.mzML"].item() == 111
 
 
 def test_browser_export_enriches_feature_table_without_changing_scores_or_areas(tmp_path):
@@ -147,19 +150,20 @@ def test_browser_export_enriches_feature_table_without_changing_scores_or_areas(
                               adduct="[M+H]+", matched_name="PC(34:1)", final_score=98, result_rank=1)])
     bundle = ResultBundle.from_frames(rows, path=tmp_path / "results.csv")
     before = bundle.candidates.copy(deep=True)
-    export_browser_results(bundle, tmp_path / "exports")
-    features = pd.read_csv(tmp_path / "exports/feature_results.csv")
-    evidence = pd.read_csv(tmp_path / "exports/spectrum_evidence.csv")
+    export_browser_results(bundle, tmp_path / "exports", xlsx=True, candidates=True)
+    features = read_result_table(tmp_path / "exports/final_identifications.csv")
+    evidence = bundle.evidence_rows()
     assert features.iloc[0]["同位素"] == "500.000000:100.00%; 501.003355:60.00%"
-    assert features.iloc[0]["同位素 MS1 RT (min)"] == 1
-    assert features.iloc[0]["同位素来源文件"] == "a.mzML"
+    assert "同位素 MS1 RT (min)" not in features
+    assert "同位素来源文件" not in features
     assert not any("同位素" in column for column in evidence)
-    for table in [features, evidence, *pd.read_excel(
-            tmp_path / "exports/LipidGate_results.xlsx", sheet_name=None).values()]:
+    book = pd.ExcelFile(tmp_path / "exports/final_identifications.xlsx")
+    for table in [features, *[read_result_table(book, sheet_name=sheet) for sheet in book.sheet_names]]:
         assert not any("扫描" in column or "scan" in column.lower() for column in table)
         assert "同位素详情 JSON" not in table
+    book.close()
     assert features.iloc[0].Score == evidence.iloc[0].final_score == 98
-    assert pd.isna(evidence.iloc[0]["MS1 积分面积（当前样本）"])
+    assert not (tmp_path / "exports/spectrum_evidence.csv").exists()
     pd.testing.assert_frame_equal(bundle.candidates, before)
 
 
@@ -185,13 +189,14 @@ def test_browser_exports_the_best_same_name_records_own_isotope_window(tmp_path)
     assert bundle.features.scan_id.tolist() == ["scan_4"]
     assert bundle.features.result_rank.tolist() == [2]
     export_browser_results(bundle, tmp_path / "exports", xlsx=False)
-    exported = pd.read_csv(tmp_path / "exports/feature_results.csv")
-    evidence = pd.read_csv(tmp_path / "exports/spectrum_evidence.csv")
+    exported = read_result_table(tmp_path / "exports/final_identifications.csv")
+    evidence = bundle.evidence_rows()
     assert len(exported) == 1 and len(evidence) == 3
     assert exported.iloc[0]["同位素"] == "500.000000:100.00%; 501.003355:60.00%"
-    assert exported.iloc[0]["同位素 MS1 RT (min)"] == pytest.approx(60 / 60)
+    assert "同位素 MS1 RT (min)" not in exported
     assert exported.iloc[0].Score == 99
     assert evidence.final_score.tolist() == [80, 95, 99]
+    assert not (tmp_path / "exports/spectrum_evidence.csv").exists()
     pd.testing.assert_frame_equal(bundle.candidates, before)
     pd.testing.assert_frame_equal(bundle.features, before_features)
 
@@ -204,5 +209,64 @@ def test_saved_detector_area_exports_without_a_separate_ms1_matrix(tmp_path):
                              rt_minutes=1, matched_name="PC", ms1_feature_area=1234.5,
                              ms1_support_status="MS1-supported")])
     export_browser_results(ResultBundle.from_frames(row), tmp_path, xlsx=False)
-    exported = pd.read_csv(tmp_path / "feature_results.csv")
-    assert exported.iloc[0]["Peak area"] == 1234.5
+    exported = read_result_table(tmp_path / "final_identifications.csv")
+    assert exported.iloc[0]["a.mzML"] == 1234.5
+
+
+def test_saved_main_and_browser_share_the_representatives_isotopes_without_rereading_raw(tmp_path, monkeypatch):
+    from lipidgate.final_results import export_final_results
+    from lipidgate.gui.result_data import load_result_bundle
+    from lipidgate.gui.result_export_data import export_browser_results
+    from lipidgate.project import Project
+    from lipidgate.result_tables import feature_result_table, browser_feature_rows
+    import lipidgate.ms2.isotope_export as isotope_module
+
+    source = tmp_path / 'a.mzML'
+    write_sample(source)
+    Project.create(tmp_path / 'sample.lipidgate').add_files([source])
+    data = pd.DataFrame([
+        dict(Feature_ID='F1', source_file=source.name, scan_id=scan,
+             matched_name='PC(34:1)', compound_class='PC', adduct='[M+H]+',
+             precursor_mz=500., rt_minutes=rt / 60, result_rank=rank,
+             final_score=score, passed_required_gates=True, ms1_support_status='MS1-supported',
+             resolution_level='chain_level', matched_fragments=fragment)
+        for scan, rt, rank, score, fragment in [
+            ('scan_4', 61, 1, 80, 'first record'),
+            ('scan_6', 63, 1, 95, 'later record'),
+            ('scan_4', 61, 2, 99, 'best complete record'),
+        ]
+    ])
+    calls = []
+    read_requests = isotope_module._read_requests
+
+    def read(path, requests):
+        calls.append(path)
+        return read_requests(path, requests)
+
+    monkeypatch.setattr(isotope_module, '_read_requests', read)
+    result = export_final_results(data, tmp_path / 'runs/run/results', use_ecn=False,
+                                  export_xlsx=False, export_plots=False)
+    assert len(calls) == 1
+    saved = read_result_table(result.csv_path)
+    assert saved['同位素'].tolist() == ['500.000000:100.00%; 501.003355:60.00%']
+    assert saved['MS/MS 碎片注释'].tolist() == ['best complete record']
+    audit = pd.read_csv(result.output_dir / 'audit/evaluated.csv')
+    representative = audit.loc[audit.final_score.eq(99)].iloc[0]
+    assert representative['同位素 MS1 RT (min)'] == 1
+    assert representative['同位素来源文件'] == 'a.mzML'
+    audit_before = (result.output_dir / 'audit/evaluated.csv').read_bytes()
+    bundle = load_result_bundle(result.csv_path)
+    try:
+        export_browser_results(bundle, tmp_path / 'exports')
+        assert len(calls) == 1
+        pd.testing.assert_frame_equal(saved, read_result_table(tmp_path / 'exports/final_identifications.csv'))
+        # Reuse requires the same acquisition, rather than a matching lipid name.
+        different = browser_feature_rows(bundle).copy()
+        different['scan_id'] = 'scan_6'
+        different['rt_minutes'] = 63 / 60
+        changed = feature_result_table(different, result.csv_path)
+        assert len(calls) == 2
+        assert changed['同位素'].tolist() == ['500.000000:100.00%; 501.003355:88.89%']
+    finally:
+        bundle.audit_store.close()
+    assert (result.output_dir / 'audit/evaluated.csv').read_bytes() == audit_before

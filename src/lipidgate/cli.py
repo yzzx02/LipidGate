@@ -167,7 +167,8 @@ def _filter_results(args: argparse.Namespace) -> int:
     result = export_final_results(pd.read_csv(args.input), args.output,
         use_ecn=not args.no_ecn, use_score=not args.no_score,
         min_score=args.min_score, rt_tolerance=args.rt_tolerance,
-        plot_bands=not args.no_bands, plot_dpi=args.dpi)
+        plot_bands=not args.no_bands, plot_dpi=args.dpi,
+        export_candidates=args.include_candidates)
     print(result.xlsx_path)
     return 0
 
@@ -185,10 +186,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_project_run)
 
     p = sub.add_parser('filter-results', help='Production score/ordered ECN filtering of raw audit candidates (one LC mode)')
-    p.add_argument('--input', type=Path, required=True, help='audit/ms2_candidates.csv')
+    p.add_argument('--input', type=Path, required=True, help='results/audit/evaluated.csv (or legacy audit/ms2_candidates.csv)')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--no-ecn', action='store_true')
     p.add_argument('--no-score', action='store_true')
+    p.add_argument('--include-candidates', action='store_true', help='Also export the feature candidate table')
     p.add_argument('--min-score', type=float, default=50)
     p.add_argument('--rt-tolerance', type=float, default=.5)
     p.add_argument('--no-bands', action='store_true')
