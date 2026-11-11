@@ -1,0 +1,14 @@
+{
+  "version": "1.1.0",
+  "amended_on": "2026-11-11",
+  "release_id": 441159136,
+  "previous_commit": "a8d3f859d8573dc6f819c8f76ef9bb82c5e62e43",
+  "previous_tag_object": "5cbed90d5aba0d3b7cce20dc9dfff19295b32d6f",
+  "previous_manifest": "release_v1.1.0_20261111_initial.json",
+  "scope": "User-requested same-day application export consolidation; no scientific or library changes; no sphingolipid branch merge.",
+  "application_commit": "ce96b55",
+  "previous_tag_reference": "codex/v1.1.0-initial-20261111",
+  "unchanged_scientific_ms2_modules": 67,
+  "fingerprint_note": "The broad MS2 fingerprint includes workflow and workbook export modules; scientific policy modules and library payloads are unchanged.",
+  "verification_entrypoint_commit": "4f243d4"
+}
