@@ -344,10 +344,36 @@ def _project_self_test(app, window, arguments):
     details = dict(page.detail.rows)
     assert not {"MS1 feature", "MS1 evidence", "原始峰顶范围"} & details.keys()
     assert "MS1 积分范围" in details
-    isotope = page._isotope_cache.get(page._isotope_current_key)
-    assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
     from lipidgate.gui.result_browser import isotope_display
-    assert details["同位素"] == isotope_display(isotope)[0]
+    from lipidgate.gui.result_data import number, text
+    saved = text(page.current_candidate.get("同位素"))
+    if saved:
+        # Saved measured windows intentionally avoid a second GUI read. Verify
+        # their source and request, then independently compare the raw survey.
+        import math
+        from lipidgate.result_tables import ISOTOPE_REQUEST_COLUMN, isotope_request
+        row = page.current_candidate
+        assert row[ISOTOPE_REQUEST_COLUMN] == isotope_request(row)
+        source = next(path for path in project.mzml_files()
+                      if path.name == Path(text(row.get("source_file"))).name)
+        target = number(row.get("precursor_ms1_mz"))
+        if not math.isfinite(target):
+            target = number(row.get("precursor_mz"))
+        raw = number(row.get("precursor_mz_raw"))
+        if not math.isfinite(raw):
+            raw = number(row.get("precursor_mz"))
+        isotope = page._eic_reader.read_isotopes(source, text(row.get("scan_id")),
+            number(row.get("rt_minutes")), target, text(row.get("adduct")), raw_mz=raw)
+        assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
+        measured = "; ".join(f"{peak['mz']:.6f}:{peak['relative_intensity']:.2f}%"
+                             for peak in isotope["peaks"])
+        assert details["同位素"] == saved == measured
+        assert row["同位素来源文件"] == source.name
+        assert abs(number(row["同位素 MS1 RT (min)"]) - isotope["rt_minutes"]) < 1e-9
+    else:
+        isotope = page._isotope_cache.get(page._isotope_current_key)
+        assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
+        assert details["同位素"] == isotope_display(isotope)[0]
     before = page.bundle.candidates.copy(deep=True)
     exports = args.project_check_dir / "exports"
     from lipidgate.result_file_io import read_result_table, sample_groups_for_result
@@ -371,7 +397,7 @@ def _project_self_test(app, window, arguments):
     print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
                           latest_result_restored=True, isotope_export_verified=True, isotope_detail_verified=True,
                           feature_rows=len(features), isotope_rows=int(features["同位素"].notna().sum()),
-                          evidence_rows=len(evidence)), ensure_ascii=False), flush=True)
+                          evidence_rows=len(page.bundle.evidence_rows())), ensure_ascii=False), flush=True)
 
 
 def _shutdown_test_workers(app, window):
