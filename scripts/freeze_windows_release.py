@@ -93,6 +93,9 @@ def freeze(root: Path, version: str, tests_xml: Path, frozen_report: Path,
         raise ValueError("EIC-click MS1 surveys and measured-boundary correction must pass before packaging")
     if tuple(map(int, version.split("."))) >= (1, 0, 7) and not frozen.get("isotope_detail_verified"):
         raise ValueError("Measured isotope details must pass before packaging")
+    if tuple(map(int, version.split("."))) >= (1, 1, 0) and not all(frozen.get(key) for key in
+            ("automatic_ms1_verified", "sample_metadata_verified", "ms1_result_review_verified")):
+        raise ValueError("Automatic MS1 inputs, sample metadata and MS1 workbook review must pass before packaging")
     rules = code_fingerprint(root / "src" / "lipidgate" / "ms2")
     verification = dict(junit_test_cases=tests, skipped=sum(int(s.get("skipped",0)) for s in suites),
                         failures=0, errors=0, frozen=frozen)

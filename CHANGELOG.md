@@ -2,23 +2,21 @@
 
 ## Unreleased
 
-- Replace manual MS1 mode selection with automatic execution from observed
-  scan levels. Stream each input once, retain a scan inventory and process
-  MS1-only inputs without requiring valid MS2 settings or an MS2 library.
-- Add Run directly to the import page and share polarity across parameter pages.
-  Preserve polarity when migrating old manual-mode projects. MS2-containing
-  and mixed input sets continue through the existing identification workflow;
-  fragment definitions, scores, ranking and source libraries remain unchanged.
-
 ## 1.1.0 — 2026-11-11
 
 - Add persistent Sample/QC/Blank roles, independent experimental groups,
   batches, injection order and inclusion in the import table. New samples
   share group 1; rows can be edited or updated in bulk. Upgrade schema-1
   projects on save while retaining source paths and existing results.
-- Add a pure MS1 project mode: native peak detection, cross-sample alignment,
-  measured peak-area matrices and optional read-only precursor-mass lookup.
-  Reuse the existing main libraries without changing their contents.
+- Automatically handle inputs using their actual MS1/MS2 scans. MS1-only files
+  complete native peak detection, cross-sample alignment, measured peak-area
+  matrices and optional read-only mass lookup without selecting a separate mode.
+  With MS2 present, continue the existing identification workflow, including
+  mixed input sets with MS1-only files. Low MS2 scores do not trigger fallback.
+- Add Run directly to the import page, share polarity across parameter pages,
+  and preserve selected polarity when migrating older projects.
+- Save built-in MS1 library references independently of the executable's
+  temporary extraction directory; preserve custom library references.
 - Collapse explicit chain alternatives into sum/formula MS1 candidates;
   retain adducts, formulas, mass errors and candidate counts without MS2 scores,
   gate-pass flags or chain confirmation. Review/export these results separately.
@@ -27,6 +25,8 @@
 - Pass sample groups and Unicode input lists to XCMS; retain original local
   peaks before RT correction. Existing MS2 science, scores, ordering and
   library fingerprints are unchanged. No sphingolipid branch is merged.
+- Verify the Windows executable's automatic MS1 worker, bundled mass lookup,
+  sample metadata, MS1 workbook review/export and the existing MS2 workflow.
 
 ## 1.0.9 — 2026-11-06
 

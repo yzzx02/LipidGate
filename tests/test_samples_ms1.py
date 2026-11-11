@@ -329,3 +329,21 @@ def test_empty_inputs_fail_before_detection_or_library_lookup(tmp_path,monkeypat
     with pytest.raises(ValueError,match='MS1 或 MS2'):
         pipeline.run_project(saved.path,dict(ms2=dict(mode='positive',library_path='missing.msp')))
     assert not (saved.root/'runs').exists()
+
+
+@pytest.mark.parametrize('kind',['builtin','expired_builtin','custom_existing','custom_missing'])
+def test_ms1_library_references_survive_extraction_changes_without_replacing_custom_sources(tmp_path,monkeypatch,kind):
+    from lipidgate import paths
+    builtin=tmp_path/'bundle'/'current_positive.sqlite'
+    builtin.parent.mkdir();builtin.write_bytes(b'current bundle')
+    monkeypatch.setattr(paths,'default_positive_msp',lambda:builtin)
+    if kind=='builtin':
+        reference,expected='',builtin
+    elif kind=='expired_builtin':
+        reference,expected=tmp_path/'_MEI_expired'/'libraries'/'ms2'/'current_positive.sqlite',builtin
+    else:
+        reference=tmp_path/'custom'/'current_positive.sqlite'
+        expected=reference
+        if kind=='custom_existing':
+            reference.parent.mkdir();reference.write_bytes(b'custom source')
+    assert paths.resolve_ms1_library(reference,'positive')==expected

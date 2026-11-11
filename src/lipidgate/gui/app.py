@@ -34,7 +34,7 @@ _add_package_dll_directories("PySide6")
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
-from lipidgate.paths import default_negative_msp, default_positive_msp
+from lipidgate.paths import default_negative_msp, default_positive_msp, resolve_ms1_library
 
 from .components import LogPanel, Worker
 from .parameter_pages import FeaturePage, MS2Page
@@ -564,6 +564,9 @@ class MainWindow(QtWidgets.QMainWindow):
         library_path = m.library.text().strip()
         if library_path == str(default_library):
             library_path = ""
+        candidate_library = f.ms1_library.text().strip()
+        if candidate_library and Path(candidate_library).resolve() == default_library.resolve():
+            candidate_library = ""
         return {
             "ms1": {
                 "enabled": f.enabled.isChecked(),
@@ -573,7 +576,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "mode": f.ms1_mode.currentData(),
                 "candidate_search": {"enabled": f.candidate_search.isChecked(),
                     "ppm": f.candidate_ppm.value(), "max_candidates": f.candidate_max.value(),
-                    "library_path": f.ms1_library.text().strip()},
+                    "library_path": candidate_library},
             },
             "ms2": {
                 "mode": m._mode_value(),
@@ -628,7 +631,7 @@ class MainWindow(QtWidgets.QMainWindow):
         f.candidate_ppm.setValue(search.get("ppm", 10.))
         f.candidate_max.setValue(search.get("max_candidates", 10))
         if search.get("library_path"):
-            f.ms1_library.setText(search["library_path"])
+            f.ms1_library.setText(str(resolve_ms1_library(search["library_path"], mode)))
         f.enabled.setChecked(a.get("enabled", True))
         f.algo.setCurrentText(a.get("algo", "pyopenms"))
         p = a.get("params", {})

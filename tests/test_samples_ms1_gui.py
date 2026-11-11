@@ -57,6 +57,11 @@ f.candidate_ppm.setValue(8)
 settings=window.analysis_settings()
 assert 'analysis_mode' not in settings and settings['ms1']['mode']=='positive'
 assert settings['ms1']['candidate_search']['ppm']==8
+assert settings['ms1']['candidate_search']['library_path']==''
+old=dict(settings,ms1=dict(settings['ms1'],candidate_search=dict(settings['ms1']['candidate_search'],
+    library_path=str(root/'_MEI_old'/'libraries'/'ms2'/'current_positive.sqlite'))))
+window.load_project_settings(old)
+assert window.analysis_settings()['ms1']['candidate_search']['library_path']==''
 window.load_project_settings(settings)
 assert f.ms1_mode.currentData()=='positive'
 assert window.ms2_page.isEnabled()

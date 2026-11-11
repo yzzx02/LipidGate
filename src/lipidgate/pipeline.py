@@ -264,7 +264,7 @@ def _run_ms1_project(project, files, settings, progress, *, mode, inventory):
     import math
     from lipidgate.ms1.detection import default_config
     from lipidgate.ms1.workflow import export_ms1_results
-    from lipidgate.paths import default_positive_msp, default_negative_msp
+    from lipidgate.paths import resolve_ms1_library
     from lipidgate.ms2.provenance import code_fingerprint
     ms1 = settings.setdefault("ms1", {})
     if not ms1.get("enabled", True):
@@ -278,7 +278,7 @@ def _run_ms1_project(project, files, settings, progress, *, mode, inventory):
         raise ValueError("每峰候选数须为正整数。")
     library = None
     if search.get("enabled", True):
-        library = Path(search.get("library_path") or (default_positive_msp() if mode == "positive" else default_negative_msp())).resolve()
+        library = resolve_ms1_library(search.get("library_path"), mode)
         if not library.is_file():
             raise FileNotFoundError(f"一级候选库不存在：{library}")
     params = ms1.get("params", {})

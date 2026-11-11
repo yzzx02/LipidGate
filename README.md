@@ -6,7 +6,7 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 下载与运行
 
-从 [v1.0.9 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.0.9) 下载 **LipidGate-v1.0.9-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
+从 [v1.1.0 Release](https://github.com/yzzx02/LipidGate/releases/tag/v1.1.0) 下载 **LipidGate-v1.1.0-Windows-x64.zip**，解压后双击 `LipidGate.exe`。默认流程无需安装 Python、pyOpenMS 或另外导入谱库。正、负离子谱库均已内置；需要自己的 MSP 时才选择自定义库。首次启动会解压依赖，需要等待片刻。程序面向 Windows 64 位。
 
 1. 点击「新建项目」，在独立文件夹保存 `.lipidgate` 项目文件，再导入同一 LC 方法、同一离子模式的 mzML。已有项目通过「打开项目」选择具体文件恢复，旧版 `lipidgate.project.json` 也可打开。
 2. 设置 MS1 参数；默认使用 pyOpenMS，也可导入 MS-DIAL 特征表。
@@ -18,7 +18,7 @@ LipidGate is a desktop workbench for LC–MS lipid identification, aligned MS1 f
 
 ## 主线源码：样本信息与自动分析
 
-1.1.0 源码的导入表可设置 **Sample／QC／Blank、实验分组、批次、进样顺序和是否参与分析**。
+1.1.0 的导入表可设置 **Sample／QC／Blank、实验分组、批次、进样顺序和是否参与分析**。
 新文件统一默认组 **1**，可将所选样本批量改为组 **2、3…**；样本类型与实验分组分别保存。
 旧项目在保存时升级并保留原始路径。
 

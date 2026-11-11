@@ -233,6 +233,44 @@ def _plot_interaction_self_test(app, page):
         reset(plot)
 
 
+def _ms1_result_self_test(app, window, expected, directory):
+    """Exercise actual MS1 workbook review, selection and full-workbook saving."""
+    import json
+    import pandas as pd
+    from lipidgate.gui.app import QtWidgets
+
+    view = window.ms1_results_window
+    assert view is not None and view.isVisible() and view.path == expected
+    assert not view.features.empty and not view.candidates.empty
+    assert not view.features.ms2_confirmed.any() and not view.features.chain_confirmed.any()
+    assert 'final_score' not in view.features
+    assert not hasattr(window.feature_page, 'analysis_mode')
+    assert 'analysis_mode' not in window.analysis_settings()
+    assert window.analysis_settings()['ms1']['candidate_search']['library_path'] == ''
+    assert window.import_page.run_button.isEnabled()
+    source_index = view.features.index[view.features.ms1_candidate_count.gt(0)][0]
+    selected = view.proxy.mapFromSource(view.model.index(int(source_index), 0))
+    view.table.setCurrentIndex(selected)
+    app.processEvents()
+    detail = view.detail.model._df
+    assert not detail.empty and detail.Feature_ID.astype(str).eq(str(view.features.iloc[source_index].Feature_ID)).all()
+    target = directory / 'saved_ms1_results.xlsx'
+    dialog = QtWidgets.QFileDialog.getSaveFileName
+    try:
+        QtWidgets.QFileDialog.getSaveFileName = lambda *a, **k: (str(target), '')
+        view.save_as()
+    finally:
+        QtWidgets.QFileDialog.getSaveFileName = dialog
+    assert target.read_bytes() == expected.read_bytes()
+    with pd.ExcelFile(target) as book:
+        assert {'MS1特征', '峰面积矩阵', 'MS1候选', '样本信息', '原始检测峰'} <= set(book.sheet_names)
+        matrix = pd.read_excel(book, sheet_name='峰面积矩阵')
+    assert not matrix.empty and all(path.name in matrix for path in window.project.mzml_files())
+    print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
+        latest_result_restored=True, sample_metadata_verified=True, ms1_export_verified=True,
+        ms1_result_review_verified=True, feature_rows=len(view.features), candidate_rows=len(view.candidates))), flush=True)
+
+
 def _project_self_test(app, window, arguments):
     """Verify named project creation/recovery and real exports in the bundle."""
     import argparse
@@ -270,7 +308,19 @@ def _project_self_test(app, window, arguments):
         QtWidgets.QFileDialog.getOpenFileName = open_dialog
     assert window.project.path == project.path
     assert window.project_page.path.text() == str(project.path)
-    assert window.import_page.files.count() == len(project.files)
+    assert window.import_page.files.rowCount() == len(project.files)
+    assert window.project.sample_table().to_dict('records') == project.sample_table().to_dict('records')
+    for row, path in enumerate(project.files):
+        metadata = project.metadata_for(path)
+        table = window.import_page.files
+        assert table.cellWidget(row, 2).currentText() == metadata['sample_type']
+        assert table.item(row, 3).text() == metadata['group']
+        assert table.cellWidget(row, 4).value() == metadata['batch']
+        assert table.cellWidget(row, 5).value() == metadata['injection_order']
+    from lipidgate.gui.ms1_results import is_ms1_result
+    if is_ms1_result(expected):
+        _ms1_result_self_test(app, window, expected, args.project_check_dir)
+        return
     assert window.results_page.path.text() == str(expected)
     assert window.results_window.isVisible()
     saved = project.settings.get("ms2", {})

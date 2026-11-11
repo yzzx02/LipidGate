@@ -2,6 +2,12 @@
 
 - `single_chain_whitelist.csv`: the explicit production chain whitelist used by
   the MG/NAGly and Glc-GP curators; this is source input and must be tracked.
+- `release_v1.1.0.json`: Windows/source release with sample metadata and
+  automatic MS1/MS2 execution. The source libraries and MS2 rule sources remain
+  those of v1.0.9; frozen checks also cover MS1 workbook review and export.
+- `checkpoint_main_automatic_inputs_20261111.json` and
+  `checkpoint_main_ms1_20261111.json`: historical source checkpoints preceding
+  the v1.1.0 executable build.
 - `release_v1.0.9.json`: Windows and source release with rebuilt libraries
   and frozen runtime verification.
 - `library_revision_ether_lyso_20261106.json`: LPC/LPE payload curation,

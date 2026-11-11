@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,9 @@ def check(executable: Path) -> dict:
         # Reject developer PATH additions that could mask missing packaged DLLs.
         environment["PATH"] = os.pathsep.join(p for p in environment.get("PATH", "").split(os.pathsep)
                                                if not any(v in p.lower() for v in ("pyside6", "shiboken6", "site-packages")))
+        if os.name == 'nt':
+            system = Path(os.environ.get('SystemRoot', 'C:/Windows'))
+            environment['PATH'] = os.pathsep.join(map(str, (system / 'System32', system, system / 'System32/Wbem')))
 
         def run(arguments, settings=None, extra_environment=None):
             started = time.perf_counter()
@@ -194,6 +198,48 @@ def check(executable: Path) -> dict:
                 or not eic["plot_interactions_checked"] or not eic.get("ms1_survey_verified")
                 or eic.get("ms1_survey_points", 0) < 4):
             raise RuntimeError("Frozen EIC/plot verification did not succeed")
+        # Run actual MS1-only inputs through the ordinary worker with no mode
+        # selection, using the bundled precursor index rather than a custom MSP.
+        surveys = oms.MSExperiment()
+        for spectrum in experiment:
+            if spectrum.getMSLevel() == 1:
+                surveys.addSpectrum(spectrum)
+        pure_source = temp / 'surveys.mzML'
+        oms.MzMLFile().store(str(pure_source), surveys)
+        pure = Project.create(temp / 'ms1_project' / 'automatic.lipidgate')
+        pure_files = []
+        for name in ('样本A.mzML', '样本B.mzML', 'QC.mzML', 'Blank.mzML'):
+            path = temp / name
+            shutil.copy2(pure_source, path)
+            pure_files.append(path)
+        pure.add_files(pure_files)
+        pure.update_samples({pure_files[1]: dict(group='2', batch=2),
+            pure_files[2]: dict(sample_type='QC'), pure_files[3]: dict(sample_type='Blank')})
+        pure_settings = dict(ms1=dict(enabled=True, algo='pyopenms', mode='positive',
+            params=dict(settings['ms1']['params']), candidate_search=dict(enabled=True, ppm=10, max_candidates=3)),
+            ms2=dict(mode='positive', library_path=str(temp / 'unused_missing_ms2_library.msp')),
+            filter=dict(use_ecn=True, use_score=True, min_score=100))
+        pure.settings = pure_settings
+        pure.save()
+        pure_output, pure_seconds = run(['--worker', pure.path], json.dumps(pure_settings), unicode_environment)
+        pure_events = [json.loads(line.removeprefix('LIPIDGATE_EVENT ')) for line in pure_output.splitlines()
+                       if line.startswith('LIPIDGATE_EVENT ')]
+        pure_final = next((event for event in pure_events if event['type'] == 'result'), None)
+        if not pure_final or pure_final.get('analysis_mode') != 'ms1_only' or pure_final['row_count'] < 1:
+            raise RuntimeError('Frozen automatic MS1 worker did not export actual features')
+        pure_book = Path(pure_final['xlsx_path'])
+        pure_run = pure_book.parent.parent
+        inventory = json.loads((pure_run / 'scan_inventory.json').read_text(encoding='utf-8'))
+        if (len(inventory) != 4 or any(row['ms1_scans'] != ms1_count or row['ms2_scans'] for row in inventory)
+                or (pure_run / 'ms2').exists()):
+            raise RuntimeError('Frozen MS1-only inputs entered the MS2 search or lost scan provenance')
+        pure_gui, pure_gui_seconds = run(['--self-test', '--project-file', pure.path,
+            '--project-check-dir', temp / 'ms1_gui_check'], extra_environment=unicode_environment)
+        pure_review = next((json.loads(line) for line in pure_gui.splitlines()
+                           if line.startswith('{"project_file_verified":')), None)
+        if not pure_review or not all(pure_review.get(key) for key in
+                ('sample_metadata_verified', 'ms1_export_verified', 'ms1_result_review_verified')):
+            raise RuntimeError('Frozen sample metadata or MS1 result review failed')
         return dict(executable_sha256=sha256(executable), libraries=libraries, library_check_seconds=seconds,
                     synthetic_project_rows=final["row_count"], backend_verified=True, worker_seconds=worker_seconds,
                     unicode_temp_verified=True, inherited_openms_path_overridden=True,
@@ -205,7 +251,10 @@ def check(executable: Path) -> dict:
                     ms1_boundary_verified=True, ms1_boundary_version=PEAK_BOUNDARY_VERSION,
                     ms1_survey_verified=True,
                     project_file_verified=True, isotope_export_verified=True, isotope_detail_verified=True,
-                    project=restored, project_check_seconds=project_seconds)
+                    project=restored, project_check_seconds=project_seconds,
+                    automatic_ms1_verified=True, sample_metadata_verified=True, ms1_result_review_verified=True,
+                    automatic_ms1=dict(files=len(inventory), feature_rows=pure_final['row_count'],
+                        worker_seconds=pure_seconds, gui_seconds=pure_gui_seconds, gui=pure_review))
 
 
 if __name__ == "__main__":
