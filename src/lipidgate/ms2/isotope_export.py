@@ -107,11 +107,12 @@ def _read_requests(path, requests):
         for index, spectrum in enumerate(reader, 1):
             native = spectrum.element.get("id", "")
             if spectrum.ms_level == 1:
-                peaks = np.asarray(spectrum.peaks("raw"), dtype=float).reshape(-1, 2)
+                if previous is not None:
+                    previous["spectrum"].element.clear()
                 previous = dict(scan_id=f"scan_{index}", native_id=native,
                                 rt_minutes=float(spectrum.scan_time_in_minutes()),
                                 centroided=bool(spectrum.get("centroid spectrum")),
-                                peaks=peaks)
+                                spectrum=spectrum, peaks=None)
             elif spectrum.ms_level == 2:
                 for identifier in dict.fromkeys((f"scan_{index}", native)):
                     for key, row in requests.get(identifier, []):
@@ -126,6 +127,11 @@ def _read_requests(path, requests):
                                     (saved_mz is not None and abs(saved_mz - raw_mz) > raw_mz * 40e-6))
                         snapshot = dict(schema=1, status="scan_metadata_mismatch" if mismatch else "no_preceding_ms1", peaks=[])
                         if not mismatch and previous is not None:
+                            # Retain one preceding survey's XML, decoding its
+                            # arrays only if an exported MS2 actually needs it.
+                            # Multiple requested scans reuse that exact survey.
+                            if previous["peaks"] is None:
+                                previous["peaks"] = np.asarray(previous["spectrum"].peaks("raw"), dtype=float).reshape(-1, 2)
                             charge, charge_source = _charge(precursor, _text(row.get("adduct")))
                             # A saved confirmed centroid can anchor a calibrated
                             # precursor; it is still checked in this survey.
@@ -137,9 +143,12 @@ def _read_requests(path, requests):
                         snapshot["source_file"] = path.name
                         snapshot["ms2_scan_id"] = identifier
                         found[key] = snapshot
-            spectrum.element.clear()
+            if spectrum.ms_level != 1:
+                spectrum.element.clear()
             reader.root.clear()
     finally:
+        if previous is not None:
+            previous["spectrum"].element.clear()
         reader.close()
     return found
 

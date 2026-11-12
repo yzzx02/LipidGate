@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -99,7 +100,11 @@ def test_parallel_file_search_matches_serial_audit(tmp_path, workers):
     file_updates = [message for message in updates if message.startswith("MS2 已完成")]
     assert len(file_updates) == 4
     assert "1/4" in file_updates[0] and "4/4" in file_updates[-1]
-    assert updates[-1] == "MS2 正在整理匹配结果…"
+    assert "MS2 正在整理匹配结果…" in updates
+    eic_updates = [message for message in updates if message.startswith("MS2 正在核验原始 EIC 峰")]
+    if eic_updates:  # A validated cache can bypass this raw-data pass.
+        assert len(eic_updates) == 4 and "4/4" in eic_updates[-1]
+        assert updates.index(eic_updates[0]) > updates.index("MS2 正在整理匹配结果…")
 
 
 def test_parallel_file_search_rejects_excessive_process_count():
@@ -166,7 +171,7 @@ def test_ms2_reads_mzml_under_unicode_directory(tmp_path):
     unicode_dir = tmp_path / "中文目录"
     unicode_dir.mkdir()
     linked = unicode_dir / source.name
-    os.link(source, linked)
+    shutil.copyfile(source, linked)
     searcher = LipidMS2Searcher.__new__(LipidMS2Searcher)
     searcher.min_relative_intensity = .002
     spectra = list(searcher._iter_mzml_spectra(linked))

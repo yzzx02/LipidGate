@@ -88,7 +88,9 @@ def align_features(feature_maps):
     ref_index = feature_maps.index(sorted(feature_maps, key=lambda x: x.size())[-1])
     aligner = oms.MapAlignmentAlgorithmPoseClustering()
     params = aligner.getDefaults()
-    params.setValue(b"max_num_peaks_considered", -1)
+    # Keep OpenMS's bounded set of high-intensity alignment anchors (1000 in
+    # 3.4). Unlimited anchors make pose clustering quadratic on rich MS1 maps.
+    # This limits alignment estimation, never detection or exported features.
     params.setValue(b"pairfinder:distance_MZ:unit", "ppm")
     params.setValue(b"pairfinder:distance_MZ:max_difference", 10.0)
     params.setValue(b"pairfinder:distance_RT:max_difference", 60.0)
@@ -314,15 +316,28 @@ def _local_split_detector(experiment, ms1_exp, oms, params):
 
 
 def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
-                       min_peak_height=0.0, refine_bounds=True):
+                       min_peak_height=0.0, refine_bounds=True, progress=None):
     """OpenMS detection, followed by raw-EIC quantification of existing apices."""
     oms = _get_oms()
     ms1_exp = oms.MSExperiment()
-    ms1_exp.setSpectra([s for s in exp if s.getMSLevel() == 1])
+    ms1_spectra = [s for s in exp if s.getMSLevel() == 1]
+    profile_count = sum(s.getType() == oms.SpectrumSettings.SpectrumType.PROFILE for s in ms1_spectra)
+    if profile_count:
+        if progress is not None:
+            progress(f"MS1 正在质心化 {profile_count} 个 profile 扫描（OpenMS PeakPickerHiRes）")
+        picker = oms.PeakPickerHiRes()
+        for position, spectrum in enumerate(ms1_spectra):
+            if spectrum.getType() == oms.SpectrumSettings.SpectrumType.PROFILE:
+                centroided = oms.MSSpectrum()
+                picker.pick(spectrum, centroided)
+                ms1_spectra[position] = centroided
+    ms1_exp.setSpectra(ms1_spectra)
     ms1_exp.updateRanges()
     # OpenMS requires at least three MS1 spectra to construct mass traces.
     if ms1_exp.size() < 3:
         return oms.FeatureMap()
+    if progress is not None:
+        progress(f"MS1 正在提取质量轨迹（{ms1_exp.size()} 个 MS1 扫描）")
     mass_traces = []
     mtd = oms.MassTraceDetection()
     if not refine_bounds:
@@ -338,6 +353,8 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
         return oms.FeatureMap()
 
     mass_traces_deconvol = []
+    if progress is not None:
+        progress(f"MS1 正在分离色谱峰（{len(mass_traces)} 条质量轨迹）")
     epd = oms.ElutionPeakDetection()
     if not refine_bounds:
         epd.setLogType(oms.LogType.NONE)
@@ -349,6 +366,8 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
     epd.detectPeaks(mass_traces, mass_traces_deconvol)
 
     feature_map = oms.FeatureMap()
+    if progress is not None:
+        progress(f"MS1 正在组合单同位素特征（{len(mass_traces_deconvol)} 条峰轨迹）")
     ffm = oms.FeatureFindingMetabo()
     if not refine_bounds:
         ffm.setLogType(oms.LogType.NONE)
@@ -363,6 +382,12 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     feature_map = filter_feature_map_by_height(feature_map, min_peak_height)
     feature_map.setUniqueIds()
+    if profile_count:
+        for position in range(feature_map.size()):
+            feature = feature_map[position]
+            feature.setMetaValue("ms1_centroiding", "OpenMS PeakPickerHiRes")
+            feature.setMetaValue("profile_ms1_spectra_centroided", profile_count)
+            feature_map[position] = feature
     if not refine_bounds:
         return feature_map
     from lipidbench.utils.feature_quantification import refine_feature_map
@@ -372,6 +397,7 @@ def detect_feature_map(exp, *, mz_tol, min_fwhm, max_fwhm, noise=1000, sn=5,
 
     return refine_feature_map(
         ms1_exp, feature_map, oms=oms, mz_tol=mz_tol, split_detector=split_detector,
+        progress=progress,
     )
 
 
@@ -417,9 +443,16 @@ def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000,
     import pandas as pd
 
     oms = _get_oms()
-    input_dir = Path(input_dir).resolve()
     feature_maps = []
-    files = sorted(p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() == '.mzml')
+    if isinstance(input_dir, (list, tuple)):
+        files = sorted((Path(p).resolve() for p in input_dir), key=lambda p: p.name.casefold())
+    else:
+        path = Path(input_dir).resolve()
+        files = sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() == '.mzml') if path.is_dir() else [path]
+    if any(not p.is_file() or p.suffix.lower() != '.mzml' for p in files):
+        raise ValueError('Select existing mzML files')
+    if len({p.name.casefold() for p in files}) != len(files):
+        raise ValueError('Input mzML filenames must be unique across samples')
     file_count = len(files)
     if not files:
         raise ValueError('No mzML inputs found')
@@ -428,12 +461,14 @@ def run_pyopenms(input_dir, output_file, mz_tol, min_fwhm, max_fwhm, noise=1000,
     for file in files:
         filename = str(file)
         exp = oms.MSExperiment()
+        if progress is not None:
+            progress(f"MS1 正在读取 {len(feature_maps) + 1}/{file_count}：{file.name}")
         with ascii_mzml_path(file) as readable_path:
             oms.MzMLFile().load(str(readable_path), exp)
 
         feature_map = detect_feature_map(exp, mz_tol=mz_tol, min_fwhm=min_fwhm,
                                          max_fwhm=max_fwhm, noise=noise, sn=sn,
-                                         min_peak_height=min_peak_height)
+                                         min_peak_height=min_peak_height, progress=progress)
         # Detection assigned real IDs, including local redetections. Reassigning
         # them here would invalidate each split feature's parent reference.
         feature_map.setPrimaryMSRunPath([filename.encode()])

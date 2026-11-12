@@ -38,11 +38,11 @@ def test_lpe_sodium_exact_masses_pools_and_single_hg_gate():
     for f in r.fragments:
         mz,role=expected[f.name]
         assert f.mz==pytest.approx(mz,abs=.00005) and f.fragment_type==role
-    assert _pool_weights_for_record(r,DEFAULT_RULES.get('LPE'))=={'hg':75.,'fah':0.,'other':25.}
+    assert _pool_weights_for_record(r,DEFAULT_RULES.get('LPE'))=={'hg':60.,'fah':0.,'other':40.}
     full=score(r,r.fragments)
     assert full.passed_required_gates and full.total_score==100
     assert full.resolution_level=='species_level' and full.downgrade_reason=='lyso_hg_only_fallback'
-    assert full.pool_scores['hg'].pool_score==75 and full.pool_scores['other'].pool_score==25
+    assert full.pool_scores['hg'].pool_score==60 and full.pool_scores['other'].pool_score==40
     ordinary=[f for f in r.fragments if f.fragment_type!='Diagnostic_HG']
     no_hg=score(r,ordinary)
     assert not no_hg.passed_required_gates and 'hg' in no_hg.missing_required_groups

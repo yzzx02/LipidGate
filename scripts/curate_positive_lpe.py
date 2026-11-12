@@ -65,8 +65,8 @@ def curate(source, destination):
     return dict(target_records=targets, changed_records=changed, preserved_records=preserved,
                 preserved_records_sha256=untouched.hexdigest(), source_sha256=digest(source), output_sha256=digest(destination),
                 output_bytes=destination.stat().st_size, fragments_per_target=5,
-                pool_counts=dict(HG=2, Other=3), pool_weights=dict(HG=75, Other=25),
-                scope="LPE-P [M+H]+ only; correct NL172.013675/NL154.003110 and labels, retain two-HG gate and source identities/order")
+                pool_counts=dict(HG=2, Other=3), pool_weights=dict(HG=60, Other=40),
+                scope="LPE-P [M+H]+ only; correct NL172.013675/NL154.003110 and labels, half-HG admission (one of two), source identities/order preserved")
 
 
 if __name__ == '__main__':

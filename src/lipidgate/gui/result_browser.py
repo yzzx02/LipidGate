@@ -24,6 +24,8 @@ from .result_data import (
     confidence_description,
 )
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
+from lipidgate.feature_annotation_fallback import annotation_display
+from lipidgate.fragment_labels import fragment_name, fragment_text, fragment_evidence
 from lipidgate.ms2.chromatographic_membership import result_sources
 from .qt_navigation import NavigationPlot
 from .qt_eic import EICPlot
@@ -141,6 +143,8 @@ class BrowserTableModel(QtCore.QAbstractTableModel):
         key = COLUMNS[index.column()][1]
         value = row.get(key)
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            if key == "matched_name":
+                return annotation_display(row)
             if key == "_confidence":
                 return confidence_display(value)
             if key == "ms1_support_status":
@@ -346,7 +350,7 @@ class ResultsPage(QtWidgets.QWidget):
             left_layout.addWidget(radio)
             radio.toggled.connect(self.schedule_filter)
             self.display_buttons.append(radio)
-        self.display_buttons[0].setChecked(True)
+        self.display_buttons[1].setChecked(True)
         self.confidence = self._checks(left_layout, "置信度", ["High", "Low"])
         self.ecn = self._checks(
             left_layout, "ECN 状态", ["通过 ECN", "未通过 ECN", "-"]
@@ -710,9 +714,11 @@ class ResultsPage(QtWidgets.QWidget):
             box.setMinimumWidth(box.layout().minimumSize().width())
         self.class_tree.blockSignals(True)
         self.class_tree.clear()
+        annotated = f.loc[f._identified]
+        self.class_tree.setToolTip("仅统计有 MS2 鉴定结果的特征；一级候选和 unknown 保留在结果主表中。")
         for family, title in FAMILIES.items():
             classes = sorted(
-                {text(c) for c in f.compound_class if family_for(c) == family}
+                {text(c) for c in annotated.compound_class if family_for(c) == family}
             )
             if not classes:
                 continue
@@ -724,7 +730,7 @@ class ResultsPage(QtWidgets.QWidget):
             )
             self.class_tree.addTopLevelItem(parent)
             for cls in classes:
-                count = int(f.compound_class.fillna("").eq(cls).sum())
+                count = int(annotated.compound_class.fillna("").eq(cls).sum())
                 child = QtWidgets.QTreeWidgetItem(
                     [f"{cls or '未分类 / 未鉴定'}  ({count})"]
                 )
@@ -1138,14 +1144,17 @@ class ResultsPage(QtWidgets.QWidget):
     def selected_classes(self):
         if self._solo_class is not None:
             return [self._solo_class]
-        selected = []
+        selected, total = [], 0
         for i in range(self.class_tree.topLevelItemCount()):
             parent = self.class_tree.topLevelItem(i)
             for j in range(parent.childCount()):
+                total += 1
                 child = parent.child(j)
                 if child.checkState(0) == QtCore.Qt.CheckState.Checked:
                     selected.append(child.data(0, QtCore.Qt.ItemDataRole.UserRole))
-        return selected
+        # The tree contains MS2 classes only. Its unrestricted state must not
+        # silently remove other measured rows from the main table/export.
+        return None if len(selected) == total else selected
 
     def _class_item_changed(self, *args):
         if self._solo_class is not None:
@@ -1200,7 +1209,7 @@ class ResultsPage(QtWidgets.QWidget):
         self._paint_solo_class()
         self.search.clear()
         self.class_search.clear()
-        self.display_buttons[0].setChecked(True)
+        self.display_buttons[1].setChecked(True)
         for box in [*self.confidence, *self.ecn]:
             box.setChecked(True)
         for i in range(self.class_tree.topLevelItemCount()):
@@ -1213,7 +1222,7 @@ class ResultsPage(QtWidgets.QWidget):
         self.filter_timer.stop()
         self.page_number = 0
         display = next(
-            (r.text() for r in self.display_buttons if r.isChecked()), "已鉴定"
+            (r.text() for r in self.display_buttons if r.isChecked()), "全部结果"
         )
         self.search_classes(self.class_search.text())
         confidence = [
@@ -1235,12 +1244,9 @@ class ResultsPage(QtWidgets.QWidget):
             region=self.region,
         )
         self._sort_frame()
-        plot_features = (
-            self.bundle.features.loc[self.bundle.features._identified]
-            if display == "已鉴定" else self.bundle.features
-        )
+        plot_features = self.bundle.features.loc[self.bundle.features._identified]
         self.navigation.set_data(
-            plot_features, self.filtered, self.dim.currentIndex() == 0
+            plot_features, self.filtered.loc[self.filtered._identified], self.dim.currentIndex() == 0
         )
         self.export_btn.setEnabled(not self.bundle.features.empty)
         if self.current_key not in set(self.filtered._key):
@@ -1433,7 +1439,7 @@ class ResultsPage(QtWidgets.QWidget):
 
         values = [
             ("Feature ID", feature["_display_feature"]),
-            ("Annotation", row.get("matched_name")),
+            ("Annotation", annotation_display(row)),
             ("Lipid Class", row.get("compound_class")),
             ("Adduct", row.get("adduct")),
             (
@@ -1510,6 +1516,7 @@ class ResultsPage(QtWidgets.QWidget):
             spectrum = self._experimental or evidence.get("spectrum", [])
             base_intensity = max((number(peak[1]) for peak in spectrum), default=0) or 1
             for fragment in matched:
+                label = fragment_name(text(fragment.get("name")), row.get("compound_class"))
                 intensity = number(fragment.get("intensity"))
                 relative = (
                     f"{intensity / base_intensity * 100:.2f}%"
@@ -1517,13 +1524,13 @@ class ResultsPage(QtWidgets.QWidget):
                 )
                 content += (
                     f'<div style="margin-bottom:4px">✓ {fragment["observed_mz"]:.4f}'
-                    f' · {relative} · {html.escape(text(fragment.get("name")))}</div>'
+                    f' · {relative} · {html.escape(label)}</div>'
                 )
                 evidence_lines.append(
-                    f'✓ {fragment["observed_mz"]:.4f} · {relative} · {text(fragment.get("name"))}'
+                    f'✓ {fragment["observed_mz"]:.4f} · {relative} · {label}'
                 )
         else:
-            fragments = text(row.get("matched_fragments"))
+            fragments = fragment_text(text(row.get("matched_fragments")), row.get("compound_class"))
             evidence_lines = [fragment.strip() for fragment in fragments.split(";") if fragment.strip()]
             content += (
                 "".join(
@@ -1538,7 +1545,7 @@ class ResultsPage(QtWidgets.QWidget):
         elif row.get("_ecn") == "未通过":
             content += "<p>× ECN 未通过</p>"
         self.detail.set_details(values, evidence_lines, content)
-        self.spectrum.set_evidence(evidence, self._experimental)
+        self.spectrum.set_evidence(fragment_evidence(evidence, row.get("compound_class")), self._experimental)
 
     def open_export_dialog(self):
         from .result_export import ResultExportDialog

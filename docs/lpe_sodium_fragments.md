@@ -17,7 +17,7 @@ All masses derive from elemental formulas and are rounded once for MSP output.
 | Other | `[M+Na-163]+`, loss C2H7NO4PNa | 339.2894 |
 | Other | `[H3PO4Na]+` | 120.9661 |
 
-HG/Other weights are **75/25**. At least one HG ion must match; there is
+HG/Other weights are **60/40** (2026-11-11 LPC/LPE revision). At least one HG ion must match; there is
 no FAH pool or chain gate. Precursor and Common support cannot replace
 the HG gate. Intensity quality and existing Other saturation still apply,
 so five matches do not necessarily award 100 points on a measured spectrum.

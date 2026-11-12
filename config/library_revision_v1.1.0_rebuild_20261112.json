@@ -1,0 +1,52 @@
+{
+  "revision": "v1.1.0_rebuild_20261112",
+  "verified_at_utc": "2026-11-12T02:25:57.258657+00:00",
+  "release_status": "prepared_for_replacement",
+  "application_version": "1.1.0",
+  "application_version_changed": false,
+  "application_branch": "codex/unified-result-flow",
+  "independent_sphingolipid_branch_merged": false,
+  "product_code_sha256": "927d4f9be0d018597892b1cce72afc8ecda18955e82cf0d8715482ad1032ef4f",
+  "ms1_runtime_sha256": "61dc564802393999fae976ff1e0efd62dd4572d466287278e5b2f3f35d216c69",
+  "ms2_rules_sha256": "5a35a3f1519ac9a59a0eca05e87b5abb80e300c98013ff72ea2182c2a4b64394",
+  "policy_checkpoints": [
+    "library_revision_positive_lyso_pools_20261111.json",
+    "library_revision_lyso_pools_negative_lpc_20261111.json",
+    "library_revision_lyso_hg_half_20261112.json",
+    "library_revision_lps_positive_four_channels_20261112.json"
+  ],
+  "normalization_note": "Rebuild both indexes from the unchanged compressed sources using the current normalization and freshly compiled native policies.",
+  "libraries": {
+    "positive": {
+      "source_path": "libraries/ms2/current_positive.msp.gz",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "source_archive_unchanged": true,
+      "index_records": 1254422,
+      "index_sha256": "2b56af42f4c4a9075eb10171fd9612c60fc1cd253757caffd40cbccd2c915f1a",
+      "index_bytes": 74498048,
+      "rules_sha256": "5a35a3f1519ac9a59a0eca05e87b5abb80e300c98013ff72ea2182c2a4b64394"
+    },
+    "negative": {
+      "source_path": "libraries/ms2/current_negative.msp.gz",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "source_archive_unchanged": true,
+      "index_records": 1088179,
+      "index_sha256": "85e1aaa9ff322bca7de10653c466e5ea22e19f537aca19e3b54a5e5215751ac8",
+      "index_bytes": 79134720,
+      "rules_sha256": "5a35a3f1519ac9a59a0eca05e87b5abb80e300c98013ff72ea2182c2a4b64394"
+    }
+  },
+  "verification": {
+    "tests_passed": 1568,
+    "subtests_passed": 3118,
+    "junit_cases": 4686,
+    "failures": 0,
+    "errors": 0,
+    "junit_report_sha256": "77e26f242ba39580f0d2aa2677ba6dd8193b2bd32242734cd666e9d43911b07e",
+    "fresh_parse": true,
+    "blockwise_roundtrip": true,
+    "sqlite_quick_check": true
+  }
+}

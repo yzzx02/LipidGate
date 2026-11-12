@@ -61,8 +61,14 @@ def curate(source, destination):
             return hashlib.file_digest(stream, 'sha256').hexdigest()
     return dict(target_records=targets, changed_records=changed, preserved_records=preserved,
                 preserved_records_sha256=untouched.hexdigest(), source_sha256=digest(source), output_sha256=digest(destination),
-                output_bytes=destination.stat().st_size, fragments_per_target=8,
-                pool_counts=dict(HG=1, Other=7), pool_weights=dict(HG=75, Other=25),
+                output_bytes=destination.stat().st_size,
+                fragments_per_target={"[M+HCOO]-":10,"[M+CH3COO]-":11,"[M+C2H3O2]-":11},
+                pool_counts={"[M+HCOO]-":dict(HG=2,Other=8),
+                             "[M+CH3COO]-":dict(HG=2,Other=9),
+                             "[M+C2H3O2]-":dict(HG=2,Other=9)},
+                hg_channels=["[M-CH3]-", "[C4H11NO4P]-"],
+                hg_min_fraction=0.5, required_hg_matches=1, mandatory_hg_identity=None,
+                pool_weights=dict(HG=60, Other=40),
                 scope="LPC-O formate/acetate only; source identities, unrelated blocks and their order preserved")
 
 

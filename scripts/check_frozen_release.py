@@ -216,8 +216,8 @@ def check(executable: Path) -> dict:
         pure.update_samples({pure_files[1]: dict(group='2', batch=2),
             pure_files[2]: dict(sample_type='QC'), pure_files[3]: dict(sample_type='Blank')})
         pure_settings = dict(ms1=dict(enabled=True, algo='pyopenms', mode='positive',
-            params=dict(settings['ms1']['params']), candidate_search=dict(enabled=True, ppm=10, max_candidates=3)),
-            ms2=dict(mode='positive', library_path=str(temp / 'unused_missing_ms2_library.msp')),
+            params=dict(settings['ms1']['params'])),
+            ms2=dict(mode='positive', library_path=str(library)),
             filter=dict(use_ecn=True, use_score=True, min_score=100))
         pure.settings = pure_settings
         pure.save()
@@ -225,10 +225,14 @@ def check(executable: Path) -> dict:
         pure_events = [json.loads(line.removeprefix('LIPIDGATE_EVENT ')) for line in pure_output.splitlines()
                        if line.startswith('LIPIDGATE_EVENT ')]
         pure_final = next((event for event in pure_events if event['type'] == 'result'), None)
-        if not pure_final or pure_final.get('analysis_mode') != 'ms1_only' or pure_final['row_count'] < 1:
+        if not pure_final or pure_final.get('analysis_mode') != 'unified' or pure_final['row_count'] < 1:
             raise RuntimeError('Frozen automatic MS1 worker did not export actual features')
-        pure_book = Path(pure_final['xlsx_path'])
-        pure_run = pure_book.parent.parent
+        pure_table = Path(pure_final['csv_path'])
+        pure_run = pure_table.parent.parent
+        from lipidgate.result_file_io import read_result_table
+        ms1_main = read_result_table(pure_table)
+        if not ms1_main.Score.isna().all() or not ms1_main.Annotation.str.startswith('no MS2: ').any():
+            raise RuntimeError('MS1 mass candidates were not kept separate from MS2 evidence')
         inventory = json.loads((pure_run / 'scan_inventory.json').read_text(encoding='utf-8'))
         if (len(inventory) != 4 or any(row['ms1_scans'] != ms1_count or row['ms2_scans'] for row in inventory)
                 or (pure_run / 'ms2').exists()):

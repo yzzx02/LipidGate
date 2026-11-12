@@ -1,12 +1,84 @@
 from __future__ import annotations
 
 import os
+import shutil
 import pytest
 
 pyopenms = pytest.importorskip("pyopenms")
 
 from lipidbench.runners.run_pyopenms import _feature_rt_bounds
 from lipidbench.runners.run_pyopenms import single_feature_dataframe, detect_feature_map, PYOPENMS_FEATURE_DEFAULTS
+
+
+def test_profile_ms1_is_centroided_by_openms_without_modifying_original_scans():
+    import numpy as np
+
+    experiment = pyopenms.MSExperiment()
+    centers = [760.1234, 761.12675, 762.1301]
+    masses = np.concatenate([center + np.linspace(-.025, .025, 21) for center in centers])
+    shape = np.concatenate([factor * np.exp(-.5 * ((masses[i * 21:(i + 1) * 21] - center) / .005) ** 2)
+                            for i, (center, factor) in enumerate(zip(centers, [1., .4, .08]))])
+    background_masses = 300. + np.linspace(-.025, .025, 21)
+    background = 6000. * np.exp(-.5 * ((background_masses - 300.) / .005) ** 2)
+    masses = np.concatenate([background_masses, masses])
+    for rt in range(90):
+        spectrum = pyopenms.MSSpectrum()
+        spectrum.setMSLevel(1)
+        spectrum.setType(pyopenms.SpectrumSettings.SpectrumType.PROFILE)
+        spectrum.setRT(float(rt))
+        spectrum.set_peaks((masses, np.concatenate([background, 1e6 * np.exp(-.5 * ((rt - 40.) / 5.) ** 2) * shape])))
+        experiment.addSpectrum(spectrum)
+    events = []
+    detected = detect_feature_map(experiment, **PYOPENMS_FEATURE_DEFAULTS, progress=events.append)
+    assert detected.size() > 0
+    assert any(abs(f.getMZ() - centers[0]) < 1e-4 for f in detected)
+    exported = single_feature_dataframe(detected)
+    assert exported.ms1_centroiding.eq("OpenMS PeakPickerHiRes").all()
+    assert exported.profile_ms1_spectra_centroided.eq(90).all()
+    assert experiment[40].getType() == pyopenms.SpectrumSettings.SpectrumType.PROFILE
+    assert len(experiment[40].get_peaks()[0]) == len(masses)
+    assert any("质心化" in event for event in events)
+    assert any("峰边界与面积" in event for event in events)
+
+
+def test_alignment_keeps_the_openms_anchor_limit(monkeypatch):
+    from types import SimpleNamespace
+    import lipidbench.runners.run_pyopenms as runner
+
+    captured = {}
+    class Aligner:
+        def getDefaults(self):
+            return pyopenms.MapAlignmentAlgorithmPoseClustering().getDefaults()
+        def setParameters(self, parameters):
+            captured['limit'] = parameters.getValue(b'max_num_peaks_considered')
+        def setReference(self, features):
+            pass
+    monkeypatch.setattr(runner, '_get_oms', lambda: SimpleNamespace(MapAlignmentAlgorithmPoseClustering=Aligner))
+    runner.align_features([pyopenms.FeatureMap()])
+    assert 0 < captured['limit'] <= 1000
+
+
+@pytest.mark.parametrize('multiple_directories', [False, True])
+def test_pyopenms_selected_files_do_not_stage_the_entire_input_batch(tmp_path, monkeypatch, multiple_directories):
+    import lipidgate.ms1.detection as detection
+
+    path = tmp_path / "sample.mzML"
+    pyopenms.MzMLFile().store(str(path), pyopenms.MSExperiment())
+    paths = [path]
+    if multiple_directories:
+        paths = [tmp_path / folder / name for folder, name in [('alpha', 'z.mzML'), ('beta', 'a.mzML')]]
+        for path in paths:
+            path.parent.mkdir()
+            pyopenms.MzMLFile().store(str(path), pyopenms.MSExperiment())
+    def unexpected_staging(*args, **kwargs):
+        pytest.fail("pyOpenMS must read selected paths directly")
+    monkeypatch.setattr(detection, '_mzml_input_dir', unexpected_staging)
+    events = []
+    result = detection.run_feature_detection_result(algo='pyopenms', input_path=paths, output_dir=tmp_path / 'out',
+                                                    progress=events.append)
+    assert result.table_path.is_file() and result.native_table_path.is_file()
+    read_events = [event for event in events if event.startswith('MS1 正在读取')]
+    assert [event.rsplit('：', 1)[-1] for event in read_events] == sorted(path.name for path in paths)
 
 
 def test_feature_without_hull_does_not_turn_fwhm_into_integration_bounds() -> None:
@@ -181,7 +253,7 @@ def test_pyopenms_reads_mzml_under_unicode_directory(tmp_path):
     unicode_dir = tmp_path / "中文目录"
     unicode_dir.mkdir()
     linked = unicode_dir / source.name
-    os.link(source, linked)
+    shutil.copyfile(source, linked)
     result = run_feature_detection_result(
         algo="pyopenms", input_path=[linked], output_dir=tmp_path / "out"
     )

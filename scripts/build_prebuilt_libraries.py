@@ -10,22 +10,28 @@ import time
 
 
 def normalized_records(source):
-    """Match load_standard_msp expansion while retaining only sphingolipid seeds."""
+    """Match load_standard_msp expansion, retaining only required source seeds."""
     from lipidgate.ms2.library import (
         HYDROXY_FA_SPHINGOLIPID_CLASSES, _expand_hydroxy_fa_sphingolipids,
         _without_d18_1_300_lcb_marker, iter_standard_msp_records,
     )
+    from lipidgate.ms2.positive_lpc_ether import is_positive_ether_lpc, derived_plasmenyl_lpc_records
     seeds = []
+    lpc_seeds = []
     next_id = 0
     for record in iter_standard_msp_records(source):
         record = _without_d18_1_300_lcb_marker(record)
         next_id = max(next_id, record.record_id + 1)
         if record.compound_class in HYDROXY_FA_SPHINGOLIPID_CLASSES and record.adduct == '[M+H]+':
             seeds.append(record)
+        if is_positive_ether_lpc(record):
+            lpc_seeds.append(record)
         yield record
     expanded = _expand_hydroxy_fa_sphingolipids(seeds)
     for offset, record in enumerate(expanded[len(seeds):]):
         yield replace(record, record_id=next_id + offset)
+    next_id += len(expanded) - len(seeds)
+    yield from derived_plasmenyl_lpc_records(lpc_seeds, next_id=next_id)
 
 
 def ensure_prebuilt(root: Path) -> Path:

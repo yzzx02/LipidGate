@@ -166,25 +166,25 @@ def _run_feature_detection_path(
         load_msdial_results(Path(msdial_table).resolve(), out_file)
         return out_file
 
+    if algo_norm == "pyopenms":
+        from lipidbench.runners.run_pyopenms import extract_pyopenms_params, run_pyopenms
+        from lipidbench.utils.data_io import load_pyopenms_results
+
+        out_file = out_root / "pyopenms" / "pyopenms_features.csv"
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        run_params = extract_pyopenms_params(cfg)
+        # OpenMS can consume individual files. Avoid staging/copying an entire
+        # acquisition batch before showing any progress, especially across disks.
+        # The runner handles native Unicode aliases one file at a time.
+        run_pyopenms(input_dir=input_path, output_file=out_file, progress=progress, **run_params)
+        load_pyopenms_results(out_file, **run_params)
+        native_path = out_file.with_name(out_file.stem + '_native.csv')
+        if native_path.exists():
+            load_pyopenms_results(native_path, **run_params)
+            _attach_aligned_feature_ids(out_file, native_path)
+        return out_file
+
     with _mzml_input_dir(input_path) as mzml_dir:
-        if algo_norm == "pyopenms":
-            from lipidbench.runners.run_pyopenms import (
-                extract_pyopenms_params,
-                run_pyopenms,
-            )
-            from lipidbench.utils.data_io import load_pyopenms_results
-
-            out_file = out_root / "pyopenms" / "pyopenms_features.csv"
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-            run_params = extract_pyopenms_params(cfg)
-            run_pyopenms(input_dir=mzml_dir, output_file=out_file, progress=progress, **run_params)
-            load_pyopenms_results(out_file, input_dir=mzml_dir, **run_params)
-            native_path = out_file.with_name(out_file.stem + '_native.csv')
-            if native_path.exists():
-                load_pyopenms_results(native_path, **run_params)
-                _attach_aligned_feature_ids(out_file, native_path)
-            return out_file
-
         if algo_norm == "asari":
             from lipidbench.runners.run_asari import run_asari_pipeline
 

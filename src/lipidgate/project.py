@@ -167,10 +167,12 @@ class Project:
 
     def metadata_for(self, path):
         path = Path(path).resolve()
-        if str(path) in self.sample_metadata:
-            return normalize_sample_metadata(self.sample_metadata[str(path)])
         index = next((i for i, item in enumerate(self.files, 1) if Path(item) == path), 1)
-        return normalize_sample_metadata(self.sample_metadata.get(str(path)), order=index)
+        values = normalize_sample_metadata(self.sample_metadata.get(str(path)), order=index)
+        # Every file in the current import list participates. Keep the legacy
+        # field readable without carrying a hidden exclusion into a new run.
+        values["included"] = True
+        return values
 
     def update_samples(self, changes):
         known = {Path(path).resolve() for path in self.files}

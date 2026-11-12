@@ -1,0 +1,316 @@
+{
+  "revision": "lps_positive_four_channels_20261112",
+  "verified_at_utc": "2026-11-12T01:31:15.857293+00:00",
+  "release_status": "unreleased",
+  "base_application_version": "1.1.0",
+  "application_branch": "codex/unified-result-flow",
+  "release_version_changed": false,
+  "new_package_created": false,
+  "base_checkpoint": "config/library_revision_lyso_hg_half_20261112.json",
+  "base_rules_sha256": "76d1cb0a4349e6092c8daed179d7543aa5d8ce2d19147be91cebc1de9fc5a14c",
+  "ms2_rules_sha256": "1fa759daa8c1e1d15c775873c5885f5578c1084936069951a235e82a8db5ecc1",
+  "product_code_sha256": "92fe76296df331015dfefd10a485e0f5ad54b6b0e1f9085142be07d47a60cbdb",
+  "libraries": {
+    "positive": {
+      "source_path": "libraries\\ms2\\current_positive.msp.gz",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "source_archive_unchanged": true,
+      "index_records": 1254422,
+      "index_sha256": "77964eca266dbd3e927bb0132a4eb908e0496e1c8bdd236f7d52dcde6de2bd0c",
+      "index_bytes": 74498048,
+      "rules_sha256": "1fa759daa8c1e1d15c775873c5885f5578c1084936069951a235e82a8db5ecc1",
+      "fresh_parse_and_blockwise_roundtrip_verified": true,
+      "build_seconds": 656.11
+    },
+    "negative": {
+      "source_path": "libraries\\ms2\\current_negative.msp.gz",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "source_archive_unchanged": true,
+      "index_records": 1088179,
+      "index_sha256": "f4f283584e532b81d186d129a52a2378b3415ec04409d39317e3dc77deae056b",
+      "index_bytes": 79134720,
+      "rules_sha256": "1fa759daa8c1e1d15c775873c5885f5578c1084936069951a235e82a8db5ecc1",
+      "fresh_parse_and_blockwise_roundtrip_verified": true,
+      "build_seconds": 610.4
+    }
+  },
+  "positive_LPS": {
+    "records": 164,
+    "adduct": "[M+H]+",
+    "weights": {
+      "HG": 60,
+      "Other": 40
+    },
+    "HG": [
+      "NL185.0089; C3H8NO6P"
+    ],
+    "Other": [
+      "NL105.0426; C3H7NO3",
+      "water loss",
+      "precursor"
+    ],
+    "removed": [
+      "HG NL166.9984",
+      "acylium RCO",
+      "acylium minus H2O"
+    ],
+    "removed_fragment_entries": 492,
+    "default_HG_min_fraction": 0.5,
+    "HG_count": 1,
+    "required_HG_matches": 1,
+    "separate_mandatory_identity_override": false,
+    "Other_gate": false,
+    "Other_only_bypass": false,
+    "source_IDs_order_masses_names_intensities_and_original_metadata_preserved": true,
+    "new_metadata": [
+      "positive_lps_fragment_policy",
+      "positive_lps_fragment_reference"
+    ],
+    "LPS_O_and_negative_LPS_unchanged": true,
+    "reference_DOI": "10.1016/j.talanta.2016.10.045",
+    "reference_figure": "3"
+  },
+  "negative_LPA_LPI_LPG": {
+    "LPA": {
+      "records": 164,
+      "all_paper_figure_channels_present": true,
+      "no_fragment_added_or_removed": true,
+      "example_species": "LPA(0:0/16:0)",
+      "precursor_mz": 409.2361,
+      "fragments": [
+        {
+          "mz": 78.9591,
+          "name": "[PO3]-",
+          "pool": "other"
+        },
+        {
+          "mz": 96.9696,
+          "name": "[H2PO4]-",
+          "pool": "other"
+        },
+        {
+          "mz": 152.9953,
+          "name": "[C3H6O5P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 171.0064,
+          "name": "[C3H8O6P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 255.233,
+          "name": "[RCOO]-(16:0)",
+          "pool": "fah"
+        },
+        {
+          "mz": 409.2361,
+          "name": "[M-H]-",
+          "pool": "other"
+        }
+      ]
+    },
+    "LPI": {
+      "records": 164,
+      "all_paper_figure_channels_present": true,
+      "no_fragment_added_or_removed": true,
+      "example_species": "LPI(0:0/18:1)",
+      "precursor_mz": 597.3045,
+      "fragments": [
+        {
+          "mz": 78.9591,
+          "name": "[PO3]-",
+          "pool": "other"
+        },
+        {
+          "mz": 152.9953,
+          "name": "[C3H6O5P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 223.0013,
+          "name": "[C6H8O7P]-",
+          "pool": "hg"
+        },
+        {
+          "mz": 241.0119,
+          "name": "[C6H10O8P]-",
+          "pool": "hg"
+        },
+        {
+          "mz": 281.2486,
+          "name": "[RCOO]-(18:1)",
+          "pool": "fah"
+        },
+        {
+          "mz": 315.0487,
+          "name": "[C9H16O10P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 417.2411,
+          "name": "[M-C6H10O5-H]--H2O",
+          "pool": "other"
+        },
+        {
+          "mz": 435.2517,
+          "name": "[M-C6H10O5-H]-",
+          "pool": "hg"
+        },
+        {
+          "mz": 597.3045,
+          "name": "[M-H]-",
+          "pool": "other"
+        }
+      ]
+    },
+    "LPG": {
+      "records": 164,
+      "all_paper_figure_channels_present": true,
+      "no_fragment_added_or_removed": true,
+      "example_species": "LPG(0:0/16:0)",
+      "precursor_mz": 483.2728,
+      "fragments": [
+        {
+          "mz": 78.9591,
+          "name": "[PO3]-",
+          "pool": "other"
+        },
+        {
+          "mz": 152.9953,
+          "name": "[C3H6O5P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 227.0326,
+          "name": "[C6H12O7P]-",
+          "pool": "hg"
+        },
+        {
+          "mz": 245.0432,
+          "name": "[C6H14O8P]-",
+          "pool": "other"
+        },
+        {
+          "mz": 255.233,
+          "name": "[RCOO]-(16:0)",
+          "pool": "fah"
+        },
+        {
+          "mz": 391.2255,
+          "name": "[M-C3H8O3-H]-",
+          "pool": "other"
+        },
+        {
+          "mz": 483.2728,
+          "name": "[M-H]-",
+          "pool": "other"
+        }
+      ]
+    }
+  },
+  "preservation": {
+    "all_non_LPS_records_verified_unchanged": true,
+    "precursor_entry_counts_order_and_fields_unchanged": true,
+    "negative_compressed_blocks_byte_identical": 1063,
+    "positive_LPS_affected_blocks": 41,
+    "rules_outside_positive_LPS_unchanged": true,
+    "sphingolipid_policies_unchanged": true
+  },
+  "regression": {
+    "full_pytest_command": "python -m pytest -q --tb=short",
+    "full_pytest_passed": 1566,
+    "subtests_passed": 3118,
+    "pytest_seconds": 179.84,
+    "focused_tests_passed": 69,
+    "positive_LPS_records": 164,
+    "removed_fragment_entries": 492,
+    "retained_source_values_and_identities_preserved": true,
+    "production_queries": [
+      {
+        "case": "18_1_HG_only",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          60.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "case": "18_1_all_four",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          100.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "case": "18_1_Other_only",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "scores": [],
+        "resolutions": []
+      },
+      {
+        "case": "18_1_deleted_old_HG",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "scores": [],
+        "resolutions": []
+      },
+      {
+        "case": "18_1_deleted_acylium",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "scores": [],
+        "resolutions": []
+      },
+      {
+        "case": "18_0_all_four",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          100.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      }
+    ]
+  },
+  "searchable_coverage": {
+    "classes": 167,
+    "records": 2342601,
+    "unique_names": 1729213,
+    "mode_records": {
+      "positive": 1254422,
+      "negative": 1088179
+    },
+    "fragments": 20734908
+  },
+  "supplementary_table": {
+    "path": "build\\lyso-pools-negative-lpc-20261111\\outputs\\lipidgate-si-lyso-20261111\\LipidGate_Supplementary_Data_1.xlsx",
+    "sha256": "65dba15a88f6a69a7feca32078ac8b0d74d3639e21980beb3bb551b9c5b754df",
+    "bytes": 39759,
+    "four_channel_LPS_and_negative_coverage_notes_updated": true,
+    "independent_readonly_verification": {
+      "output": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\lyso-pools-negative-lpc-20261111\\outputs\\lipidgate-si-lyso-20261111\\LipidGate_Supplementary_Data_1.xlsx",
+      "classes": 167,
+      "records": 2342601,
+      "unique_names": 1729213,
+      "totals_verified": true,
+      "unrelated_class_text_and_styles_preserved": true,
+      "original_references_preserved": true,
+      "columns_merges_panes_validations_and_charts_preserved": true,
+      "native_tables_extended": true,
+      "formula_errors": []
+    }
+  }
+}

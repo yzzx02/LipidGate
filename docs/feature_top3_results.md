@@ -54,7 +54,11 @@ An FA/NAE score and repeated precursor matches do not create class specificity.
 ## Files and browsing
 
 - Project saves and browser exports share `final_identifications.csv` and
-  Excel's “特征结果” sheet. Each feature carries one primary identification,
+  Excel's “特征结果” sheet. All measured features remain visible by default.
+  Each feature carries one primary annotation: an accepted MS2 result, a
+  tentative `no MS2: <total composition>` mass match, or `unknown`.
+  MS1 mass matches have no MS2 score, fragments or chain confirmation.
+  Accepted MS2 annotations carry
   its actual representative's MS/MS fragment annotations, measured isotope
   window, confidence, structural resolution and concise consensus/difference
   hints. Existing sample area columns remain attached once to the feature.
@@ -66,12 +70,14 @@ An FA/NAE score and repeated precursor matches do not create class specificity.
   New project samples default to group “1”; QC/Blank roles use their type when
   no distinct group is assigned. Detached legacy samples without labels use
   “未分组”; missing areas remain blank. The input
-  page edits individual or selected samples' groups and persists them in the
+  page edits individual samples' groups directly and persists them in the
   project. Exports use the current project labels, while run provenance keeps
   the original snapshot and detached reports retain their own header metadata.
 - Optional `feature_candidates.csv` and Excel's “特征候选” sheet contain
   selected best annotation records and differences, including original ranks
   and support metadata, without copied cross-sample areas or scan IDs.
+  Precursor-only candidates are explicitly marked `no MS2` and retain their
+  formula, mass error and source identifiers in `audit/ms1_matches.csv`.
 - `audit/evaluated.csv` retains every original evaluated candidate, including
   scores, decisions, rejected rows and complete spectrum JSON. It is the
   canonical candidate audit: project execution no longer writes and rereads

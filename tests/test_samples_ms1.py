@@ -65,7 +65,7 @@ def test_default_groups_are_shared_and_sample_roles_survive_save_reopen(tmp_path
     assert restored.metadata_for(files[1])['group']=='2'
     assert restored.metadata_for(files[2])['sample_type']=='QC'
     assert restored.metadata_for(files[3])['sample_type']=='Blank'
-    assert restored.mzml_files()==files[:3]
+    assert restored.mzml_files()==files
     saved.remove_files([files[1]])
     assert saved.metadata_for(files[2])['injection_order']==3
     assert str(files[1]) not in saved.sample_metadata
@@ -153,45 +153,49 @@ def test_area_matrix_preserves_missing_values_and_actual_integrals(tmp_path):
 
 
 @pytest.mark.parametrize('legacy_mode',[None,'ms1_ms2','ms1_only'])
-def test_ms1_project_bypasses_ms2_rules_and_writes_complete_workbook(tmp_path,monkeypatch,legacy_mode):
+def test_ms1_project_uses_shared_result_without_ms2_scores(tmp_path,monkeypatch,legacy_mode):
     import lipidgate.pipeline as pipeline
+    from lipidgate.result_file_io import read_result_table
+    from lipidgate.gui.result_data import load_result_bundle
     saved,files=project(tmp_path)
     saved.update_samples({files[1]:{'group':'2'},files[2]:{'sample_type':'QC'},files[3]:{'sample_type':'Blank','included':False}})
     path=library(tmp_path/'unchanged.msp')
     digest=file_sha256(path)
     def detect(**kwargs):
-        assert kwargs['input_path']==files[:3]
+        assert kwargs['input_path']==files
         table=tmp_path/'actual_detection.csv'
         pd.DataFrame({'Feature_ID':['observed-1','observed-2'],'mz':[760.5851,900.],
             'RT':[1.,2.],'A.mzML':[100.,200.],'B.mzML':[120.,240.],'QC.mzML':[110.,220.]}).to_csv(table,index=False)
         return SimpleNamespace(table_path=table,native_table_path=None,algo='pyopenms')
-    def forbidden(**kwargs):raise AssertionError('Pure MS1 must not call MS2 scoring')
+    def forbidden(**kwargs):raise AssertionError('MS1 spectra cannot supply MS2 scores')
     monkeypatch.setattr(pipeline,'run_feature_detection_result',detect)
     monkeypatch.setattr(pipeline,'run_ms2_feature_annotation_result',forbidden)
-    settings=dict(ms1=dict(enabled=False,algo='pyopenms',params={},mode='positive',
-        candidate_search=dict(library_path=str(path),ppm=10,max_candidates=10)),
-        ms2=dict(mode='positive',library_path='does-not-exist.msp'),filter=dict(use_score=True,min_score=100,use_ecn=True))
-    if legacy_mode is not None:
-        settings['analysis_mode']=legacy_mode
+    settings=dict(ms1=dict(enabled=False,algo='pyopenms',params={},mode='positive'),
+        ms2=dict(mode='positive',library_path=str(path)),filter=dict(use_score=True,min_score=100,use_ecn=True))
+    if legacy_mode is not None:settings['analysis_mode']=legacy_mode
     feature,ms2,result=pipeline.run_project(saved.path,settings)
-    assert ms2 is None and result.analysis_mode=='ms1_only'
-    assert len(result.data)==2 and len(result.candidates)==1
-    assert result.data.Feature_ID.tolist()==['observed-1','observed-2']
-    assert result.data.ms1_candidate_count.tolist()==[1,0]
-    assert result.data.evidence_level.tolist()==['MS1_candidate','MS1_feature']
-    assert set(pd.ExcelFile(result.xlsx_path).sheet_names)=={'MS1特征','峰面积矩阵','MS1候选','样本信息','分组统计','QC与空白统计','原始检测峰','运行参数'}
-    assert not result.data.ms2_confirmed.any()
-    assert not (result.output_dir.parent/'ms2').exists()
-    assert Project.open_file(saved.path).latest_result()==result.xlsx_path
+    assert ms2 is None and result.analysis_mode=='unified'
+    table=read_result_table(result.csv_path)
+    assert table.Annotation.tolist()==['no MS2: PC(34:1)','unknown']
+    assert table.Score.isna().all() and table['MS/MS 碎片注释'].isna().all()
+    assert table['A.mzML'].tolist()==[100.,200.] and table['BK.mzML'].isna().all()
+    assert result.data.empty and not (result.output_dir.parent/'ms2').exists()
+    assert result.xlsx_path is None and saved.latest_result()==result.csv_path
+    assert [p.name for p in result.output_dir.glob('*.csv')]==['final_identifications.csv']
     assert file_sha256(path)==digest
-    snapshots=pd.read_excel(result.xlsx_path,sheet_name='样本信息')
-    assert snapshots.sample_type.tolist()==['Sample','Sample','QC','Blank']
-    assert snapshots.included.tolist()==[True,True,True,False]
+    bundle=load_result_bundle(result.csv_path)
+    try:
+        assert bundle.features._identified.tolist()==[False,False]
+        assert bundle.mass_candidates.candidate_name.tolist()==['PC(34:1)']
+        assert bundle.mass_candidates.Feature_ID.tolist()==['observed-1']
+    finally:bundle.audit_store.close()
+    snapshots=pd.read_csv(result.output_dir.parent/'sample_metadata.csv')
+    assert snapshots.included.all()
     restored=Project.open_file(saved.path)
     assert 'analysis_mode' not in restored.settings and restored.settings['ms1']['enabled']
     inventory=json.loads((result.output_dir.parent/'scan_inventory.json').read_text(encoding='utf-8'))
-    assert [row['ms1_scans'] for row in inventory]==[1,1,1]
-    assert [row['ms2_scans'] for row in inventory]==[0,0,0]
+    assert [row['ms1_scans'] for row in inventory]==[1,1,1,1]
+    assert [row['ms2_scans'] for row in inventory]==[0,0,0,0]
 
 
 def write_ms1_only(path,shift=0.,scale=1.):
@@ -233,16 +237,18 @@ def test_real_ms1_only_detection_alignment_and_candidate_export(tmp_path,monkeyp
     monkeypatch.setattr(pipeline,'run_ms2_feature_annotation_result',forbidden)
     settings=dict(ms1=dict(enabled=True,algo='pyopenms',mode='positive',
         params=dict(mz_tol=5.,min_fwhm=5.,max_fwhm=60.,noise=1000.,sn=5.),
-        candidate_search=dict(library_path=str(path),ppm=10,max_candidates=10)))
+        ), ms2=dict(mode='positive',library_path=str(path)))
     feature,ms2,result=pipeline.run_project(saved.path,settings)
-    assert ms2 is None and len(result.data)>=4
-    assert result.candidates.candidate_name.str.fullmatch(r'PC\(34:1\)').all()
-    assert len(result.candidates)>=1
-    matrix=pd.read_excel(result.xlsx_path,sheet_name='峰面积矩阵')
+    assert ms2 is None and len(result.passed_data)>=4
+    from lipidgate.result_file_io import read_result_table
+    matches=pd.read_csv(result.output_dir/'audit/ms1_matches.csv')
+    assert matches.candidate_name.str.fullmatch(r'PC\(34:1\)').all() and len(matches)>=1
+    matrix=read_result_table(result.csv_path)
     assert all(path.name in matrix for path in files)
     assert matrix[[path.name for path in files]].gt(0).any().all()
     assert feature.native_table_path.is_file()
-    assert not result.data.ms2_confirmed.any()
+    assert result.data.empty and matrix.Score.isna().all()
+    assert matrix.Annotation.str.startswith('no MS2: ').any()
     assert not (result.output_dir.parent/'ms2').exists()
 
 

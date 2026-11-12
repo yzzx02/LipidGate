@@ -15,6 +15,7 @@ from lipidgate.result_tables import (
     RESULT_SHEET_NAME, RESULT_XLSX_NAME, feature_result_table, isotope_request, result_isotopes,
 )
 from lipidgate.result_file_io import write_result_csv
+from lipidgate.feature_annotation_fallback import match_unannotated_features, attach_mass_matches, optional_candidate_table
 
 
 @dataclass
@@ -26,6 +27,12 @@ class FinalResult:
     xlsx_path: Path | None
     csv_path: Path
     plot_paths: list[Path]
+
+    @property
+    def row_count(self):
+        return len(self.passed_data)
+
+    analysis_mode = "unified"
 
 
 def filter_results(
@@ -107,6 +114,8 @@ def export_final_results(
     export_xlsx=True,
     export_plots=True,
     export_candidates=False,
+    annotation_settings=None,
+    progress=lambda message: None,
 ):
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -123,29 +132,36 @@ def export_final_results(
     evaluated["_audit_row_id"] = evaluated.index
     passed = evaluated.loc[evaluated.RT_consistency_pass.fillna(False)].copy()
     from lipidgate.gui.result_data import result_bundle_from_data
-    from lipidgate.feature_annotations import SELECTION_COLUMNS, SELECTION_POLICY, annotation_export_table
+    from lipidgate.feature_annotations import SELECTION_COLUMNS, SELECTION_POLICY
     # Production search already records measured EIC membership. Final output
     # uses that evidence without reopening every raw file a second time.
     bundle = result_bundle_from_data(passed, out / RESULT_CSV_NAME, refresh_membership=False)
-    representatives = bundle.features.loc[bundle.features._identified]
+    from lipidgate.feature_annotation_fallback import MASS_COLUMNS
+    bundle.mass_candidates = (match_unannotated_features(bundle.features, annotation_settings,
+        cache_dir=out.parent.parent.parent / ".cache" / "ms1_candidates", progress=progress)
+        if annotation_settings is not None else pd.DataFrame(columns=MASS_COLUMNS))
+    bundle.features = attach_mass_matches(bundle.features, bundle.mass_candidates)
+    representatives = bundle.features
     isotopes = result_isotopes(representatives, out / RESULT_CSV_NAME)
     final = feature_result_table(representatives, out / RESULT_CSV_NAME, isotope_fields=isotopes)
     csv = out / RESULT_CSV_NAME
     write_result_csv(csv, final)
     candidate_table = None
     if export_candidates:
-        candidate_table = annotation_export_table(bundle.annotations).drop(columns="scan_id")
+        candidate_table = optional_candidate_table(bundle)
         candidate_table.to_csv(out / "feature_candidates.csv", index=False, encoding="utf-8-sig")
     audit = out / "audit"
     audit.mkdir(exist_ok=True)
     for column in (*ISOTOPE_RESULT_COLUMNS, ISOTOPE_REQUEST_COLUMN):
         if column not in evaluated:
             evaluated[column] = pd.Series(index=evaluated.index, dtype=object)
-    if not representatives.empty:
-        row_ids = representatives._audit_row_id.astype(int).to_numpy()
+    cacheable = representatives._identified & representatives.get(
+        "_audit_row_id", pd.Series(index=representatives.index, dtype=float)).notna()
+    if cacheable.any():
+        row_ids = representatives.loc[cacheable, "_audit_row_id"].astype(int).to_numpy()
         for column in ISOTOPE_RESULT_COLUMNS:
-            evaluated.loc[row_ids, column] = isotopes[column].to_numpy()
-        evaluated.loc[row_ids, ISOTOPE_REQUEST_COLUMN] = representatives.apply(isotope_request, axis=1).to_numpy()
+            evaluated.loc[row_ids, column] = isotopes.loc[cacheable, column].to_numpy()
+        evaluated.loc[row_ids, ISOTOPE_REQUEST_COLUMN] = representatives.loc[cacheable].apply(isotope_request, axis=1).to_numpy()
     evaluated.to_csv(audit / "evaluated.csv", index=False, encoding="utf-8-sig")
     # Selected records refer back to the complete canonical audit. Avoid
     # copying each large spectrum JSON into a second audit table.
@@ -153,6 +169,11 @@ def export_final_results(
                          "adduct", "result_rank", "final_score", "_confidence", *SELECTION_COLUMNS]
     bundle.annotations.reindex(columns=selection_columns).to_csv(
         audit / "feature_annotations.csv", index=False, encoding="utf-8-sig")
+    mass_path = audit / "ms1_matches.csv"
+    if not bundle.mass_candidates.empty:
+        bundle.mass_candidates.to_csv(mass_path, index=False, encoding="utf-8-sig")
+    else:
+        mass_path.unlink(missing_ok=True)
     if not models.empty:
         models.to_csv(audit / "models.csv", index=False, encoding="utf-8-sig")
     if not anchors.empty:
@@ -190,6 +211,8 @@ def export_final_results(
                 feature_selection_policy=SELECTION_POLICY,
                 result_table_schema="feature_results_v3_grouped",
                 export_candidates=export_candidates,
+                mass_candidate_settings=annotation_settings,
+                mass_candidate_policy="unconfirmed_total_mass_error_then_source_order_v1",
             ),
             indent=2,
         ),

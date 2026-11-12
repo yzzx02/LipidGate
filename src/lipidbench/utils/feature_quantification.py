@@ -7,6 +7,8 @@ after an actual local OpenMS detector pass; EIC proposals are never features.
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import numpy as np
 
 from .chromatographic_peaks import PEAK_BOUNDARY_VERSION
@@ -19,6 +21,10 @@ class MS1SignalIndex:
     def __init__(self, experiment):
         scans = sorted((s for s in experiment if s.getMSLevel() == 1), key=lambda s: s.getRT())
         self.times = np.asarray([s.getRT() for s in scans], dtype=np.float64)
+        self.cadence = float(np.median(np.diff(self.times))) if len(self.times) > 1 else 1.
+        self._traces = OrderedDict()
+        self._trace_bytes = 0
+        self._trace_budget = 16 * 1024 * 1024
         self.peaks = []
         for scan in scans:
             masses, values = scan.get_peaks()
@@ -30,6 +36,10 @@ class MS1SignalIndex:
     def trace(self, target_mz, lower, upper, ppm):
         left = int(np.searchsorted(self.times, lower, side="left"))
         right = int(np.searchsorted(self.times, upper, side="right"))
+        key = (float(target_mz), left, right, float(ppm))
+        if key in self._traces:
+            self._traces.move_to_end(key)
+            return self._traces[key]
         times = self.times[left:right]
         intensities = np.zeros(len(times), dtype=np.float64)
         observed_masses = np.full(len(times), np.nan)
@@ -42,7 +52,15 @@ class MS1SignalIndex:
                 if np.isfinite(values[nearest]) and values[nearest] >= 0:
                     intensities[position] = float(values[nearest])
                     observed_masses[position] = masses[nearest]
-        return times, intensities, observed_masses
+        result = times, intensities, observed_masses
+        size = intensities.nbytes + observed_masses.nbytes
+        if size <= self._trace_budget:
+            while self._traces and self._trace_bytes + size > self._trace_budget:
+                _, old = self._traces.popitem(last=False)
+                self._trace_bytes -= old[1].nbytes + old[2].nbytes
+            self._traces[key] = result
+            self._trace_bytes += size
+        return result
 
 
 QUANTIFICATION_META = (
@@ -53,6 +71,7 @@ QUANTIFICATION_META = (
     "peak_boundary_reason", "peak_left_boundary_type", "peak_right_boundary_type",
     "detector_origin", "split_parent_native_uid", "split_seed_rt_sec",
     "split_redetection_trigger",
+    "ms1_centroiding", "profile_ms1_spectra_centroided",
 )
 
 
@@ -70,7 +89,7 @@ def _local_trace(signals, feature, neighbors, mz_tol):
     if bounds is None or not bounds[0] < bounds[1]:
         return None
     left, right = bounds
-    cadence = float(np.median(np.diff(signals.times))) if len(signals.times) > 1 else 1.
+    cadence = signals.cadence
     padding = max(6 * cadence, min(15., .25 * (right - left)))
     lower, upper = left - padding, right + padding
     # Known neighboring detector apices are useful context; an arbitrary ±1 min
@@ -83,7 +102,7 @@ def _local_trace(signals, feature, neighbors, mz_tol):
     return times, values, left, right
 
 
-def refine_feature_map(experiment, feature_map, *, oms, mz_tol, split_detector=None):
+def refine_feature_map(experiment, feature_map, *, oms, mz_tol, split_detector=None, progress=None):
     if not feature_map.size():
         return feature_map
     signals = MS1SignalIndex(experiment)
@@ -97,7 +116,9 @@ def refine_feature_map(experiment, feature_map, *, oms, mz_tol, split_detector=N
     # locator. Append new detections after original features to retain ordering.
     additions = []
     if split_detector is not None:
-        for original in original_features:
+        for position, original in enumerate(original_features):
+            if progress is not None and position % 250 == 0:
+                progress(f"MS1 正在核验局部峰 {position}/{len(original_features)}")
             tolerance = original.getMZ() * mz_tol * 1e-6
             lo = int(np.searchsorted(feature_masses, original.getMZ() - tolerance, side="left"))
             hi = int(np.searchsorted(feature_masses, original.getMZ() + tolerance, side="right"))
@@ -122,7 +143,9 @@ def refine_feature_map(experiment, feature_map, *, oms, mz_tol, split_detector=N
         originals = sorted(original_features + additions, key=lambda feature: feature.getMZ())
         feature_masses = np.asarray([feature.getMZ() for feature in originals])
         apices = np.asarray([feature.getRT() for feature in originals])
-    for original in original_features + additions:
+    for position, original in enumerate(original_features + additions):
+        if progress is not None and position % 250 == 0:
+            progress(f"MS1 正在计算峰边界与面积 {position}/{len(original_features) + len(additions)}")
         feature = oms.Feature(original)
         rt = float(feature.getRT())
         old_hulls = feature.getConvexHulls()

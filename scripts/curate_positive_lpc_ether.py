@@ -26,7 +26,10 @@ def curate_block(block):
     if not is_target(block):
         return block
     source = [FragmentRecord(p['mz'], p['name'], p['type'], intensity=p['intensity']) for p in parse_peaks(block)]
-    fragments = positive_ether_lpc_fragments(float(header_value(block, "PrecursorMZ")), source)
+    fragments = positive_ether_lpc_fragments(
+        float(header_value(block, "PrecursorMZ")), source,
+        compound_class=header_value(block, "CompoundClass"),
+    )
     result = rebuild_block(block, [dict(mz=f.mz, name=f.name, type=f.fragment_type, intensity=f.intensity) for f in fragments])
     validate_block(result)
     return result
@@ -64,8 +67,10 @@ def curate(source, destination):
             return hashlib.file_digest(stream, 'sha256').hexdigest()
     return dict(target_records=targets, changed_records=changed, preserved_records=preserved,
                 preserved_records_sha256=untouched.hexdigest(), source_sha256=digest(source), output_sha256=digest(destination),
-                output_bytes=destination.stat().st_size, fragments_per_target=5,
-                pool_counts=dict(HG=1, precursor=1, Other=3), pool_weights=dict(HG=60, precursor=20, Other=20),
+                output_bytes=destination.stat().st_size,
+                fragments_per_target={"LPC-O": 6, "LPC-P": 8},
+                pool_counts={"LPC-O": dict(HG=1, Other=5), "LPC-P": dict(HG=1, Other=7)},
+                pool_weights=dict(HG=60, Other=40),
                 scope="LPC-O/P [M+H]+ only; source identities, unrelated blocks and their order preserved")
 
 

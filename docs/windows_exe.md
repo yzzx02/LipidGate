@@ -87,3 +87,21 @@ verify the executable, source archive and checksums together, then replace the
 four assets on the existing release. Keep the previous commit identity in the
 historical manifest and move the release tag only after all checks pass.
 This exception does not merge the independent sphingolipid development branch.
+
+### Same-version v1.1.0 rebuild, 2026-11-12
+
+The user requested another replacement of the existing v1.1.0 packages, retaining
+the application version and download filenames. Build from the updated
+`codex/unified-result-flow` worktree, including unified feature results, simplified
+sample import and the verified lysophospholipid policies. The original compressed
+positive and negative source libraries are unchanged; rebuild their derived
+indexes after compiling the current native policy modules.
+
+Preserve the previous consolidated manifest in
+`config/history/release_v1.1.0_20261111_consolidated.json` and back up all four
+published assets before replacement. Build into `dist/v1.1.0-rebuild-20261112`
+with verification reports in `build/verification_v1.1.0_20261112`; run the full
+regression suite and the current frozen checks before generating the replacement
+archives, `VERSION.json` and checksums. Keep the independent sphingolipid branch
+separate. Replacement of the GitHub assets requires authenticated release access;
+preparing the local packages does not itself publish them.

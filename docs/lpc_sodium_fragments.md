@@ -12,9 +12,20 @@ alter existing LPC `[M+H]+` blocks or other library records.
 | Other | `[C5H12N]+` | m/z86.0964258 |
 | Other | `[M+Na]+` | precursor |
 
-HG/Other weights are 75/25; there is no FAH pool. NL59 is required. Ordinary
+HG/Other weights are 60/40 (2026-11-11 revision); there is no FAH pool. NL59 is required. Ordinary
 support cannot pass the missing-HG gate. No acylium ions, m/z125 or m/z206
 headgroup ion are added to this definition.
+
+The implemented five-channel template also omits the sodium-containing
+headgroup ion `[C2H5O4PNa]+` at m/z146.9818. That ion is a real reported
+PC/lysoPC sodium product; see the experimental
+[MALDI tandem-MS study (2022), methods](https://www.nature.com/articles/s41598-022-06894-1).
+Its absence from this template is not evidence that it cannot occur. Under
+the current implementation it receives no score, and an observed146.9818
+peak cannot replace the mandatory precursor-minus59 channel. A future
+addition or alternate HG rule requires a separate rule revision and replay;
+the display/taxonomy change does not alter the template. The separate
+2026-11-11 LPC/LPE policy revision changes its effective weights to60/40.
 
 For LPC(18:2), precursor m/z542.3217, NL59 produces m/z483.2482 and NL205
 produces m/z337.2737. The latter loss includes Na/H exchange:

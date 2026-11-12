@@ -1,0 +1,191 @@
+{
+  "revision": "positive_lyso_pools_20261111",
+  "release_status": "unreleased",
+  "base_application_version": "1.1.0",
+  "application_branch": "codex/unified-result-flow",
+  "release_version_changed": false,
+  "base_rules_sha256": "c321136897f0006c3fe73d2fe4b026bb8a510f6ce557dfe838b21677fdd0b97e",
+  "ms2_rules_sha256": "6935639d1e2994caf3d85c237346a404eb428403e7eb5fa47aa0a0e9270c4de6",
+  "product_code_sha256": "588f6d70aa78bd2ae69791f564480a43148a8d8ef0842f2ff7232c2dc766424c",
+  "libraries": {
+    "positive": {
+      "source_path": "libraries/ms2/current_positive.msp.gz",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "source_archive_unchanged": true,
+      "index_records": 1254422,
+      "index_sha256": "5cf95c8d44580d038a6cee554c64dcfb6b771067a95bba368a056b0017cd3c68",
+      "index_bytes": 74493952,
+      "rules_sha256": "6935639d1e2994caf3d85c237346a404eb428403e7eb5fa47aa0a0e9270c4de6"
+    },
+    "negative": {
+      "source_path": "libraries/ms2/current_negative.msp.gz",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "source_archive_unchanged": true,
+      "index_records": 1088179,
+      "index_sha256": "59b20ec659ae64aad160bae00971a0d4f418981cc9101b9dbe219484dc250c7e",
+      "index_bytes": 79130624,
+      "rules_sha256": "6935639d1e2994caf3d85c237346a404eb428403e7eb5fa47aa0a0e9270c4de6"
+    }
+  },
+  "positive_scope": {
+    "weights": {
+      "HG": 60,
+      "Other": 40
+    },
+    "classes": [
+      "LPC",
+      "LPC-O",
+      "LPC-P",
+      "LPE",
+      "LPE-O",
+      "LPE-P"
+    ],
+    "existing_weight_revised_records": 796,
+    "existing_fragment_revised_records": 54,
+    "derived_plasmenyl_lpc_records": 29,
+    "source_class_adduct_counts": [
+      {
+        "class": "LPC",
+        "adduct": "[M+H]+",
+        "records": 164
+      },
+      {
+        "class": "LPC",
+        "adduct": "[M+Na]+",
+        "records": 77
+      },
+      {
+        "class": "LPC-O",
+        "adduct": "[M+H]+",
+        "records": 54
+      },
+      {
+        "class": "LPE",
+        "adduct": "[M+H]+",
+        "records": 164
+      },
+      {
+        "class": "LPE",
+        "adduct": "[M+Na]+",
+        "records": 82
+      },
+      {
+        "class": "LPE-O",
+        "adduct": "[M+H]+",
+        "records": 138
+      },
+      {
+        "class": "LPE-P",
+        "adduct": "[M+H]+",
+        "records": 117
+      }
+    ],
+    "new_p_record_id_range": [
+      1254393,
+      1254421
+    ],
+    "derived_names": [
+      "LPC(P-8:0)",
+      "LPC(P-10:0)",
+      "LPC(P-11:0)",
+      "LPC(P-12:0)",
+      "LPC(P-13:0)",
+      "LPC(P-14:0)",
+      "LPC(P-15:0)",
+      "LPC(P-16:2)",
+      "LPC(P-16:1)",
+      "LPC(P-16:0)",
+      "LPC(P-17:2)",
+      "LPC(P-17:1)",
+      "LPC(P-17:0)",
+      "LPC(P-18:2)",
+      "LPC(P-18:1)",
+      "LPC(P-18:0)",
+      "LPC(P-19:1)",
+      "LPC(P-19:0)",
+      "LPC(P-20:2)",
+      "LPC(P-20:1)",
+      "LPC(P-20:0)",
+      "LPC(P-21:0)",
+      "LPC(P-22:2)",
+      "LPC(P-22:1)",
+      "LPC(P-22:0)",
+      "LPC(P-24:0)",
+      "LPC(P-26:2)",
+      "LPC(P-26:1)",
+      "LPC(P-26:0)"
+    ],
+    "derivation": "Only existing unsaturated positive O compositions; same formula/precursor, source IDs and names retained in metadata; append after all existing source/hydroxy-FA records",
+    "reported_resolution": "Existing unresolved O/P names; no new linkage-resolution claim",
+    "all_825_effective_pool_weights_verified": true,
+    "gates": "Existing HG gates unchanged; Other never independently admits; no LPC-P 240/181/NL59 gate",
+    "ordinary_lpc_fragments_unchanged": true,
+    "other_lysophospholipid_rules_unchanged": true
+  },
+  "negative_regression": {
+    "baseline_rules_sha256": "c321136897f0006c3fe73d2fe4b026bb8a510f6ce557dfe838b21677fdd0b97e",
+    "record_blocks_entries_and_search_plans_byte_identical": true,
+    "tables_sha256": {
+      "blocks": {
+        "rows": 1063,
+        "sha256": "9dc7be693618b03fb498ef6e0c055715c86c1bff5e5b9e9185e4f8db8a1ad9f4"
+      },
+      "entries": {
+        "rows": 1088179,
+        "sha256": "880ec9f46837613ad2dc6fdb8f4799e9903044dbfb82325f6d19e3ba58af712c"
+      },
+      "search_plans": {
+        "rows": 1064,
+        "sha256": "17665463641bcbdf51f692e9f61c65175755cc0ecc0ea347044d4c2ed0d73f8c"
+      }
+    },
+    "equivalence_profiles_and_data_blocks_identical": true,
+    "equivalence_data_sha256": "dc5856d1035866304f144325f7ef76eee8b5d280b0690b4a6f5f1528664490c0",
+    "equivalence_reference_rules_sha256": "661b06f0dbd5f5366120efa057cdd3a57955b04eba72771897a9002e10eeccbf",
+    "active_equivalence_policy_revisions_unchanged": [
+      "SM_[M+CH3COO]-",
+      "SM_[M+HCOO]-"
+    ],
+    "equivalence_header_note": "Compare decoded revisions: pickle encodings of frozensets in the header can vary across interpreter processes."
+  },
+  "references": [
+    {
+      "doi": "10.1016/j.jlr.2024.100600",
+      "scope": "LPC-O headgroup support; Fig2/Table3; supplied m/z527 image is a deuterated acetyl derivative, not the native precursor"
+    },
+    {
+      "doi": "10.1016/S1044-0305(99)00158-0",
+      "scope": "LPC-P Fig2B/Fig7; exact 181.0260/240.0995 and C3H9N loss calculated from formulas"
+    }
+  ],
+  "verification": {
+    "tests_passed": 1493,
+    "subtests_passed": 3118,
+    "full_pytest_seconds": 122.1,
+    "production_native_reference_examples": [
+      {
+        "case": "LPC-O native headgroup example",
+        "native_reference_equal": true,
+        "top_class": "LPC-O",
+        "name": "LPC(O-16:0)",
+        "score": 100.0
+      },
+      {
+        "case": "LPC-P paper Fig2B",
+        "native_reference_equal": true,
+        "top_class": "LPC-P",
+        "name": "LPC(O-16:1)/LPC(P-16:0)",
+        "score": 99.0526
+      },
+      {
+        "case": "P support without HG",
+        "native_reference_equal": true,
+        "candidates": 0
+      }
+    ],
+    "all_streaming_index_blocks_roundtrip_verified": true,
+    "repository_hygiene_problems": 0
+  }
+}

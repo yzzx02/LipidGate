@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, Iterable, Optional
+from .lysophospholipid_policy import LYSOPHOSPHOLIPID_CLASS_NAMES
 
 
 POOL_FRAGMENT_TYPES = {
@@ -86,9 +87,9 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         lipid_class="LPE-P",
         chain_level_min_fah=1,
         allow_hg_only_if_no_fah=True,
-        positive_hg_min_matches_if_no_fah=2,
-        positive_hg_min_matches=2,
-        positive_hg_min_fraction=1.0,
+        positive_hg_min_matches_if_no_fah=1,
+        positive_hg_min_matches=1,
+        positive_hg_min_fraction=0.5,
         positive_hg_complete_can_resolve_chain=True,
         score_profile=default_profile,
     )
@@ -318,6 +319,11 @@ def build_default_rules(classes: Optional[Iterable[str]] = None) -> RuleSet:
         negative_require_all_fah=True,
         score_profile=default_profile,
     )
+    # Common lyso HG admission is a count quorum, not a mandatory identity.
+    # Keep the remaining fields of previously unlisted classes unchanged.
+    for lipid_class in LYSOPHOSPHOLIPID_CLASS_NAMES:
+        original = by_class.get(lipid_class, replace(default_rule, lipid_class=lipid_class))
+        by_class[lipid_class] = replace(original, positive_hg_min_fraction=0.5)
     return RuleSet(by_class=by_class, default_rule=default_rule)
 
 

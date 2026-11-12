@@ -1,0 +1,386 @@
+{
+  "version": "1.1.0",
+  "released_at_utc": "2026-11-12T02:29:03.176195+00:00",
+  "platform": "Windows x64",
+  "product_code_sha256": "927d4f9be0d018597892b1cce72afc8ecda18955e82cf0d8715482ad1032ef4f",
+  "ms1_runtime_sha256": "61dc564802393999fae976ff1e0efd62dd4572d466287278e5b2f3f35d216c69",
+  "ms2_rules_sha256": "5a35a3f1519ac9a59a0eca05e87b5abb80e300c98013ff72ea2182c2a4b64394",
+  "entry_point_sha256": "5d3b4745bf7c5c8a11f42e49ef1d6fcb8e7c823da38f5c6bd65425b11633abae",
+  "build_spec_sha256": "42661cc868e8667865e1e9f48be06f73dc9aff13465fbc24039f824987aae700",
+  "library_cache_version": 43,
+  "index_format": 3,
+  "record_encoding": "fragment-columns-v3",
+  "maximum_cached_records": 4096,
+  "executable": {
+    "name": "LipidGate.exe",
+    "bytes": 295480624,
+    "sha256": "59d2a9e51ea4ae298ee195281c51343d72025a483c79f4425304aa2958b9c3af"
+  },
+  "libraries": {
+    "positive": {
+      "records": 1254422,
+      "classes": 111,
+      "adducts": 4,
+      "source_gzip_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_gzip_bytes": 23894631,
+      "decompressed_source_sha256": "d994d2aa91485e05c580ea60bf1b284a6a110efce3d51de58c678a9526451233",
+      "index_sha256": "2b56af42f4c4a9075eb10171fd9612c60fc1cd253757caffd40cbccd2c915f1a",
+      "index_bytes": 74498048
+    },
+    "negative": {
+      "records": 1088179,
+      "classes": 118,
+      "adducts": 4,
+      "source_gzip_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_gzip_bytes": 39394998,
+      "decompressed_source_sha256": "976f2b3aa346489c4137a9b14783226b494b7c6919999446b7b1684ab639e7c4",
+      "index_sha256": "85e1aaa9ff322bca7de10653c466e5ea22e19f537aca19e3b54a5e5215751ac8",
+      "index_bytes": 79134720
+    }
+  },
+  "verification": {
+    "junit_test_cases": 4686,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "frozen": {
+      "executable_sha256": "59d2a9e51ea4ae298ee195281c51343d72025a483c79f4425304aa2958b9c3af",
+      "libraries": [
+        {
+          "mode": "positive",
+          "records": 1254422,
+          "seconds": 1.5053012999997009,
+          "numeric_kernel_available": true,
+          "policy_modules": {
+            "scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\scoring.cp313-win_amd64.pyd",
+            "gate_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\gate_policy.cp313-win_amd64.pyd",
+            "resolution_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\resolution_policy.cp313-win_amd64.pyd",
+            "oxidized_fragment_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\oxidized_fragment_policy.cp313-win_amd64.pyd",
+            "chain_utils": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\chain_utils.cp313-win_amd64.pyd",
+            "matching": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\matching.cp313-win_amd64.pyd",
+            "record_facts": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\record_facts.cp313-win_amd64.pyd",
+            "indexed_library": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\indexed_library.cp313-win_amd64.pyd",
+            "ranking_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\ranking_policy.cp313-win_amd64.pyd",
+            "scoring_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\scoring_policy.cp313-win_amd64.pyd",
+            "evidence_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\evidence_policy.cp313-win_amd64.pyd",
+            "search": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\search.cp313-win_amd64.pyd",
+            "search_plan": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\search_plan.cp313-win_amd64.pyd",
+            "native_plan": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\native_plan.cp313-win_amd64.pyd",
+            "sphingolipid_scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\sphingolipid_scoring.cp313-win_amd64.pyd",
+            "equivalent_candidates": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\equivalent_candidates.cp313-win_amd64.pyd",
+            "native_engine": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\native_engine.cp313-win_amd64.pyd",
+            "prepared_scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\prepared_scoring.cp313-win_amd64.pyd"
+          }
+        },
+        {
+          "mode": "negative",
+          "records": 1088179,
+          "seconds": 1.5793269999994664,
+          "numeric_kernel_available": true,
+          "policy_modules": {
+            "scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\scoring.cp313-win_amd64.pyd",
+            "gate_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\gate_policy.cp313-win_amd64.pyd",
+            "resolution_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\resolution_policy.cp313-win_amd64.pyd",
+            "oxidized_fragment_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\oxidized_fragment_policy.cp313-win_amd64.pyd",
+            "chain_utils": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\chain_utils.cp313-win_amd64.pyd",
+            "matching": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\matching.cp313-win_amd64.pyd",
+            "record_facts": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\record_facts.cp313-win_amd64.pyd",
+            "indexed_library": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\indexed_library.cp313-win_amd64.pyd",
+            "ranking_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\ranking_policy.cp313-win_amd64.pyd",
+            "scoring_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\scoring_policy.cp313-win_amd64.pyd",
+            "evidence_policy": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\evidence_policy.cp313-win_amd64.pyd",
+            "search": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\search.cp313-win_amd64.pyd",
+            "search_plan": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\search_plan.cp313-win_amd64.pyd",
+            "native_plan": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\native_plan.cp313-win_amd64.pyd",
+            "sphingolipid_scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\sphingolipid_scoring.cp313-win_amd64.pyd",
+            "equivalent_candidates": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\equivalent_candidates.cp313-win_amd64.pyd",
+            "native_engine": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\native_engine.cp313-win_amd64.pyd",
+            "prepared_scoring": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\verification_v1.1.0_20261112\\runtime_tmp\\_MEI000070f02\\lipidgate\\ms2\\native_backend\\policy\\prepared_scoring.cp313-win_amd64.pyd"
+          }
+        }
+      ],
+      "library_check_seconds": 10.012024999999994,
+      "synthetic_project_rows": 4,
+      "backend_verified": true,
+      "worker_seconds": 8.365990399999646,
+      "unicode_temp_verified": true,
+      "inherited_openms_path_overridden": true,
+      "referenceable_params_verified": true,
+      "referenced_ms1_scans": 31,
+      "parallel_processes": 2,
+      "parallel_project_rows": 4,
+      "parallel_ms2_samples": 2,
+      "parallel_native_features": 8,
+      "parallel_check_seconds": 10.645752100000209,
+      "gui_verified": true,
+      "eic": {
+        "ms1_points": 31,
+        "feature_id": "eic_probe",
+        "ms1_detected_samples": 1,
+        "ms2_samples": 1,
+        "ms2_spectra": 1,
+        "peak_intensity": 10100.0,
+        "rt_window": [
+          0.0,
+          2.0
+        ],
+        "peak_bounds": [
+          0.8,
+          1.2
+        ],
+        "signal_status": "",
+        "feature_status": null,
+        "ms1_evidence": null,
+        "confidence": "未提供",
+        "ms1_survey_verified": true,
+        "ms1_survey_points": 4,
+        "ms1_survey_rt": 1.0,
+        "plot_interactions_checked": true
+      },
+      "gui_check_seconds": 9.573936400000093,
+      "ms1_boundary_verified": true,
+      "ms1_boundary_version": 8,
+      "ms1_survey_verified": true,
+      "project_file_verified": true,
+      "isotope_export_verified": true,
+      "isotope_detail_verified": true,
+      "project": {
+        "project_file_verified": true,
+        "new_project_verified": true,
+        "latest_result_restored": true,
+        "isotope_export_verified": true,
+        "isotope_detail_verified": true,
+        "sample_metadata_verified": true,
+        "ms1_export_verified": true,
+        "ms1_result_review_verified": true,
+        "feature_rows": 4,
+        "isotope_rows": 1,
+        "evidence_rows": 1
+      },
+      "project_check_seconds": 9.228244599999925,
+      "automatic_ms1_verified": true,
+      "sample_metadata_verified": true,
+      "ms1_result_review_verified": true,
+      "automatic_ms1": {
+        "files": 4,
+        "feature_rows": 4,
+        "worker_seconds": 8.775777999999264,
+        "gui_seconds": 9.79498650000005,
+        "gui": {
+          "project_file_verified": true,
+          "new_project_verified": true,
+          "latest_result_restored": true,
+          "isotope_export_verified": false,
+          "isotope_detail_verified": false,
+          "sample_metadata_verified": true,
+          "ms1_export_verified": true,
+          "ms1_result_review_verified": true,
+          "feature_rows": 4,
+          "isotope_rows": 0,
+          "evidence_rows": 0
+        }
+      }
+    },
+    "tests_passed": 1568,
+    "subtests_passed": 3118
+  },
+  "native_backends": {
+    "numeric_kernel": {
+      "api_version": 1,
+      "source_sha256": "fe30bffa8ad93e3a6f839693089ab2bf86ced97644e2021ea8b08e3bd7bcc016",
+      "binary_sha256": "2b749ee5c4d2ac0470959b6d9ec4466975ca441be423a2e976c2e458aaa48062",
+      "platform": "win32",
+      "machine": "AMD64",
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "link_flags": [
+        "-Wl,-Bstatic,--start-group",
+        "-lstdc++",
+        "-lwinpthread",
+        "-Wl,--end-group,-Bdynamic"
+      ]
+    },
+    "policy_extensions": {
+      "python_abi": [
+        3,
+        13
+      ],
+      "platform": "win32",
+      "machine": "AMD64",
+      "cython": "3.3.0",
+      "directives": {
+        "language_level": 3,
+        "annotation_typing": false,
+        "infer_types": false,
+        "cdivision": false,
+        "boundscheck": true,
+        "wraparound": true,
+        "initializedcheck": true,
+        "nonecheck": true,
+        "overflowcheck": true,
+        "binding": true
+      },
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-fno-strict-aliasing",
+        "-fwrapv",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "compiler": "g++.exe (GCC) 14.3.0",
+      "modules": {
+        "resolution_policy": {
+          "source_sha256": "2418a1c5f43801f755549708fc9b2c808fa8f3f69b2642a34cd949089a1aaabc",
+          "binary_name": "resolution_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "5409d02566feaed42423a4fff25b05bc7fdbe80fee27d9da89e3d86bbdb07342",
+          "bytes": 331445
+        },
+        "oxidized_fragment_policy": {
+          "source_sha256": "24d77a9303c0e628671496dba5f74aa2186313a3665358251c9454d276546a78",
+          "binary_name": "oxidized_fragment_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "23762d97bb9b04c0231c4b42430c3ae93d84d42d7266541f16d8692a7c15abf4",
+          "bytes": 271485
+        },
+        "chain_utils": {
+          "source_sha256": "fe9981c0cc9b21d04905bc36d5815fb871e26cc78e957d06512d6d1962691509",
+          "binary_name": "chain_utils.cp313-win_amd64.pyd",
+          "binary_sha256": "b8fa03403ee6bb3252602f06e67ec2e0106ab44cac987cc818eac9638cd0f1ea",
+          "bytes": 260278
+        },
+        "matching": {
+          "source_sha256": "1f8867fd7430a1a1a20567bdf0c317a0e8e550722fb0fb2c96d30fc0528ef74a",
+          "binary_name": "matching.cp313-win_amd64.pyd",
+          "binary_sha256": "9de4c07b6d44142394e59bfa0f8179482cdaf342d70fd3061803462fd83b358a",
+          "bytes": 194205
+        },
+        "record_facts": {
+          "source_sha256": "357a3b1ebd3a7345c14a43ed5783d92f55487b36df6d67248fd0bce44f9679a2",
+          "binary_name": "record_facts.cp313-win_amd64.pyd",
+          "binary_sha256": "cf0bf33663ae230aac650aca3b688d48df77b5cae3bd40ee2bd8a115c6e6c051",
+          "bytes": 436289
+        },
+        "indexed_library": {
+          "source_sha256": "95533e18e96558736fed10a83c089632eaf550559ac6ec83f05f93e80d16f2e1",
+          "binary_name": "indexed_library.cp313-win_amd64.pyd",
+          "binary_sha256": "fc2804a918d38e5f0ff79c0e7547d1c5380203ed581b8de1d825c91f0e560147",
+          "bytes": 727198
+        },
+        "ranking_policy": {
+          "source_sha256": "20f303ccdbfb3984ee5d672a2650bb406c697c01e4e7a4a42b8ea307d35499c4",
+          "binary_name": "ranking_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "8d3c60d3ec0348e1aee01d0ded06389b0b915680fab1ddb78bc41bd828510e71",
+          "bytes": 213546
+        },
+        "scoring_policy": {
+          "source_sha256": "608265cbd698d0be144de444839e07669baca05fd6098a35108001fe6abcb3ab",
+          "binary_name": "scoring_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "af10db2fd7f3614a1021ea9a183d3a6cf62436e3ac76bed82cf102d182b60dde",
+          "bytes": 130039
+        },
+        "search": {
+          "source_sha256": "0839d47d1d81568fc51386fb2ecf20ff9f785333db33ded7b04f42099edc5dbd",
+          "binary_name": "search.cp313-win_amd64.pyd",
+          "binary_sha256": "76b01a0081e9748a86fb54f562f06439fe1b1ebba72d7ede48e98c527d73648f",
+          "bytes": 1243459
+        },
+        "native_plan": {
+          "source_sha256": "0837cac005317de291e4e03fbf7c9e6a7a95c29e7dcd2fd8d5ed8cba9ee7d352",
+          "binary_name": "native_plan.cp313-win_amd64.pyd",
+          "binary_sha256": "18b253252bb585ae02fe3a698d9e645ad47e8dc69f724c9071afcdbe60c07903",
+          "bytes": 500378
+        },
+        "sphingolipid_scoring": {
+          "source_sha256": "dd1903e0c671183002e462f70739f58723c700cfd3851b5c5b31905a7d0e34fe",
+          "binary_name": "sphingolipid_scoring.cp313-win_amd64.pyd",
+          "binary_sha256": "f775d57071a45b9e83c2ecd718e305eb27f37e7de0a9144e922b8ee233633f0c",
+          "bytes": 263842
+        },
+        "equivalent_candidates": {
+          "source_sha256": "3f09a93e6e09f7a3f48236fb11a047cd4e9fb9cafa3bb3b53df9e73850a8d709",
+          "binary_name": "equivalent_candidates.cp313-win_amd64.pyd",
+          "binary_sha256": "7017fc9fd0f8cbe1134068ee7f01f7fc0a36592439f563eafc90cd7318cb8be5",
+          "bytes": 461205
+        },
+        "native_engine": {
+          "source_sha256": "cdd7c7b9506611c45f7bf1606dc4ac63cec9df5d40df5b9887e4d78d4bc51d88",
+          "binary_name": "native_engine.cp313-win_amd64.pyd",
+          "binary_sha256": "d047ace407d649b2356479193de9f8965f9a19cf9fc84181bd95c02b4073a05e",
+          "bytes": 477916
+        },
+        "scoring": {
+          "source_sha256": "70c04feca160e5f61b402435a9967570d2ff48b64a1f45ead238b440484e7769",
+          "binary_name": "scoring.cp313-win_amd64.pyd",
+          "binary_sha256": "281e925a70c1b787f28504a3cdb39ad95911121852e25a6f0e3f4fa055a6cda3",
+          "bytes": 775179
+        },
+        "gate_policy": {
+          "source_sha256": "c2306f5b2362fa65ba5ac0c8250a8ebd68255fb959ba310b8539462a05bed76b",
+          "binary_name": "gate_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "d8a6493da83d12b24f413eb9ea5fd8204e53dbfca017c480974b9eb8621caef1",
+          "bytes": 711999
+        },
+        "evidence_policy": {
+          "source_sha256": "df74ddac603ae3ca9237bb9e7b91da5c8be2f2fc7d79ab9b33bbe043ea821b32",
+          "binary_name": "evidence_policy.cp313-win_amd64.pyd",
+          "binary_sha256": "26975c08a78ed7d9590813749d693d60f050cb2cb13bc31d7d54836ed6dd9047",
+          "bytes": 588620
+        },
+        "search_plan": {
+          "source_sha256": "440447e5cc5e8afb34c94ea11a7afbf9d66e9ae2ae7048da04bc55138fb580d4",
+          "binary_name": "search_plan.cp313-win_amd64.pyd",
+          "binary_sha256": "516716318c5eff8e121cd7b4451b50ae6c5a9c029b35cb412b73e00640ab44ae",
+          "bytes": 526851
+        },
+        "prepared_scoring": {
+          "source_sha256": "37c86e9316b592c3110eb6726536b98759f1be2f775ac26075bfb1c7eb79911d",
+          "binary_name": "prepared_scoring.cp313-win_amd64.pyd",
+          "binary_sha256": "e6a789f26025372bd2e3253dc48b2a879712bc2d99bf492ef033342fa97e353b",
+          "bytes": 690407
+        }
+      }
+    },
+    "CPython_numeric_adapter": {
+      "api_version": 1,
+      "python_abi": [
+        3,
+        13
+      ],
+      "platform": "win32",
+      "machine": "AMD64",
+      "source_sha256": {
+        "search_bridge.cpp": "b030b4f2c7961b996292247f0f69cd68b84b8648869a0b8794b29fd481171b65",
+        "search_core.cpp": "fe30bffa8ad93e3a6f839693089ab2bf86ced97644e2021ea8b08e3bd7bcc016"
+      },
+      "flags": [
+        "-std=c++17",
+        "-O3",
+        "-shared",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-static-libgcc",
+        "-static-libstdc++"
+      ],
+      "link_flags": [
+        "-Wl,-Bstatic,--start-group",
+        "-lstdc++",
+        "-lwinpthread",
+        "-Wl,--end-group,-Bdynamic"
+      ],
+      "binary_name": "_search_bridge.cp313-win_amd64.pyd",
+      "binary_sha256": "33ea6f2cc05e2bd1c02943a6ec75a837178b91badc895eb0319be45fc4fc2af0",
+      "compiler": "g++.exe (GCC) 14.3.0"
+    }
+  }
+}

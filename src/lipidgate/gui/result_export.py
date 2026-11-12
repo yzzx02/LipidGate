@@ -38,6 +38,7 @@ class ResultExportDialog(QtWidgets.QDialog):
         self.plots = QtWidgets.QCheckBox("生成 ECN 图像")
         self.plots.setEnabled(has_ecn_models(page.bundle.path))
         self.dpi = QtWidgets.QSpinBox()
+        self.dpi.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.dpi.setRange(100, 1200)
         self.dpi.setValue(300)
         self.dpi.setSuffix(" DPI")

@@ -18,8 +18,8 @@ new benchmark explicitly justifies a change.
 - `nae_precursor.py`: explicit single-precursor NAE import definitions.
 - `positive_lpc_ether.py`: protonated ether LPC184-only HG policy and O/P
   reporting, preserving a single source identity.
-- `negative_lpc.py`: negative ether-LPC M-CH3-only HG gate and unresolved
-  O/P report names.
+- `negative_lpc.py`: negative ether-LPC half-HG admission (M-CH3 or168),
+  composition-dependent Other support and unresolved O/P report names.
 - `negative_lpe.py`: negative ether-LPE fragment definitions and unresolved
   O/P report names, retaining one source composition.
 - `positive_single_chain_h.py`: protonated MG/single-acyl NAGly fragment
@@ -31,7 +31,90 @@ new benchmark explicitly justifies a change.
   occurrence columns and conservative necessary-evidence programs. They may
   reject impossible candidates but never award scores or select a rank.
 
-## Protonated LPE-P mass correction (2026-11-02)
+## Ordinary positive LPS four-channel revision (2026-11-12; current)
+
+- Ordinary LPS[M+H]+ has exactly one HG: NL185.0089(C3H8NO6P).
+  Its three optional Other channels are NL105.0426(C3H7NO3), water loss and
+  precursor. Remove the previous NL166.9984 HG and both acylium support ions.
+- Keep HG/Other60/40 and ceil(HG count/2): the one HG now requires one match,
+  without an independently specified identity override or an Other gate.
+  No Other-only admission bypass is added. Preserve source IDs, record order,
+  the retained source masses/names/intensities, and append the policy/reference
+  marker to ordinary positive LPS metadata. LPS-O and negative LPS are separate.
+- Negative acyl LPA/LPI/LPG contain all channels shown in Chen2017 Fig.3,
+  verified across492 records. No changes to their content, pools, weights,
+  gates or chain-confirmation policy are made in this revision.
+- See `docs/lps_positive_scoring.md` and
+  `docs/lyso_negative_fragment_coverage.md` for exact example masses and scope.
+
+## Common lysophospholipid half-HG revision (2026-11-12; current)
+
+- Common positive LPA/LPC/LPE/LPG/LPI/LPS, including existing O/P variants,
+  use HG/Other60/40 and require ceil(HG channel count / 2). Do not require a
+  named HG identity unless a later explicit class-specific requirement says so.
+- Positive LPE-P now admits on either of its two HG losses. Keep its previous
+  complete-HG chain-reporting condition separate from admission; a half-HG
+  match must not acquire chain confirmation merely by passing the new gate.
+- Negative LPC-O likewise admits on either168.0431 or[M-CH3]-. Neither
+  identity is independently mandatory. Keep strongest-HG intensity scoring.
+- Other has no admission gate and cannot replace HG. Remove the common
+  positive lyso legacy FAH-only low-confidence exception. Do not introduce
+  an extra HG intensity cutoff beyond ordinary experimental-fragment matching.
+- Native necessary-evidence plans use the same half-HG condition; these lyso
+  candidates use the shared reference scorer after numeric native matching.
+- This supersedes the gate-retention statements in the two 2026-11-11
+  historical revisions below. Other negative classes and the independent
+  sphingolipid policies are outside this correction. Normalized fragment
+  content, source archives, identities, masses, order and weights are unchanged.
+
+## Common lysophospholipid two-pool and negative LPC-O revision (2026-11-11; historical gates superseded above)
+
+- All existing positive LPA/LPC/LPE/LPG/LPI/LPS O/P variants use HG/Other
+  60/40. Original FAH scoring fragments become Other without changing source
+  fragment types, chain-resolution evidence or HG requirements. Preserve
+  the existing FAH-only low-confidence exception using original identities
+  and its previous qualification arithmetic, never ordinary Other matches.
+  This exception does not restore a third scored pool or add an Other gate.
+- A 679-combination comparison on nine real 18:1 class/adduct records keeps
+  all original gate and resolution decisions. Native matching delegates the
+  affected legacy exception to the same reference decision as ordinary search.
+- Negative LPC-O also uses HG/Other60/40. HG contains `[M-CH3]-` and
+  `[C4H11NO4P]-`168.0431; the former remains mandatory. HG scoring uses its
+  strongest matched physical peak. Other remains optional and includes
+  phosphate,224.0693, composition-dependent NL71.0735/NL89.0841 from the
+  demethylated ion, retained ether-chain support and precursor.59.0139
+  acetate support is restricted to acetate adducts.168 alone never admits.
+- Preserve both compressed source archives and all existing IDs/order.
+  New fragments are normalized into the versioned indexes. No other
+  negative lysophospholipid policy or sphingolipid policy changes here.
+- References: Mishra et al.(2024),doi:10.1016/j.jlr.2024.100600,Table4;
+  see `docs/lpc_ether_negative_fragments.md` and
+  `docs/other_lysophospholipids_positive.md` for masses, scope and spectra.
+
+## Positive LPC/LPE two-pool revision (2026-11-11; historical gates superseded above)
+
+- Positive LPC, LPC-O/P, LPE and LPE-O/P use explicit HG/Other60/40,
+  including the existing ordinary sodium forms. Preserve all existing HG
+  admission conditions, Other saturation and strongest-HG intensity scoring.
+  The earlier75/25 and ether-LPC60/20/20 descriptions below are historical.
+- Ether-LPC precursor support is Other. O adds60.0808; P retains its existing
+  common support and adds181.0260 (C5H10O5P+),240.0995 (C8H19NO5P+) and
+  precursor minus C3H9N (59.0734993Da). The421 peak is not a fixed mass across
+  compositions. All of these remain optional; only184.0733 admits.
+- Preserve original source archives. Append traceable isobaric P alternatives
+  only from existing unsaturated positive O sources during normalized loading
+  and index construction. Retain all original and existing hydroxy-FA IDs and
+  relative order; deduplicate existing P compositions. Keep the existing
+  unresolved O/P report naming rather than claiming a new linkage resolution.
+- The supplied LPC-O527.3899 image is a deuterated acetyl derivative: reuse
+  shared headgroup products, not its precursor or derivative-specific losses.
+- The initial revision did not change negative mode or LPA/LPG/LPI/LPS;
+  the subsequent revision above does. See
+  `docs/lpc_lpe_positive_pools.md` and `docs/other_lysophospholipids_positive.md`.
+- References: Mishra et al.(2024),doi:10.1016/j.jlr.2024.100600,Fig.2/Table3;
+  Khaselev & Murphy(2000),doi:10.1016/S1044-0305(99)00158-0,Fig.2B/7.
+
+## Protonated LPE-P mass correction (2026-11-02; historical weights)
 
 - The two HG losses are dehydrated glycerol backbone C3H6O2 (74.0367794)
   plus H3PO4 (97.9768956) or HPO3 (79.9663309): NL172.0136750 and
@@ -61,7 +144,7 @@ See `docs/lpe_positive_fragments.md` for mass balance and measured examples.
 The v1.0.9 payload and index fingerprints are recorded in
 `config/library_revision_ether_lyso_20261106.json`.
 
-## Protonated ether LPC (2026-11-02)
+## Protonated ether LPC (2026-11-02; superseded pools/weights)
 
 - Applies to single-composition `LPC-O/P [M+H]+`. Preserve the existing54 O
   source compositions; do not generate duplicate P entries. Explicit imported

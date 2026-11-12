@@ -39,10 +39,11 @@ def test_plasmalogen_and_ether_lyso_pe_use_distinct_diagnostic_gates():
     ]
     complete_p = [(294.3155, 100), (312.3261, 50), (392.2924, 15),
                   (448.3186, 8), (466.3292, 30)]
-    missing_p_gate = [peak for peak in complete_p if peak[0] != 312.3261]
+    half_p_hg = [peak for peak in complete_p if peak[0] != 312.3261]
     complete_o = [(325.3101, 100), (448.3186, 8), (466.3292, 30)]
     assert _score(plasmalogen, complete_p).passed_required_gates
-    assert not _score(plasmalogen, missing_p_gate).passed_required_gates
+    assert _score(plasmalogen, half_p_hg).passed_required_gates
+    assert _score(plasmalogen, half_p_hg).resolution_level != 'chain_level'
     assert not _score(ether, complete_p).passed_required_gates
     assert _score(ether, complete_o).passed_required_gates
     assert not _score(plasmalogen, complete_o).passed_required_gates
@@ -91,4 +92,6 @@ def test_lpe_p_backbone_losses_retain_nitrogen_across_chain_compositions(carbon,
     assert hg[1].mz-hg[0].mz==pytest.approx(18.01056468446,abs=.0001)
     assert normalize_imported_record(record)==record
     assert _score(record,[(hg[0].mz,100),(hg[1].mz,50)]).passed_required_gates
-    assert not _score(record,[(hg[0].mz,100)]).passed_required_gates
+    assert _score(record,[(hg[0].mz,100)]).passed_required_gates
+    assert _score(record,[(hg[1].mz,100)]).passed_required_gates
+    assert not _score(record,[(precursor,100)]).passed_required_gates

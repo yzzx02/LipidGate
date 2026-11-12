@@ -1,0 +1,15 @@
+{
+  "version": "1.1.0",
+  "amended_on": "2026-11-12",
+  "release_id": 441159136,
+  "release_status": "prepared_for_replacement",
+  "previous_commit": "85ea3ac7aacd30a1a47b0c4ef13655a196532ee2",
+  "previous_manifest": "release_v1.1.0_20261111_consolidated.json",
+  "application_branch": "codex/unified-result-flow",
+  "application_version_changed": false,
+  "source_library_archives_changed": false,
+  "derived_library_indexes_rebuilt": true,
+  "separate_sphingolipid_branch_merged": false,
+  "scope": "User-requested same-version rebuild with unified feature results, simplified sample import and the current verified lysophospholipid rules.",
+  "current_manifest": "../release_v1.1.0.json"
+}

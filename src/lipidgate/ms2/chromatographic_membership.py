@@ -112,6 +112,20 @@ def _stream_traces(path, queries, ppm, da=None):
         reader.close()
 
 
+class _NativeAnchorIndex:
+    def __init__(self, anchors):
+        self.anchors = list(anchors)
+        masses = np.asarray([entry[0] for entry in self.anchors])
+        self.order = np.argsort(masses, kind="stable")
+        self.masses = masses[self.order]
+
+    def nearby(self, mz, tolerance):
+        left = np.searchsorted(self.masses, np.nextafter(mz - tolerance, -np.inf), side="left")
+        right = np.searchsorted(self.masses, np.nextafter(mz + tolerance, np.inf), side="right")
+        return [self.anchors[index] for index in np.sort(self.order[left:right])
+                if abs(self.anchors[index][0] - mz) <= tolerance]
+
+
 def _include_native_context(queries, native_anchors, ppm, da):
     """Cover real detector intervals and one neighboring native peak per side.
 
@@ -119,10 +133,11 @@ def _include_native_context(queries, native_anchors, ppm, da):
     reject a perfectly real native peak as clipped. Only same-mass native
     intervals can extend this read context; it never changes quantitative edges.
     """
+    anchors = native_anchors if isinstance(native_anchors, _NativeAnchorIndex) else _NativeAnchorIndex(native_anchors)
     for query in queries:
         tolerance = da if da is not None else query["mz"] * ppm * 1e-6
-        bounded = sorted((entry for entry in native_anchors if len(entry) == 4
-                          and abs(entry[0] - query["mz"]) <= tolerance), key=lambda entry: entry[1])
+        bounded = sorted((entry for entry in anchors.nearby(query["mz"], tolerance) if len(entry) == 4),
+                         key=lambda entry: entry[1])
         relevant = [index for index, (_, apex, left, right) in enumerate(bounded)
                     if query["lower"] <= apex <= query["upper"]
                     or (left <= query["upper"] and right >= query["lower"])]
@@ -138,6 +153,7 @@ def _include_native_context(queries, native_anchors, ppm, da):
 
 def _profile_memberships(path, rows, ppm, da=None, native_anchors=()):
     queries = _queries(rows, ppm, da)
+    native_anchors = _NativeAnchorIndex(native_anchors)
     _include_native_context(queries, native_anchors, ppm, da)
     _stream_traces(path, queries, ppm, da)
     records = {}
@@ -148,9 +164,8 @@ def _profile_memberships(path, rows, ppm, da=None, native_anchors=()):
         unique, positions = np.unique(times, return_index=True)
         times, values = unique, values[positions]
         window = da if da is not None else query["mz"] * ppm * 1e-6
-        anchors = [entry[1] * 60. for entry in native_anchors
-                   if abs(entry[0] - query["mz"]) <= window
-                   and query["lower"] <= entry[1] <= query["upper"]]
+        anchors = [entry[1] * 60. for entry in native_anchors.nearby(query["mz"], window)
+                   if query["lower"] <= entry[1] <= query["upper"]]
         peaks = resolve_eic_peaks(times * 60., values, sn=3., native_apices=anchors)
         apices = [float(times[peak.apex]) for peak in peaks]
         encoded = json.dumps(apices, separators=(",", ":"))
@@ -166,7 +181,7 @@ def _profile_memberships(path, rows, ppm, da=None, native_anchors=()):
 
 
 def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cache=True, mz_da=None,
-                                       native_features=None):
+                                       native_features=None, progress=None):
     """Locate each spectrum's real peak without affecting local feature links.
 
     A small cache is replaced per input dataset, with scan coordinates, input
@@ -232,7 +247,9 @@ def annotate_chromatographic_membership(data, mzml_paths, *, mz_ppm=10., use_cac
         except (OSError, ValueError, KeyError):
             pass
     if not memberships:
-        for name, rows in request.items():
+        for position, (name, rows) in enumerate(request.items(), 1):
+            if progress is not None:
+                progress(f"MS2 正在核验原始 EIC 峰 {position}/{len(request)}：{paths[name].name}")
             try:
                 if native_anchors.get(name):
                     memberships[name] = _profile_memberships(paths[name], rows, mz_ppm, mz_da, native_anchors[name])

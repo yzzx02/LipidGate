@@ -117,6 +117,9 @@ from .negative_gm3 import is_negative_gm3
 from .negative_lpe import is_negative_lpe
 from .negative_lpc import is_negative_lpc
 from .positive_lpc_ether import is_positive_ether_lpc
+from .lysophospholipid_policy import (
+    LYSOPHOSPHOLIPID_POOL_WEIGHTS, is_positive_lysophospholipid,
+)
 from .negative_hexcer import is_negative_hexcer
 from .oxidized_chain_evidence import oxidized_chain_requirements, oxidized_chain_missing_groups
 from .positive_gm3 import is_positive_gm3
@@ -165,7 +168,6 @@ POSITIVE_CHOLINE_POOL_ALIGNMENT_CLASSES = {"ASM", "LPC", "LPCO", "SM", "LSM"}
 POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
 AHEXCER_NEGATIVE_POOL_WEIGHTS = {"fah": 60.0, "hg": 20.0, "other": 20.0}
 SM_SODIUM_POOL_WEIGHTS = {"fah": 0.0, "hg": 75.0, "other": 25.0}
-LPE_SODIUM_POOL_WEIGHTS = {"fah": 0.0, "hg": 75.0, "other": 25.0}
 ADGGA_POSITIVE_POOL_WEIGHTS = {"fah": 20.0, "hg": 60.0, "other": 20.0}
 POSITIVE_HG_CHAIN_LEVEL_CLASSES = {
     "CL", "MLCL", "NAPE", "LNAPE",
@@ -206,11 +208,11 @@ def _fragment_window_da(fragment_mz: float, mz_tolerance: float | None, ppm_tole
 
 
 def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str, float]:
-    if is_positive_ether_lpc(record):
-        return {"fah": 20.0, "hg": 60.0, "other": 20.0}
-    if is_negative_lpc(record):
-        return {"fah": 0.0, "hg": 75.0, "other": 25.0}
     class_key = _normalized_class_key(record.compound_class)
+    if is_positive_lysophospholipid(record):
+        return LYSOPHOSPHOLIPID_POOL_WEIGHTS
+    if is_negative_lpc(record):
+        return LYSOPHOSPHOLIPID_POOL_WEIGHTS
     adduct = str(record.adduct or "").strip()
     if is_protonated_single_chain_nagly(record):
         return SINGLE_CHAIN_POOL_WEIGHTS
@@ -230,8 +232,6 @@ def _pool_weights_for_record(record: LibraryRecord, rule: ClassRule) -> Dict[str
         return ADGGA_POSITIVE_POOL_WEIGHTS
     if class_key == "PEP" and adduct == "[M+Na]+":
         return POSITIVE_PHOSPHOLIPID_HG_DOMINANT_POOL_WEIGHTS
-    if class_key in {"LPE", "LPC"} and adduct == "[M+Na]+":
-        return LPE_SODIUM_POOL_WEIGHTS
     if (
         adduct == "[M-H]-" and class_key in {"CER1P", "CERP"}
     ) or (
@@ -711,7 +711,9 @@ def _determine_resolution(
             if not expected_fah_tokens and not has_library_loss:
                 if not rule.allow_hg_only_if_no_fah:
                     return "chain_level", ""
-                if rule.positive_hg_complete_can_resolve_chain:
+                if (rule.positive_hg_complete_can_resolve_chain
+                        and (not is_positive_lysophospholipid(record)
+                             or _matched_hg_fragment_count(record, matches) >= _record_hg_fragment_count(record))):
                     return "chain_level", ""
                 required_signature_hits = min(
                     max(int(rule.positive_signature_min_matches_if_no_fah), 0),
@@ -1106,6 +1108,7 @@ def score_candidate(
     )
     weak_hg_only_candidate = (
         resolution_level != "chain_level"
+        and not is_positive_lysophospholipid(record)
         and not missing_groups
         and _is_positive_hg_dominant_phospholipid(record)
         and matched_hg_count > 0
@@ -1134,7 +1137,8 @@ def score_candidate(
             downgrade_reason = "lyso_hg_only_fallback"
         elif (
             rule.positive_hg_complete_can_resolve_chain
-            and matched_hg_count >= positive_required_hg_hits
+            and matched_hg_count >= (hg_fragment_count if is_positive_lysophospholipid(record)
+                                     else positive_required_hg_hits)
         ):
             resolution_level = "chain_level"
             downgrade_reason = ""

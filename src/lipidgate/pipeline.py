@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -104,10 +105,9 @@ def run_project(project_path, settings, progress=lambda message: None):
             ms1_files.append(file)
         inventory.append(dict(source_file=file.name, source_path=str(file), **levels))
         progress(f"检查 已完成 {number}/{len(files)}：{file.name}")
-    if not any(row["ms2_scans"] for row in inventory):
-        progress("输入检查：未检出 MS2，自动完成 MS1 峰检测、对齐和一级候选检索。")
-        return _run_ms1_project(project, files, settings, progress, mode=mode, inventory=inventory)
-    progress("输入检查：检出 MS2，继续现有鉴定流程。")
+    ms2_files = [file for file, row in zip(files, inventory) if row["ms2_scans"]]
+    if not ms2_files:
+        settings["ms1"]["enabled"] = True
     options = dict(settings["ms2"])
     library = Path(
         options.get("library_path")
@@ -123,14 +123,17 @@ def run_project(project_path, settings, progress=lambda message: None):
     from lipidgate.ms2.indexed_library import validate_precursor_range
 
     validate_precursor_range(options.get("precursor_mz_min"), options.get("precursor_mz_max"))
-    validate_parallel_capacity(options.get("workers", 1), len(files), library)
+    if ms2_files:
+        validate_parallel_capacity(options.get("workers", 1), len(ms2_files), library)
     ms1 = settings["ms1"]
+    ms1.setdefault("algo", "pyopenms")
+    ms1.setdefault("params", {})
     if ms1.get("enabled", True):
         params = ms1.get("params", {})
         widths = params.get(
             "peakwidth", [params.get("min_fwhm", 5), params.get("max_fwhm", 60)]
         )
-        if len(widths) != 2 or not 0 < widths[0] <= widths[1]:
+        if len(widths) != 2 or not all(math.isfinite(float(value)) for value in widths) or not 0 < widths[0] <= widths[1]:
             raise ValueError("峰宽范围无效")
         if (
             ms1["algo"] in {"msdial", "ms-dial"}
@@ -146,7 +149,7 @@ def run_project(project_path, settings, progress=lambda message: None):
     (out / "provenance.json").write_text(
         json.dumps(
             {
-                "analysis_mode": "ms1_ms2",
+                "analysis_mode": "unified",
                 "product_code_sha256": code_fingerprint(Path(__file__).parent),
                 "ms1_runtime_sha256": code_fingerprint(
                     Path(__file__).parent.parent / "lipidbench"
@@ -221,19 +224,12 @@ def run_project(project_path, settings, progress=lambda message: None):
         if feature
         else None
     )
-    result = run_ms2_feature_annotation_result(
-        mzml_input=files,
-        feature_table=feature_table,
-        output_dir=out / "ms2",
-        export_csv=False,
-        export_xlsx=False,
-        audit_only=True,
-        map_to_features=feature is not None,
-        min_total_score=0.0,
-        progress=progress,
-        **options,
-    )
-    audit = result.data
+    result = (run_ms2_feature_annotation_result(
+        mzml_input=ms2_files, feature_table=feature_table, output_dir=out / "ms2",
+        export_csv=False, export_xlsx=False, audit_only=True,
+        map_to_features=feature is not None, min_total_score=0.0,
+        progress=progress, **options) if ms2_files else None)
+    audit = result.data if result is not None else pd.DataFrame()
     audit["mode"] = mode
     if feature is None:
         audit["ms1_support_status"] = "MS2-only"
@@ -241,10 +237,11 @@ def run_project(project_path, settings, progress=lambda message: None):
             "no_ms1_scans" if ms1.get("enabled", True) else "feature_detection_disabled"
         )
     progress("应用分数与 ECN 筛选，保存结果主表与同位素…")
-    filter_settings = {key: value for key, value in settings["filter"].items()
+    filter_settings = {key: value for key, value in settings.get("filter", {}).items()
                        if key in {"use_ecn", "use_score", "min_score", "rt_tolerance", "retain_unmodeled"}}
     final = export_final_results(audit, out / "results", export_xlsx=False,
-                                 export_plots=False, **filter_settings)
+        export_plots=False, annotation_settings=dict(options, library_path=str(library)),
+        progress=progress, **filter_settings)
     # Relationship evidence is calculated only after search and final export.
     # The helper receives MS1 tables, never the MS2 candidate DataFrame.
     if feature is not None:
@@ -256,55 +253,3 @@ def run_project(project_path, settings, progress=lambda message: None):
                                  mode=mode, progress=progress)
     progress("完成")
     return feature, result, final
-
-
-def _run_ms1_project(project, files, settings, progress, *, mode, inventory):
-    """Inputs without MS2 automatically finish at measured MS1 candidates."""
-    import math
-    from lipidgate.ms1.detection import default_config
-    from lipidgate.ms1.workflow import export_ms1_results
-    from lipidgate.paths import resolve_ms1_library
-    from lipidgate.ms2.provenance import code_fingerprint
-    ms1 = settings.setdefault("ms1", {})
-    if not ms1.get("enabled", True):
-        progress("输入仅含 MS1，自动启用特征检测。")
-    ms1["enabled"] = True
-    search = ms1.get("candidate_search", {})
-    if not math.isfinite(float(search.get("ppm", 10))) or float(search.get("ppm", 10)) <= 0:
-        raise ValueError("一级候选质量容差须大于零。")
-    maximum = search.get("max_candidates", 10)
-    if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
-        raise ValueError("每峰候选数须为正整数。")
-    library = None
-    if search.get("enabled", True):
-        library = resolve_ms1_library(search.get("library_path"), mode)
-        if not library.is_file():
-            raise FileNotFoundError(f"一级候选库不存在：{library}")
-    params = ms1.get("params", {})
-    widths = params.get("peakwidth", [params.get("min_fwhm", 5), params.get("max_fwhm", 60)])
-    if len(widths) != 2 or not all(math.isfinite(float(value)) and value > 0 for value in widths) or widths[0] > widths[1]:
-        raise ValueError("峰宽范围无效")
-    out = project.root / "runs" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    out.mkdir(parents=True)
-    samples = project.sample_table()
-    (out / "run_settings.json").write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
-    (out / "scan_inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding="utf-8")
-    samples.to_csv(out / "sample_metadata.csv", index=False, encoding="utf-8-sig")
-    (out / "provenance.json").write_text(json.dumps(dict(
-        analysis_mode="ms1_only", product_code_sha256=code_fingerprint(Path(__file__).parent),
-        ms1_runtime_sha256=code_fingerprint(Path(__file__).parent.parent / "lipidbench"),
-        inputs=[dict(path=str(path), bytes=path.stat().st_size, mtime_ns=path.stat().st_mtime_ns) for path in files],
-        sample_metadata=samples.to_dict("records")), ensure_ascii=False, indent=2), encoding="utf-8")
-    project.settings = settings
-    project.save()
-    cfg = default_config()
-    cfg["parameters"]["asari"]["mode"] = "pos" if mode == "positive" else "neg"
-    cfg["parameters"]["xcms"]["polarity"] = mode
-    cfg["parameters"]["xcms"]["sample_metadata"] = samples.to_dict("records")
-    progress("提取并对齐 MS1 特征…")
-    feature = run_feature_detection_result(algo=ms1.get("algo", "pyopenms"), input_path=files,
-        output_dir=out / "ms1", params=params, config=cfg, msdial_table=ms1.get("msdial_table"), progress=progress)
-    final = export_ms1_results(feature, samples, settings, out / "results", library=library,
-        cache_dir=project.root / ".cache" / "ms1_candidates", progress=progress)
-    progress("完成")
-    return feature, None, final

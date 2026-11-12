@@ -15,6 +15,9 @@ from lipidgate.ms2.cohort_groups import cluster_unlinked_spectra
 from lipidgate.ms2.chromatographic_membership import annotate_chromatographic_membership, result_sources
 from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE, confirmed_ms1_precursor, restore_ms1_support
 from lipidgate.feature_annotations import CONSENSUS_LABELS, candidate_scopes, select_feature_annotations, spectrum_candidates
+from lipidgate.feature_annotation_fallback import (
+    MASS_COLUMNS, NO_MS2_PREFIX, annotation_display, attach_mass_matches,
+)
 
 
 COLUMNS = [
@@ -29,11 +32,12 @@ COLUMNS = [
     ("MS1 Feature", "ms1_support_status"),
 ]
 FAMILIES = {
-    "GP": "磷脂类 GP",
+    "GP": "甘油磷脂 GP",
     "SP": "鞘脂类 SP",
     "GL": "甘油脂类 GL",
     "FA": "脂肪酰类 FA",
     "ST": "固醇类 ST",
+    "PR": "异戊二烯脂 PR",
     "Other": "Other",
 }
 FAMILY_COLORS = {
@@ -42,6 +46,7 @@ FAMILY_COLORS = {
     "GL": "#2ca02c",
     "FA": "#d62728",
     "ST": "#9467bd",
+    "PR": "#8c564b",
     "Other": "#7f7f7f",
 }
 
@@ -51,6 +56,12 @@ def ms1_feature_display(row):
     status = text(row.get("ms1_support_status"))
     if number(row.get("_cohort_ms1_detected_samples")) > 0 and text(row.get("_identified")).lower() == "true":
         return "Linked"
+    link_reason = text(row.get("ms1_feature_link_reason")) or text(row.get("ms1_support_reason"))
+    if (link_reason in {"no_ms1_feature_for_sample", "no_ms1_feature_within_mz_tolerance"}
+            and not any(text(row.get(key)) for key in ("Feature_ID", "_native_feature"))):
+        # A raw EIC or a confirmed survey ion is not a detector feature. Use the
+        # same label whether or not precursor confirmation passed independently.
+        return "Not detected"
     if text(row.get("ms1_support_reason")) == CONFIRMED_WITHOUT_FEATURE:
         if text(row.get("ms1_feature_link_reason")) in {
             "no_ms1_feature_for_sample", "no_ms1_feature_within_mz_tolerance",
@@ -139,6 +150,10 @@ def hg_only_rejection_description(row):
 
 def confidence_description(row):
     """Explain the saved identification decision separately from quantitation."""
+    if text(row.get("ms1_candidate_name")) and not row.get("_identified", False):
+        return "no MS2：仅前体质量符合库中候选；尚无合格 MS2 匹配，不确认脂肪链组成"
+    if not row.get("_identified", False) and not text(row.get("matched_name")):
+        return "unknown：尚无合格的谱库注释；保留实测峰和面积"
     confidence = text(row.get("_confidence")) or identification_confidence(row)
     if confidence == "高":
         return "High：分数达到 50，MS2 满足当前鉴定规则且有 MS1 前体证据；不代表已检出可积分的 MS1 特征"
@@ -169,10 +184,35 @@ def ms1_evidence_display(row):
     return "Missing" if text(row.get("ms1_support_reason")) == "no_ms1_scans" else "Unconfirmed"
 
 
+_ADDITIONAL_FAMILIES = {
+    **dict.fromkeys((
+        "CDPDG", "CEPE", "LCEPE", "GPNAE", "PMEOH", "LPMEOH", "LDMPE",
+        "HBMP", "LPHEG", "ASPL", "NAGPS", "AC2PIM1", "AC2PIM2", "AC3PIM2", "AC4PIM2",
+        "GLCGP", "6ACGLCGP", "ALANYLPG", "ASPPG", "LEUPG", "LYSPG", "CPA",
+        "PNE", "LPNE", "PNEP", "PLASMENYLPNE", "PHEG", "PPA", "PTHR", "LNAPS",
+        "AMLPE", "AMPE", "AMPEO", "AMLPS", "AMPS",
+    ), "GP"),
+    **dict.fromkeys(("LDGCC", "LDGTS", "LDGTA", "SMGDG", "SMGDGO", "SQMG", "MANGLCADAG"), "GL"),
+    **dict.fromkeys(("IPC", "HEXIPC", "MIPC"), "SP"),
+    # APCS has a phosphocholine-serine headgroup but no glycerol backbone.
+    # LIPID MAPS classifies PPCS (LMFA08020401) as an N-acyl amine (FA08).
+    **dict.fromkeys(("APCS", "NAASP", "NAT", "WE"), "FA"),
+    **dict.fromkeys(("VD", "VITAMIND", "CASE", "SISE", "STSE", "BA", "BILEACID", "BASULFATE", "SSULFATE"), "ST"),
+    **dict.fromkeys(("VE", "VITAMINE", "VAE"), "PR"),
+}
+
+
 def family_for(value):
-    key = str(value).upper().replace("-", "")
-    if key.startswith("OX"):
-        key = key[2:]
+    """Display taxonomy shared by the browser and library selector; no scoring."""
+    key = re.sub(r"[^A-Z0-9]", "", str(value).upper())
+    while key.startswith(("OX", "ETHER")):
+        key = key[2:] if key.startswith("OX") else key[5:]
+    if key in _ADDITIONAL_FAMILIES:
+        return _ADDITIONAL_FAMILIES[key]
+    if re.fullmatch(r"COQ\d*", key):
+        return "PR"
+    if "CER" in key:
+        return "SP"
     if (
         any(
             key.startswith(v)
@@ -207,7 +247,7 @@ def family_for(value):
     if key.startswith(("TG", "DG", "MG", "DGDG", "MGDG", "SQDG", "ADGGA")):
         return "GL"
     if "CER" in key or key.startswith(
-        ("SM", "LSM", "ASM", "SL", "SPH", "DHSPH", "PHYTOSPH", "SPB", "GM", "GD", "GT", "GB")
+        ("SM", "LSM", "ASM", "SL", "SPH", "DHSPH", "PHYTOSPH", "SPB", "GM", "GD", "GT", "GQ", "GB")
     ):
         return "SP"
     if key.startswith(("FA", "CAR", "NAE", "NAGLY", "NASER", "NAORN", "NATAU")):
@@ -321,6 +361,15 @@ def normalize_candidates(data):
     }.items():
         if target not in out:
             out[target] = first_series(out, aliases)
+    mass_label = out.matched_name.fillna("").astype(str).str.startswith(NO_MS2_PREFIX)
+    if mass_label.any():
+        out.loc[mass_label, "ms1_candidate_name"] = out.loc[mass_label, "matched_name"].str[len(NO_MS2_PREFIX):]
+        out.loc[mass_label, "ms1_candidate_resolution"] = (
+            out.get("注释水平", pd.Series("", index=out.index)).loc[mass_label]
+            .map(lambda value: "class_formula" if value == "分子式候选" else "sum_composition"))
+        out.loc[mass_label, "matched_name"] = ""
+    unknown = out.matched_name.fillna("").astype(str).str.strip().str.casefold().eq("unknown")
+    out.loc[unknown, "matched_name"] = ""
     out = restore_ms1_support(out)
     out["_rt"] = first_series(
         out,
@@ -434,6 +483,7 @@ class ResultBundle:
     audit_store: object = field(default=None, repr=False)
     sample_metadata: pd.DataFrame = field(default_factory=pd.DataFrame)
     sample_groups: dict = field(default_factory=dict)
+    mass_candidates: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=MASS_COLUMNS))
 
     @classmethod
     def from_frames(cls, candidates, features=None, path=None, aligned_features=None,
@@ -457,6 +507,11 @@ class ResultBundle:
         independent = annotations.loc[annotations.feature_result_role.isin(["fa_independent", "nae_independent"])
                                       & ~annotations._key.isin(representatives._key)].drop_duplicates("_key")
         representatives = pd.concat([representatives, independent], ignore_index=True)
+        # Standalone main tables also contain measured rows without MS2. Keep
+        # their saved values rather than dropping them during annotation voting.
+        if {"Feature ID", "MS/MS 碎片注释"}.issubset(candidates):
+            snapshots = candidates.loc[~candidates._identified & ~candidates._key.isin(representatives._key)]
+            representatives = pd.concat([representatives, snapshots], ignore_index=True)
         notice = "当前仅有鉴定记录；未提供完整 MS1 特征表，无法统计未鉴定特征。"
         if aligned_features is not None:
             aligned = aligned_features.copy()
@@ -488,10 +543,10 @@ class ResultBundle:
             for column in ("_source", "_scan", "_spectrum", "matched_name", "compound_class", "adduct"):
                 aligned[column] = aligned[column].fillna("")
             linked = aligned["_key"].isin(selected.index)
-            aligned.loc[~linked, "_identified"] = False
-            aligned.loc[~linked, "_confidence"] = "未鉴定"
-            aligned.loc[~linked, "_ecn"] = "无法判断"
-            aligned.loc[~linked, "ms1_support_status"] = "MS1-only"
+            aligned["_identified"] = aligned["_identified"].eq(True) & linked
+            for column, default in (("_confidence", "未鉴定"), ("_ecn", "无法判断"),
+                                    ("ms1_support_status", "MS1-only")):
+                aligned[column] = aligned[column].where(linked, default)
             outside = representatives.loc[~representatives._key.isin(aligned._key)]
             representatives = pd.concat([aligned, outside], ignore_index=True)
             notice = "以跨样本对齐的 MS1 特征为主行；原始 MS1 已确认且唯一匹配的其他样本 MS2 也归入该行。其余未对齐峰和 MS2 注释单独显示。"
@@ -518,6 +573,7 @@ class ResultBundle:
             native["ms1_support_status"] = "MS1-supported"
             native["_identified"] = False
             native["_confidence"] = "未鉴定"
+            native["ms1_support_status"] = "MS1-only"
             native["_ecn"] = "无法判断"
             if representatives.empty:
                 representatives = native
@@ -685,7 +741,7 @@ class ResultBundle:
         if query.strip():
             query = query.strip().casefold()
             columns = [
-                df.matched_name.fillna("").astype(str),
+                df.apply(annotation_display, axis=1).astype(str),
                 df._feature,
                 df._display_feature,
                 df._linked_scan_ids,
@@ -841,6 +897,10 @@ def result_bundle_from_data(data, path, *, refresh_membership=True):
         data = annotate_chromatographic_membership(data, result_sources(path), mz_ppm=mz_ppm, mz_da=mz_da)
     bundle = ResultBundle.from_frames(data, features, path, aligned_features,
                                     alignment_mz_ppm=mz_ppm, alignment_mz_da=mz_da)
+    mass_path = base / "audit" / "ms1_matches.csv"
+    if mass_path.is_file():
+        bundle.mass_candidates = pd.read_csv(mass_path, keep_default_na=False)
+        bundle.features = attach_mass_matches(bundle.features, bundle.mass_candidates)
     sample_path = base.parent / "sample_metadata.csv"
     if sample_path.is_file():
         bundle.sample_metadata = pd.read_csv(sample_path, dtype={"group": str}, keep_default_na=False)

@@ -6,7 +6,11 @@ The GUI runs heavy analysis outside the UI process.
 
 Project search passes the original candidate frame directly to final filtering;
 it does not build MS2 presentation summaries or serialize/reload intermediate
-CSVs. Final output is one compact feature table. Full evidence is saved once in
+CSVs. Final output is one compact feature table, including measured features
+with tentative `no MS2` total compositions or `unknown` annotations. These
+rows never enter MS2 voting, gates or scores. Mass lookup reuses the bounded
+library index and stores only scalar candidates in `audit/ms1_matches.csv`.
+Full MS2 evidence is saved once in
 `results/audit/evaluated.csv`; selected annotation audit records reference those
 source rows instead of duplicating spectrum JSON. Candidate exports are optional.
 Saved representative isotope windows can be reused for the same request.

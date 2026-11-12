@@ -1,52 +1,81 @@
-# Sample metadata and automatic mzML analysis
+# Sample metadata and one feature-result workflow
 
-The import table stores Sample, QC or Blank independently from the experimental
-group. Every new file starts in group **1**, batch 1. Use group 2, 3, etc. for
-other biological groups; do not assign a different group to every replicate.
-Select multiple rows to change their type, group or batch together. Injection
-order initially follows import order and can be corrected to the actual
-sequence. Unchecked files remain registered but do not enter the run.
+The pyOpenMS path reads selected files individually, without first copying the
+whole batch into a staging directory. Progress identifies file loading, mass
+trace detection, chromatographic splitting, feature assembly, local peak checks
+and integration. Only spectra explicitly marked as profile MS1 are centroided
+with OpenMS PeakPickerHiRes; existing centroided or unspecified spectra are not
+picked again. Native feature exports record any such preprocessing.
 
-Projects use schema 2. Schema-1 projects open with the above defaults and upgrade
-when saved. Source files are never relocated. Each run snapshots its sample
-metadata so later edits do not change the description of historical results.
+Retention-time alignment uses OpenMS's default limit on high-intensity anchors
+(1000 in OpenMS 3.4), rather than unlimited pose-clustering pairs. This limits
+transformation estimation; it does not discard detected features. A changed
+transformation can affect cross-sample group membership. Same-file MS2 links
+continue to use the original measured native times and boundaries.
 
-Import mzML files and click **Run directly** to use the current parameters.
-There is no separate MS1 analysis mode. The runner checks actual MS1/MS2 scan
-levels and polarity in one streaming pass. Files without supported scans are
-reported before detection. Only inputs with MS1 and no MS2 automatically finish
-at peak detection, alignment, areas and optional mass candidates. With MS2
-present, the existing MS2 workflow continues, also accepting mixed input sets
-containing files with only MS1. Low MS2 scores never trigger an MS1 fallback.
+`Not detected` means no eligible native detector feature was found for that
+sample/mass. It applies independently of raw precursor confirmation. An EIC
+can show signal below the configured detection thresholds. `Unlinked` retains
+unresolved associations, such as a scan outside a same-mass peak's measured
+interval; it must not create an integration or combine neighboring isomers.
 
-Detection defaults to pyOpenMS; XCMS, asari and the existing MS-DIAL table import
-remain available. Polarity is shared by the MS1 and MS2 settings. When inputs
-contain only MS1, detection runs even if an older project disabled it, and MS2
-library settings, MS2 score thresholds and ECN identification filters do not
-affect the MS1 result. Disable candidate search to export peaks and areas without
-requiring a library. Previous manual-mode settings are removed on the next run;
-their selected polarity is preserved, while actual scan levels determine execution.
+MZmine and XCMS distinguish detected features from gap-filled measurements.
+Gap filling uses a qualified feature's mass/retention-time region and records
+the result as estimated/filled. Showing raw signal alone does not establish a
+native feature ID, quantitative boundary or area. LipidGate's same-native-apex
+association reuses real detected peaks; it does not silently fill missing areas
+or change precursor confidence, MS2 gates or scores.
 
-The optional mass lookup defaults to the existing main library for the selected
-polarity, 10 ppm and at most 10 displayed candidates per feature. A separate
-cache under the project's `.cache/ms1_candidates` stores only precursor
-metadata. It never overwrites the MSP/SQLite source or its MS2 cache. Equal
-sum compositions, formulas and adducts collapse chain alternatives. Complex
-names that cannot safely be summed remain class/formula candidates.
+References: [OpenMS alignment anchors](https://openms.org/documentation/html/classOpenMS_1_1MapAlignmentAlgorithmPoseClustering.html),
+[PeakPickerHiRes](https://openms.org/documentation/html/classOpenMS_1_1PeakPickerHiRes.html),
+[MZmine Peak finder](https://mzmine.github.io/mzmine_documentation/latest/module_docs/gapfill_peak_finder/gap-filling.html),
+and [XCMS fillChromPeaks](https://sneumann.github.io/xcms/reference/fillChromPeaks.html).
 
-MS1 candidates carry `MS1_candidate`, `ms2_confirmed=False` and
-`chain_confirmed=False`. They have no MS2 score. Mass agreement alone does not
-establish a chain combination, OH position or linkage isomer. Candidate ranking
-uses absolute mass error with stable source order; the workbook also records
-the total candidate count before the display limit.
+The import table numbers all files with No. Every listed file participates in
+new analyses. Sample/QC/Blank, experimental group, batch and injection order are
+edited directly. New files default to group 1 and batch 1; injection order
+initially follows import order. Numeric fields have no increment buttons.
+Legacy project exclusion flags do not silently exclude visible rows. Historical
+run snapshots remain unchanged.
 
-The workbook `results/ms1_results.xlsx` contains measured/aligned features, the
-area matrix, MS1 candidates, sample metadata, group summaries, QC/Blank
-statistics, original detector peaks and exact settings. The dedicated result
-window searches feature names and shows each actual feature's mass candidates.
-Missing detector areas remain missing; no peak IDs, boundaries or integrals
-are invented to make a matrix complete. RSD requires at least two recorded QC
-areas and positive mean. No quality or blank-ratio threshold is applied.
+All inputs use the same detection, alignment, feature browser and
+`results/final_identifications.csv` schema. Excel exports use the same main
+sheet and two-row sample group header. Existing standalone MS1 workbooks remain
+readable for historical projects, but new project runs create the shared table.
+A missing MS2 scan skips scoring rather than selecting another analysis mode.
+All measured detector rows and areas remain present, including missing cells.
+The browser opens on all results so an MS1-only project does not appear empty.
+The existing detector can use DDA precursor metadata to target local peak
+redetection; without those requests it retains its complete MS1 valley search.
+Removing MS2 spectra can therefore change local detections, even with identical
+MS1 arrays and parameters. This update does not change that detector policy.
+
+Annotation precedence is explicit:
+
+- Accepted MS2 annotations retain their original gates, votes, order, scores,
+  confidence and structural resolution.
+- Features without an accepted MS2 result can receive a precursor-mass library
+  candidate, displayed as `no MS2: <total composition>`. They have no MS2 score,
+  fragments or chain confirmation and remain outside the MS2-identified count.
+- Features without either match display `unknown` and retain their actual areas.
+
+The selected library, polarity, precursor tolerance, class/adduct filters and
+precursor range are shared. Built-in indexes are queried by mass window with
+bounded record caches; no second full metadata index is created. Custom MSPs
+reuse the streaming metadata adapter. Distinct total compositions are ranked
+by absolute mass error with stable source order. The main row shows the first;
+other candidates can be exported. There is no separate ten-candidate display
+setting. Candidate source identifiers, counts, formulas and mass errors are
+saved in `audit/ms1_matches.csv`, independently of the unchanged MS2 audit.
+
+Mass agreement is tentative: it does not confirm a chain combination, OH
+position or linkage isomer. A rejected MS2 candidate remains rejected in the
+canonical audit even if the measured feature has a mass-only candidate.
+
+Professional software distinguishes annotation evidence and a preferred main
+annotation; this does not define a universal fixed candidate-count limit.
+See [MS-DIAL annotation evidence](https://systemsomicslab.github.io/compms/msdial/annotationcode.html)
+and [MZmine preferred annotations](https://mzmine.github.io/mzmine_documentation/latest/terminology/annotations.html).
 
 For XCMS, sample group labels now reach `PeakDensityParam`. When biological
 Samples are present, QC/Blank do not establish a biological peak group; a
@@ -67,4 +96,4 @@ lipidgate project-run --project experiment.lipidgate
 
 Existing MS2 fragment definitions, admission rules, numeric scoring, ranking and
 the positive/negative main libraries remain unchanged. This update is based on
-main v1.0.9 and does not include the independent sphingolipid branch.
+main v1.1.0 and does not include the independent sphingolipid branch.

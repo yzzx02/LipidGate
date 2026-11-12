@@ -423,10 +423,11 @@ def test_real_project_detection_search_and_export(tmp_path, extra_ms1):
     feature, _, result = run_project(project.root, settings)
     assert feature.row_count > 0
     assert feature.native_table_path.exists()
-    assert result.passed_data.Annotation.tolist() == [m.name]
-    assert result.passed_data.Confidence.tolist() == ["高"]
+    matched = result.passed_data.loc[result.passed_data.Annotation.eq(m.name)]
+    assert len(matched) == 1 and matched.Confidence.tolist() == ["高"]
+    assert result.passed_data.Annotation.eq("unknown").any()
     assert result.data.ms1_support_status.tolist() == ["MS1-supported"]
-    assert result.passed_data.RT.iloc[0] == pytest.approx(40 / 60, abs=0.05)
+    assert matched.RT.iloc[0] == pytest.approx(40 / 60, abs=0.05)
     assert result.xlsx_path is None
     assert result.csv_path.exists()
     # A detected Na/H MS1 pair adds advisory evidence without changing the
@@ -446,4 +447,4 @@ def test_real_project_detection_search_and_export(tmp_path, extra_ms1):
     assert not list((result.output_dir.parent / 'ms2').rglob('*.csv'))
     assert not (result.output_dir / 'audit/models.csv').exists()
     assert not (result.output_dir / 'audit/anchors.csv').exists()
-    assert result.passed_data['MS/MS 碎片注释'].str.len().gt(0).all()
+    assert matched['MS/MS 碎片注释'].str.len().gt(0).all()

@@ -1,4 +1,4 @@
-"""Negative ether LPC: required demethylated ion, ordinary support and O/P names."""
+"""Negative ether LPC: half of the HG pool admits; remaining ions support."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -9,7 +9,10 @@ from .models import FragmentRecord, LibraryRecord
 C, H, N, O, P = 12.0, 1.00782503223, 14.00307400443, 15.99491461957, 30.97376199842
 ELECTRON = .000548579909
 NL89 = 4*C + 11*H + N + O  # Net C4H11NO loss from [M-CH3]-, not from the adduct.
+NL71 = 4*C + 9*H + N
 HG_NAME = "[M-CH3]-"
+HEADGROUP_HG_NAME = "[C4H11NO4P]-"
+HG_NAMES = frozenset({HG_NAME, HEADGROUP_HG_NAME})
 ADDUCTS = frozenset({"[M+HCOO]-", "[M+CH3COO]-", "[M+C2H3O2]-"})
 
 
@@ -48,8 +51,10 @@ def negative_lpc_fragments(name, precursor_mz, adduct, fragments=()):
 
     ions = [
         ion(P+3*O+ELECTRON, "[PO3]-"),
-        ion(4*C+11*H+N+4*O+P+ELECTRON, "[C4H11NO4P]-"),
+        ion(2*H+P+4*O+ELECTRON, "[H2PO4]-"),
+        ion(4*C+11*H+N+4*O+P+ELECTRON, HEADGROUP_HG_NAME, "Diagnostic_HG"),
         ion(7*C+15*H+N+5*O+P+ELECTRON, "[C7H15NO5P]-"),
+        ion(demethylated-NL71, "[M-CH3-C4H9N]-"),
         ion(demethylated-NL89, "[M-CH3-C4H11NO]-"),
         ion(ro, f"[R-O]-(O-{carbon}:{db})"),
         # The audited RO-H2 mass is ordinary support, without a mechanism,
@@ -58,6 +63,10 @@ def negative_lpc_fragments(name, precursor_mz, adduct, fragments=()):
         ion(demethylated, HG_NAME, "Diagnostic_HG", "hg"),
         replace(ion(float(precursor_mz), adduct, "Precursor Ion"), mz=float(precursor_mz)),
     ]
+    if adduct in {"[M+CH3COO]-", "[M+C2H3O2]-"}:
+        # Mishra et al. (2024), Table 4 / negative-mode supplemental spectra.
+        # Acetate is optional adduct support, not an ether/chain identifier.
+        ions.append(ion(2*C+3*H+2*O+ELECTRON, "[CH3COO]-"))
     return sorted(ions, key=lambda f: f.mz)
 
 

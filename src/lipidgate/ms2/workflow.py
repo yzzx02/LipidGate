@@ -340,7 +340,7 @@ def run_ms2_feature_annotation_result(
             progress("MS2 正在按原始 EIC 峰顶整理跨样本注释…")
         linked_df = annotate_chromatographic_membership(linked_df, mzml_paths,
                                                         mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da,
-                                                        native_features=feature_df)
+                                                        native_features=feature_df, progress=progress)
         linked_df = link_unmatched_by_eic_identity(feature_df, linked_df,
             mz_tol_ppm=float(precursor_tolerance_ppm), mz_tol_da=precursor_tolerance_da)
         linked_df = associate_ms2_with_alignment(linked_df, feature_df,
@@ -371,7 +371,8 @@ def run_ms2_feature_annotation_result(
     else:
         combined = deduplicate_fa_results(combined)
         combined = annotate_chromatographic_membership(combined, mzml_paths,
-                                                      mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da)
+                                                      mz_ppm=float(precursor_tolerance_ppm), mz_da=precursor_tolerance_da,
+                                                      progress=progress)
         if not audit_only:
             ms2_df = prepare_ms2_result_export_df(combined)
 

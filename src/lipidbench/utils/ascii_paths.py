@@ -10,12 +10,14 @@ from pathlib import Path
 
 
 def staging_parent(path: Path) -> Path | None:
-    """Prefer an ASCII location on the source volume for cheap hard links."""
+    """Prefer the nearest ASCII ancestor without writing to a volume root."""
     path = Path(path).resolve()
-    if str(path.parent).isascii():
-        return path.parent
-    anchor = Path(path.anchor)
-    return anchor if str(anchor).isascii() else None
+    for parent in path.parents:
+        if parent == Path(path.anchor):
+            break
+        if str(parent).isascii():
+            return parent
+    return None
 
 
 @contextmanager

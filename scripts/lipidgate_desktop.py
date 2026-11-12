@@ -313,6 +313,8 @@ def _project_self_test(app, window, arguments):
     for row, path in enumerate(project.files):
         metadata = project.metadata_for(path)
         table = window.import_page.files
+        assert table.item(row, 0).text() == str(row + 1)
+        assert not table.item(row, 0).flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable
         assert table.cellWidget(row, 2).currentText() == metadata['sample_type']
         assert table.item(row, 3).text() == metadata['group']
         assert table.cellWidget(row, 4).value() == metadata['batch']
@@ -335,45 +337,60 @@ def _project_self_test(app, window, arguments):
         if time.monotonic() >= deadline:
             raise TimeoutError("Named project restoration timed out")
         time.sleep(.002)
-    assert not page.bundle.features.empty and not page.bundle.candidates.empty
+    assert not page.bundle.features.empty
+    identified = page.bundle.features.loc[page.bundle.features._identified]
+    has_ms2 = not identified.empty
+    if has_ms2:
+        page.select_feature(identified.iloc[0]._key)
+        deadline = time.monotonic() + 60
+        while (page._jobs or any(thread is not None for thread in
+               (page._eic_thread, page._survey_thread, page._isotope_thread))
+               or any(timer.isActive() for timer in (page.eic_timer, page.survey_timer, page.isotope_timer))):
+            app.processEvents()
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Selected MS2 review timed out")
+            time.sleep(.002)
+        assert not page.bundle.candidates.empty
     assert len(page._all_eic_sources) == len(project.mzml_files())
     representatives = page.bundle.display_spectra(page.current_key)
     assert page.spectrum_choice.count() == len(representatives)
-    assert page.spectrum_choice.currentData() is not None
+    if has_ms2:
+        assert page.spectrum_choice.currentData() is not None
     assert page.eic_source.count() <= len(project.mzml_files())
     details = dict(page.detail.rows)
     assert not {"MS1 feature", "MS1 evidence", "原始峰顶范围"} & details.keys()
     assert "MS1 积分范围" in details
-    from lipidgate.gui.result_browser import isotope_display
-    from lipidgate.gui.result_data import number, text
-    saved = text(page.current_candidate.get("同位素"))
-    if saved:
-        # Saved measured windows intentionally avoid a second GUI read. Verify
-        # their source and request, then independently compare the raw survey.
-        import math
-        from lipidgate.result_tables import ISOTOPE_REQUEST_COLUMN, isotope_request
-        row = page.current_candidate
-        assert row[ISOTOPE_REQUEST_COLUMN] == isotope_request(row)
-        source = next(path for path in project.mzml_files()
-                      if path.name == Path(text(row.get("source_file"))).name)
-        target = number(row.get("precursor_ms1_mz"))
-        if not math.isfinite(target):
-            target = number(row.get("precursor_mz"))
-        raw = number(row.get("precursor_mz_raw"))
-        if not math.isfinite(raw):
-            raw = number(row.get("precursor_mz"))
-        isotope = page._eic_reader.read_isotopes(source, text(row.get("scan_id")),
-            number(row.get("rt_minutes")), target, text(row.get("adduct")), raw_mz=raw)
-        assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
-        measured = "; ".join(f"{peak['mz']:.6f}:{peak['relative_intensity']:.2f}%"
-                             for peak in isotope["peaks"])
-        assert details["同位素"] == saved == measured
-        assert row["同位素来源文件"] == source.name
-        assert abs(number(row["同位素 MS1 RT (min)"]) - isotope["rt_minutes"]) < 1e-9
-    else:
-        isotope = page._isotope_cache.get(page._isotope_current_key)
-        assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
-        assert details["同位素"] == isotope_display(isotope)[0]
+    if has_ms2:
+        from lipidgate.gui.result_browser import isotope_display
+        from lipidgate.gui.result_data import number, text
+        saved = text(page.current_candidate.get("同位素"))
+        if saved:
+            # Saved measured windows intentionally avoid a second GUI read. Verify
+            # their source and request, then independently compare the raw survey.
+            import math
+            from lipidgate.result_tables import ISOTOPE_REQUEST_COLUMN, isotope_request
+            row = page.current_candidate
+            assert row[ISOTOPE_REQUEST_COLUMN] == isotope_request(row)
+            source = next(path for path in project.mzml_files()
+                          if path.name == Path(text(row.get("source_file"))).name)
+            target = number(row.get("precursor_ms1_mz"))
+            if not math.isfinite(target):
+                target = number(row.get("precursor_mz"))
+            raw = number(row.get("precursor_mz_raw"))
+            if not math.isfinite(raw):
+                raw = number(row.get("precursor_mz"))
+            isotope = page._eic_reader.read_isotopes(source, text(row.get("scan_id")),
+                number(row.get("rt_minutes")), target, text(row.get("adduct")), raw_mz=raw)
+            assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
+            measured = "; ".join(f"{peak['mz']:.6f}:{peak['relative_intensity']:.2f}%"
+                                 for peak in isotope["peaks"])
+            assert details["同位素"] == saved == measured
+            assert row["同位素来源文件"] == source.name
+            assert abs(number(row["同位素 MS1 RT (min)"]) - isotope["rt_minutes"]) < 1e-9
+        else:
+            isotope = page._isotope_cache.get(page._isotope_current_key)
+            assert isotope and isotope.get("status") == "ok" and isotope.get("peaks"), isotope
+            assert details["同位素"] == isotope_display(isotope)[0]
     before = page.bundle.candidates.copy(deep=True)
     exports = args.project_check_dir / "exports"
     from lipidgate.result_file_io import read_result_table, sample_groups_for_result
@@ -390,12 +407,21 @@ def _project_self_test(app, window, arguments):
     for table in (features, candidates):
         assert not any("扫描" in str(column) or "scan" in str(column).lower() for column in table)
         assert "同位素详情 JSON" not in table
-    assert features["同位素"].notna().any()
-    assert features["MS/MS 碎片注释"].notna().any()
+    if has_ms2:
+        assert features["同位素"].notna().any()
+        assert features["MS/MS 碎片注释"].notna().any()
+    else:
+        assert features.Score.isna().all() and features["MS/MS 碎片注释"].isna().all()
+        assert features.Annotation.str.startswith("no MS2: ").any()
+        assert features.Annotation.map(lambda value: value == "unknown" or value.startswith("no MS2: ")).all()
+    assert all(path.name in features for path in project.mzml_files())
+    assert all(widget.buttonSymbols() == QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons
+               for widget in window.findChildren(QtWidgets.QAbstractSpinBox))
     assert not (exports / "spectrum_evidence.csv").exists()
     pd.testing.assert_frame_equal(page.bundle.candidates, before)
     print(json.dumps(dict(project_file_verified=True, new_project_verified=True,
-                          latest_result_restored=True, isotope_export_verified=True, isotope_detail_verified=True,
+                          latest_result_restored=True, isotope_export_verified=has_ms2, isotope_detail_verified=has_ms2,
+                          sample_metadata_verified=True, ms1_export_verified=True, ms1_result_review_verified=True,
                           feature_rows=len(features), isotope_rows=int(features["同位素"].notna().sum()),
                           evidence_rows=len(page.bundle.evidence_rows())), ensure_ascii=False), flush=True)
 

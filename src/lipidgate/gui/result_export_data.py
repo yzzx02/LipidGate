@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from lipidgate.feature_annotations import annotation_export_table
+from lipidgate.feature_annotation_fallback import optional_candidate_table
 from lipidgate.ms2.workbook_export import write_workbook
 from lipidgate.result_file_io import write_result_csv
 from lipidgate.result_tables import (
@@ -34,8 +34,7 @@ def export_browser_results(bundle, output_dir, *, feature_keys=None, csv=True,
                                      sample_groups=bundle.sample_groups or None)
         sheets = {RESULT_SHEET_NAME: table}
         if candidates:
-            annotations = bundle.annotations.loc[bundle.annotations._key.isin(features._key)]
-            sheets["特征候选"] = annotation_export_table(annotations).drop(columns="scan_id")
+            sheets["特征候选"] = optional_candidate_table(bundle, features._key)
         if csv:
             path = output_dir / RESULT_CSV_NAME
             write_result_csv(path, table)

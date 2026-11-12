@@ -1,0 +1,276 @@
+{
+  "revision": "lyso_hg_half_20261112",
+  "verified_at_utc": "2026-11-11T16:38:29.083740+00:00",
+  "release_status": "unreleased",
+  "base_application_version": "1.1.0",
+  "application_branch": "codex/unified-result-flow",
+  "release_version_changed": false,
+  "new_package_created": false,
+  "base_checkpoint": "config/library_revision_lyso_pools_negative_lpc_20261111.json",
+  "base_rules_sha256": "b57ce3e5dffa0130ba62e245a7afc8032a064e71e1293d213abc66cfe44208d4",
+  "ms2_rules_sha256": "76d1cb0a4349e6092c8daed179d7543aa5d8ce2d19147be91cebc1de9fc5a14c",
+  "product_code_sha256": "fcfacc7a383292b13849f04cfc2358101f9388fb80c0d6c336f97cbeef91f596",
+  "libraries": {
+    "positive": {
+      "source_path": "libraries\\ms2\\current_positive.msp.gz",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "source_archive_unchanged": true,
+      "index_records": 1254422,
+      "index_sha256": "6a92ebd8c393fb671b38de166e92b525f174a8709e27ece85fe79b6174d60b28",
+      "index_bytes": 74493952,
+      "rules_sha256": "76d1cb0a4349e6092c8daed179d7543aa5d8ce2d19147be91cebc1de9fc5a14c",
+      "fresh_parse_and_blockwise_roundtrip_verified": true,
+      "build_seconds": 783.18
+    },
+    "negative": {
+      "source_path": "libraries\\ms2\\current_negative.msp.gz",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "source_archive_unchanged": true,
+      "index_records": 1088179,
+      "index_sha256": "03c0519d4f38f1d5fa2d5a8a8c4ebcfb928b95235bca44bc36818f055d9d7ebf",
+      "index_bytes": 79134720,
+      "rules_sha256": "76d1cb0a4349e6092c8daed179d7543aa5d8ce2d19147be91cebc1de9fc5a14c",
+      "fresh_parse_and_blockwise_roundtrip_verified": true,
+      "build_seconds": 765.61
+    }
+  },
+  "admission": {
+    "default": "ceil(HG channel count / 2)",
+    "minimum_hg_fraction": 0.5,
+    "positive_common_lyso": true,
+    "negative_LPC_O": true,
+    "individual_HG_identity_mandatory": false,
+    "examples": {
+      "2": 1,
+      "3": 2,
+      "4": 2
+    },
+    "negative_LPC_O_HG": [
+      "[M-CH3]-",
+      "[C4H11NO4P]-168.0431"
+    ],
+    "positive_LPE_P_HG": [
+      "NL172.0136750",
+      "NL154.0031103"
+    ],
+    "positive_lyso_fah_only_bypass": false,
+    "other_gate": false,
+    "other_cannot_replace_HG": true,
+    "separate_extra_HG_strength_admission_cutoff": false,
+    "existing_complete_HG_chain_confirmation_kept_separate": true
+  },
+  "scoring": {
+    "HG": 60,
+    "Other": 40,
+    "FAH": 0,
+    "strongest_physical_HG_peak": true,
+    "other_saturation_unchanged": true
+  },
+  "preservation": {
+    "normalized_blocks_and_precursor_entries_byte_identical": {
+      "positive": {
+        "blocks": 1226,
+        "blocks_sha256": "df719dff9b90c2169268c7e6832952bd4d81d231de991e5ee029ba910d8445c5",
+        "entries": 1254422,
+        "entries_sha256": "7ec936ed7f0585a2b141772e16fb17d642a803c020cf4b0d7e0d2d5484561cf5"
+      },
+      "negative": {
+        "blocks": 1063,
+        "blocks_sha256": "b87241685794cbd6ceb8bd68ec54623d661e7c13ed6668571bdc3f9d1dff263f",
+        "entries": 1088179,
+        "entries_sha256": "2635f29b6f40323aae75f7963f4381b687d6e29e17a3f019ae7f64e9b08ebe64"
+      }
+    },
+    "fragment_membership_masses_names_source_order_and_identity_unchanged": true,
+    "other_negative_policies_unchanged": true,
+    "sphingolipid_policies_unchanged": true,
+    "original_source_archives_unchanged": true
+  },
+  "regression": {
+    "full_pytest_command": "python -m pytest -q --tb=short",
+    "full_pytest_passed": 1554,
+    "subtests_passed": 3118,
+    "pytest_seconds": 276.04,
+    "short_local_temp_root_used_for_Windows_path_limit": true,
+    "production_queries": [
+      {
+        "mode": "negative",
+        "case": "paper_like",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          99.0526
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "mode": "negative",
+        "case": "without_M_CH3",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          96.5714
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "mode": "negative",
+        "case": "168_only",
+        "native_reference_equal": true,
+        "accepted": 2,
+        "scores": [
+          60.0,
+          60.0
+        ],
+        "resolutions": [
+          "species_level",
+          "species_level"
+        ]
+      },
+      {
+        "mode": "negative",
+        "case": "M_CH3_only",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          60.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "mode": "negative",
+        "case": "no_HG",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "scores": [],
+        "resolutions": []
+      },
+      {
+        "mode": "positive",
+        "case": "LPEP_HG_172_only",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          60.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "mode": "positive",
+        "case": "LPEP_HG_154_only",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          60.0
+        ],
+        "resolutions": [
+          "species_level"
+        ]
+      },
+      {
+        "mode": "positive",
+        "case": "LPEP_both_HG",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "scores": [
+          60.0
+        ],
+        "resolutions": [
+          "chain_level"
+        ]
+      },
+      {
+        "mode": "positive",
+        "case": "LPEP_precursor_only",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "scores": [],
+        "resolutions": []
+      }
+    ],
+    "normalized_corpus": {
+      "positive": {
+        "records": 1861,
+        "half_HG_and_no_HG_verified": true,
+        "weights": {
+          "HG": 60,
+          "Other": 40
+        }
+      },
+      "negative": {
+        "records": 108,
+        "half_HG_and_no_HG_verified": true,
+        "weights": {
+          "HG": 60,
+          "Other": 40
+        }
+      }
+    }
+  },
+  "positive_literature": [
+    {
+      "doi": "10.1016/j.talanta.2016.10.045",
+      "year": 2017,
+      "authors": "Chen et al.",
+      "scope": "Fig.3 positive LPC/LPE/LPS standards; section3.2 positive LPG NL172.0137. LPA/LPI/LPG figure rows are negative."
+    },
+    {
+      "doi": "10.1016/j.aca.2021.339088",
+      "year": 2021,
+      "authors": "Morel et al.",
+      "scope": "Fig.1C LPE-P and Fig.1D LPE positive product-ion spectra."
+    },
+    {
+      "doi": "10.1016/j.chembiol.2018.10.008",
+      "year": 2019,
+      "authors": "Huynh et al.",
+      "scope": "Table1 ammoniated LPI NL277; STAR Methods LPI13:0 standard. Not a full LPI spectrum."
+    },
+    {
+      "doi": "10.1016/j.chroma.2011.05.081",
+      "year": 2011,
+      "authors": "Lisa et al.",
+      "scope": "Table1 protonated LPG NL172 and LPI NL260; not a full positive LPG/LPI standard spectrum."
+    }
+  ],
+  "literature_review_gaps": [
+    "LPA complete positive standard spectrum not directly verified; Murphy chapter5/Fig5.12 is a further reference lead only.",
+    "The retained LPG ammonium template NL172 product is not validated by protonated LPG NL172 literature.",
+    "The retained ordinary LPS second HG NL166.9984 is not directly established by the checked positive LPS spectra."
+  ],
+  "supplementary_table": {
+    "path": "build\\lyso-pools-negative-lpc-20261111\\outputs\\lipidgate-si-lyso-20261111\\LipidGate_Supplementary_Data_1.xlsx",
+    "sha256": "594a404ae7fcc276035ed97ed70a0a40033d77b9e38db7a4ff72fb8bc27c036b",
+    "bytes": 39692,
+    "classes": 167,
+    "searchable_records": 2342601,
+    "unique_full_species_names": 1729213,
+    "new_positive_reference_ids": [
+      "R112",
+      "R113"
+    ],
+    "half_HG_notes_updated": true,
+    "independent_readonly_verification": {
+      "output": "D:\\Vscode Projects\\LipidGate\\build\\main-ms1-20261111\\build\\lyso-pools-negative-lpc-20261111\\outputs\\lipidgate-si-lyso-20261111\\LipidGate_Supplementary_Data_1.xlsx",
+      "classes": 167,
+      "records": 2342601,
+      "unique_names": 1729213,
+      "totals_verified": true,
+      "unrelated_class_text_and_styles_preserved": true,
+      "original_references_preserved": true,
+      "columns_merges_panes_validations_and_charts_preserved": true,
+      "native_tables_extended": true,
+      "formula_errors": []
+    }
+  }
+}

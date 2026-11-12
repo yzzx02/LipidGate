@@ -44,9 +44,10 @@ from .models import FragmentRecord, LibraryRecord
 from .nae_precursor import normalize_nae_record
 from .negative_lpe import normalize_negative_lpe_record
 from .negative_lpc import normalize_negative_lpc_record
-from .positive_lpc_ether import normalize_positive_ether_lpc
+from .positive_lpc_ether import normalize_positive_ether_lpc, derived_plasmenyl_lpc_records
 from .positive_single_chain_h import normalize_protonated_single_chain_record
 from .positive_lpc_sodium import normalize_lpc_sodium
+from .positive_lps import normalize_positive_lps
 from .chain_labels import annotate_record_chain_labels
 from .provenance import sha256, code_fingerprint
 from .sphingolipid_naming import (
@@ -1025,7 +1026,7 @@ def load_excel_directory(directory: str | Path) -> List[LibraryRecord]:
             )
             next_id += 1
     return _expand_hydroxy_fa_sphingolipids([
-        normalize_protonated_single_chain_record(normalize_nae_record(record)) for record in records
+        normalize_positive_lps(normalize_protonated_single_chain_record(normalize_nae_record(record))) for record in records
     ])
 
 
@@ -1224,15 +1225,27 @@ def normalize_imported_record(record: LibraryRecord) -> LibraryRecord:
     normalized_fragments = _without_pi_ammonium_acyl_losses(
         compound_class, adduct, normalized_fragments,
     )
+    metadata = record.metadata
+    if compound_class == "LPS" and adduct == "[M+H]+":
+        normalized_lps = normalize_positive_lps(replace(
+            record, compound_class=compound_class, fragments=normalized_fragments,
+        ))
+        normalized_fragments = normalized_lps.fragments
+        metadata = normalized_lps.metadata
     return normalize_positive_ether_lpc(normalize_negative_lpc_record(normalize_negative_lpe_record(normalize_lpc_sodium(normalize_protonated_single_chain_record(normalize_nae_record(annotate_record_chain_labels(replace(record, compound_class=compound_class, lipid_name=lipid_name,
                    lipid_chain_name=lipid_chain_name,
+                   metadata=metadata,
                    fragments=sorted(normalized_fragments, key=lambda fragment: fragment.mz)))))))))
 
 
 def load_standard_msp(msp_path: str | Path, *, normalize: bool = True) -> List[LibraryRecord]:
     """Decode MSP; normalize=False exposes disk records for migration/audit."""
     records = list(iter_standard_msp_records(msp_path, normalize=normalize))
-    return _expand_hydroxy_fa_sphingolipids(records) if normalize else records
+    if not normalize:
+        return records
+    records = _expand_hydroxy_fa_sphingolipids(records)
+    next_id = max((record.record_id for record in records), default=-1) + 1
+    return records + list(derived_plasmenyl_lpc_records(records, next_id=next_id))
 
 
 def iter_standard_msp_records(msp_path: str | Path, *, normalize: bool = True) -> Iterator[LibraryRecord]:

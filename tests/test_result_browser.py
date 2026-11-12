@@ -7,6 +7,19 @@ import pandas as pd
 from lipidgate.result_file_io import read_result_table
 import pytest
 
+
+@pytest.mark.parametrize('confirmed', [False, True])
+@pytest.mark.parametrize('reason', ['no_ms1_feature_for_sample', 'no_ms1_feature_within_mz_tolerance'])
+def test_no_native_feature_is_not_detected_independently_of_precursor_confirmation(confirmed, reason):
+    from lipidgate.ms2.ms1_evidence import CONFIRMED_WITHOUT_FEATURE
+    from lipidgate.gui.result_data import ms1_feature_display
+
+    row = pd.Series(dict(ms1_support_status='MS1-supported' if confirmed else 'MS2-only',
+                         ms1_support_reason=CONFIRMED_WITHOUT_FEATURE if confirmed else reason,
+                         ms1_feature_link_reason=reason, Feature_ID=pd.NA))
+    assert ms1_feature_display(row) == 'Not detected'
+    assert row.Feature_ID is pd.NA
+
 from lipidgate.gui.result_data import (
     ResultBundle,
     class_color,
@@ -395,6 +408,11 @@ def test_run_browser_shows_passed_candidates_and_explicit_audit_keeps_rejections
         ("TG-EST", "GL"),
         ("FA", "FA"),
         ("CE", "ST"),
+        ("CDP-DG", "GP"), ("CE-PE", "GP"), ("LCE-PE", "GP"),
+        ("GPNAE", "GP"), ("PMeOH", "GP"), ("LPMeOH", "GP"),
+        ("LDGCC", "GL"), ("LDGTS", "GL"), ("SMGDG", "GL"),
+        ("APCS", "FA"), ("NAAsp", "FA"), ("VD", "ST"), ("CoQ4", "PR"),
+        ("PI-Cer", "SP"), ("Hex-IPC", "SP"), ("EtherOxPC", "GP"),
     ],
 )
 def test_class_colors_are_stable_and_family_based(cls, family):
@@ -405,7 +423,7 @@ def test_class_colors_are_stable_and_family_based(cls, family):
 def test_navigation_family_palette_is_colorblind_distinct():
     expected = {
         "GP": "#1f77b4", "SP": "#ff7f0e", "GL": "#2ca02c",
-        "FA": "#d62728", "ST": "#9467bd", "Other": "#7f7f7f",
+        "FA": "#d62728", "ST": "#9467bd", "PR": "#8c564b", "Other": "#7f7f7f",
     }
     from lipidgate.gui.result_data import FAMILY_COLORS
 
@@ -525,7 +543,8 @@ def exercise_workbench(tmp_path, monkeypatch):
         page.set_bundle(ResultBundle.from_frames(data, unannotated))
         app.processEvents()
         assert len(page.bundle.features) == 4
-        assert len(page.filtered) == 3
+        assert len(page.filtered) == 4
+        assert page.display_buttons[1].isChecked()
         assert page.display_buttons[0].text() == "已鉴定"
         assert [page.plot_tabs.tabText(i) for i in range(2)] == ["MS1 EIC", "MS2"]
         assert page.plot_tabs.currentWidget() is page.ms2_tab and page.eic_source.count() == 0
@@ -543,7 +562,7 @@ def exercise_workbench(tmp_path, monkeypatch):
         page.class_tree.itemDoubleClicked.emit(pc, 0)
         assert page.filtered.compound_class.tolist() == ["PC"]
         page.class_tree.itemDoubleClicked.emit(pc, 0)
-        assert len(page.filtered) == 3
+        assert len(page.filtered) == 4
         page.navigation.selected.emit("a.mzML|F1")
         app.processEvents()
         assert page.current_key == "a.mzML|F1" and page.candidates.rowCount() == 2

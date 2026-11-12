@@ -13,6 +13,7 @@ def number(value, minimum=0, maximum=1e9, decimals=2):
     widget.setRange(minimum, maximum)
     widget.setDecimals(decimals)
     widget.setValue(value)
+    widget.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
     return widget
 
 
@@ -57,17 +58,6 @@ class FeaturePage(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.enabled = _FeatureToggle("提取并对齐 MS1 特征")
         self.enabled.setChecked(True)
-        self.ms1_mode = QtWidgets.QComboBox()
-        self.ms1_mode.addItem("负模式", "negative")
-        self.ms1_mode.addItem("正模式", "positive")
-        self.candidate_search = QtWidgets.QCheckBox("检索一级质量候选")
-        self.candidate_search.setChecked(True)
-        self.candidate_ppm = number(10, .01, 1000)
-        self.candidate_max = QtWidgets.QSpinBox()
-        self.candidate_max.setRange(1, 1000)
-        self.candidate_max.setValue(10)
-        self.ms1_library = QtWidgets.QLineEdit(str(default_negative_msp()))
-        self.ms1_mode.currentIndexChanged.connect(self._ms1_mode_changed)
         self.algo = QtWidgets.QComboBox()
         self.algo.addItems(["pyopenms", "asari", "xcms", "msdial"])
         self.ms1_ppm = number(5, 0.1, 1000)
@@ -113,20 +103,6 @@ class FeaturePage(QtWidgets.QWidget):
         cards = QtWidgets.QVBoxLayout(self.parameters)
         cards.setContentsMargins(0, 0, 0, 0)
         cards.setSpacing(14)
-
-        self.ms1_candidate_card, grid = self._card("一级候选设置（无 MS2 时使用）")
-        grid.addWidget(self.candidate_search, 0, 0, 1, 2)
-        grid.addWidget(self._field("离子模式", self.ms1_mode), 1, 0)
-        grid.addWidget(self._field("候选质量容差", self.candidate_ppm, "ppm"), 1, 1)
-        grid.addWidget(self._field("每峰最多显示候选数", self.candidate_max), 2, 0)
-        library_row = path_row(self.ms1_library, [
-            ("选择", self._browse_ms1_library, "选择现有 MSP 或 SQLite 库"),
-            ("内置库", self._ms1_mode_changed, "使用当前离子模式的原有库")])
-        grid.addWidget(library_row, 3, 0, 1, 2)
-        note = QtWidgets.QLabel("输出标记为 MS1 候选，保留分子式、加合物和质量误差；不赋予 MS2 分数或链确认。关闭检索可只做峰检测与面积矩阵。")
-        note.setWordWrap(True)
-        grid.addWidget(note, 4, 0, 1, 2)
-        cards.addWidget(self.ms1_candidate_card)
 
         basic, grid = self._card("基础参数")
         algorithm = QtWidgets.QHBoxLayout()
@@ -190,7 +166,7 @@ class FeaturePage(QtWidgets.QWidget):
         labels.setSpacing(4)
         labels.addWidget(QtWidgets.QLabel("提取并对齐 MS1 特征"))
         description = QtWidgets.QLabel(
-            "设置特征检测算法与参数，用于后续 MS1 特征支持关联。"
+            "设置找峰和对齐参数，计算各样本的实测峰面积。"
         )
         description.setObjectName("ms1Muted")
         description.setWordWrap(True)
@@ -304,15 +280,6 @@ class FeaturePage(QtWidgets.QWidget):
         if path:
             self.msdial_table.setText(path)
 
-    def _ms1_mode_changed(self, *_args):
-        self.ms1_library.setText(str(default_positive_msp() if self.ms1_mode.currentData() == "positive" else default_negative_msp()))
-
-    def _browse_ms1_library(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "选择现有一级候选库", self.ms1_library.text(),
-            "现有谱库 (*.msp *.msp.gz *.sqlite)")
-        if path:
-            self.ms1_library.setText(path)
-
     def _on_algo_changed(self, algo):
         self.msdial_row.setEnabled(algo == "msdial")
         self.ms1_min_fraction.setEnabled(algo == "xcms")
@@ -417,9 +384,11 @@ class MS2Page(QtWidgets.QWidget):
         self.top_n = QtWidgets.QSpinBox()
         self.top_n.setRange(1, 50)
         self.top_n.setValue(DEFAULT_SEARCH_CONFIG.top_n)
+        self.top_n.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.workers = QtWidgets.QSpinBox()
         self.workers.setRange(1, 4)
         self.workers.setValue(1)
+        self.workers.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.workers.setToolTip("按 mzML 文件并行，最多 4 个。内置谱库按需读取；单文件始终串行。")
         self.worker_hint = QtWidgets.QLabel("默认使用 1 个进程。内置谱库按需读取候选，运行前会检查可用内存。")
         self.worker_hint.setWordWrap(True)

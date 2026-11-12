@@ -16,6 +16,29 @@ from lipidgate.ms2.feature_linking import (
 )
 
 
+def test_indexed_link_preserves_reference_ppm_edges_same_file_and_native_ties():
+    import numpy as np
+
+    observed, ppm = 500., 10.
+    edge = np.nextafter(observed / (1 - ppm * 1e-6), observed)
+    outside = observed / (1 - 10.01e-6)
+    features = pd.DataFrame([
+        dict(Feature_ID="wrong_sample", source_file="b.mzML", mz=observed, RT=5., RTmin=4.9, RTmax=5.1),
+        dict(Feature_ID="first", source_file="a.mzML", mz=edge, RT=5., RTmin=4.9, RTmax=5.1),
+        dict(Feature_ID="tie", source_file="a.mzML", mz=edge, RT=5., RTmin=4.9, RTmax=5.1),
+        dict(Feature_ID="outside", source_file="a.mzML", mz=outside, RT=5., RTmin=4.9, RTmax=5.1),
+    ])
+    spectra = pd.DataFrame([dict(source_file="A.MZML", precursor_mz=observed, rt_minutes=5., final_score=score)
+                            for score in (70., 99., 70.)])
+    linked = link_ms2_to_features(features, spectra, mz_tol_ppm=ppm)
+    assert linked.Feature_ID.tolist() == ["first"] * 3
+    assert linked.final_score.tolist() == [70., 99., 70.]
+    assert linked.mz_error_to_feature_ppm.abs().max() <= ppm
+    only_outside = link_ms2_to_features(features.iloc[[3]], spectra, mz_tol_ppm=ppm)
+    assert only_outside.Feature_ID.isna().all()
+    assert only_outside.ms1_feature_link_reason.eq("no_ms1_feature_within_mz_tolerance").all()
+
+
 def test_unique_native_eic_identity_links_a_tail_scan_without_widening_quantitation():
     features = pd.DataFrame([dict(Feature_ID="F1", Aligned_Feature_ID="A1", source_file="sample.mzML",
         mz=500., RT=5., RTmin=4.98, RTmax=5.08, RT_unit="minutes", intensity=1234.,

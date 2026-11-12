@@ -93,7 +93,7 @@ class PositiveCholineAlignmentTests(unittest.TestCase):
 
         self.assertEqual(
             {record.compound_class for record in records},
-            {"PC", "LPC", "LPC-O", "SM", "LSM"},
+            {"PC", "LPC", "LPC-O", "LPC-P", "SM", "LSM"},
         )
         for record in records:
             if record.compound_class == "LSM":
@@ -128,7 +128,7 @@ class PositiveCholineAlignmentTests(unittest.TestCase):
             },
         )
 
-    def test_lcb_and_pc_chain_losses_share_fah_pool_with_equal_positive_weights(self) -> None:
+    def test_pc_sm_keep_three_pools_and_lyso_lpc_uses_two_pools(self) -> None:
         with tempfile.TemporaryDirectory(prefix="lipidgate_choline_pool_") as tmp_dir:
             records = load_standard_msp(self._library_path(tmp_dir))
 
@@ -158,10 +158,12 @@ class PositiveCholineAlignmentTests(unittest.TestCase):
         self.assertEqual(_pool_for_fragment(by_class["SM"], sm_lcb), "fah")
         self.assertEqual(_pool_for_fragment(by_class["SM"], sm_common), "other")
         self.assertEqual(_pool_for_fragment(by_class["SM"], sm_hg), "hg")
-        for compound_class in ("PC", "LPC", "LPC-O", "SM", "LSM"):
+        for compound_class in ("PC", "LPC", "LPC-O", "LPC-P", "SM", "LSM"):
             record = by_class[compound_class]
             self.assertEqual(
                 _pool_weights_for_record(record, DEFAULT_RULES.get(compound_class)),
+                {"fah": 0.0, "hg": 60.0, "other": 40.0}
+                if compound_class.startswith("LPC") else
                 {"fah": 20.0, "hg": 60.0, "other": 20.0},
             )
 

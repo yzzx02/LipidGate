@@ -10,7 +10,8 @@ from .models import FragmentMatch, FragmentRecord, LibraryRecord
 from .negative_cer_hsu2016 import is_simple_negative_cer, logical_negative_cer_fragment_types
 from .negative_gm3 import is_negative_gm3
 from .negative_lpe import HG_NAMES as NEGATIVE_LPE_HG_NAMES, is_negative_lpe
-from .negative_lpc import HG_NAME as NEGATIVE_LPC_HG_NAME, is_negative_lpc
+from .negative_lpc import HG_NAMES as NEGATIVE_LPC_HG_NAMES, is_negative_lpc
+from .lysophospholipid_policy import is_positive_lysophospholipid
 from .positive_lpc_ether import HG_NAME as POSITIVE_LPC_HG_NAME, is_positive_ether_lpc
 from .negative_hexcer import is_negative_hexcer, logical_fragment_types
 from .oxidized_fragment_policy import parent_class_key, is_oxidized_precursor_water_loss
@@ -313,7 +314,7 @@ def _fragment_counts_as_hg(record: LibraryRecord, fragment: FragmentRecord) -> b
     if is_positive_ether_lpc(record):
         return fragment.fragment_type == "Diagnostic_HG" and fragment.name == POSITIVE_LPC_HG_NAME
     if is_negative_lpc(record):
-        return fragment.fragment_type == "Diagnostic_HG" and fragment.name == NEGATIVE_LPC_HG_NAME
+        return fragment.fragment_type == "Diagnostic_HG" and fragment.name in NEGATIVE_LPC_HG_NAMES
     if is_negative_lpe(record):
         return fragment.fragment_type == "Diagnostic_HG" and fragment.name in NEGATIVE_LPE_HG_NAMES
     if _is_positive_ps_record(record):
@@ -375,8 +376,10 @@ def _scoring_pools_for_fragment(
 @cached_fragment_fact(matched_independent=True)
 def _pool_for_scoring_fragment(record: LibraryRecord, fragment: FragmentRecord, *, matched: bool) -> str:
     if is_positive_ether_lpc(record):
-        if fragment.fragment_type == "Precursor Ion" and abs(fragment.mz-record.precursor_mz) <= 1e-6:
-            return "fah"  # Secondary precursor pool; no chain evidence or gate.
+        return "hg" if _fragment_counts_as_hg(record, fragment) else "other"
+    if is_positive_lysophospholipid(record):
+        # Retain source types for chain evidence and gates; their scoring
+        # contribution is now optional Other, including former FAH losses.
         return "hg" if _fragment_counts_as_hg(record, fragment) else "other"
     if is_negative_lpc(record):
         return "hg" if _fragment_counts_as_hg(record, fragment) else "other"

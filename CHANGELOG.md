@@ -2,7 +2,74 @@
 
 ## Unreleased
 
-## 1.1.0 — 2026-11-11
+- Read selected pyOpenMS inputs directly instead of staging the entire batch;
+  retain OpenMS's bounded alignment anchors and show MS1 substage progress.
+  Explicitly marked profile MS1 spectra are centroided with PeakPickerHiRes,
+  recording the preprocessing on the resulting native features.
+- Index same-file native masses and reuse per-spectrum link decisions, with
+  unchanged ppm predicates, native peak identity, boundaries and audit evidence.
+  Bound EIC caches and decode only requested preceding isotope surveys.
+- Display absent native detector features as `Not detected` for both confirmed
+  and unconfirmed precursors; raw EIC signal alone does not create a feature or
+  quantitative area. Show per-file progress during chromatographic membership.
+
+## 1.1.0 — 2026-11-12
+
+- Prepare a user-requested replacement of the existing v1.1.0 Windows and source
+  packages without changing the application version. Rebuild the native policies
+  and both library indexes, and preserve the preceding consolidated build manifest
+  in `config/history/release_v1.1.0_20261111_consolidated.json`.
+- Stage Unicode mzML inputs in the nearest ASCII ancestor instead of the drive
+  root, avoiding long temporary-directory retries under restricted permissions.
+  Unicode-path regression fixtures use copies without requiring hard-link rights.
+
+- Reduce ordinary protonated LPS to the approved four channels: HG NL185.0089;
+  optional Other NL105.0426, water loss and precursor. Remove the old NL166.9984
+  HG and two acylium channels, retaining HG/Other60/40, the half-HG admission
+  default and source provenance. Verify negative acyl LPA/LPI/LPG against
+  Chen et al. (2017), Fig.3: every shown channel is already present in all492
+  records; their negative fragment content and policies are unchanged.
+- Use the default half-HG admission rule for common positive lysophospholipids
+  and negative LPC-O: require ceil(HG channels / 2), with no mandatory individual
+  HG identity. Either negative LPC-O HG (168 or M-CH3) and either positive LPE-P
+  HG can admit. Keep complete-HG chain reporting separate; Other cannot rescue
+  missing HG. Remove the common positive lyso FAH-only admission exception.
+- Add positive-mode lyso literature with explicit figure/adduct scope: Chen
+  et al. (2017), Fig.3 and section3.2; Huynh et al. (2019), Table1 and standard
+  characterization. Reconcile the development SI library table and notes.
+- Extend positive lysophospholipid HG/Other 60/40 to LPA/LPG/LPI/LPS and
+  their existing ether forms. Move former FAH scoring channels to Other,
+  retaining source identities and chain-confirmation evidence separately
+  from scoring pools. HG admission follows the half-HG rule above.
+- Complete negative LPC-O support from Mishra et al. (2024), Table 4:
+  score m/z168.0431 and demethylated precursor in HG/Other 60/40, with either
+  of the two HG channels sufficient. Add phosphate, composition-dependent
+  C4H9N loss and acetate-only counterion support in Other. Rebuild both
+  indexes without rewriting the original compressed source libraries.
+- Use explicit HG/Other 60/40 for positive LPC/LPE, including O/P and sodium
+  forms, while preserving their admission gates. Route ether-LPC precursor
+  support to Other; add LPC-O m/z60.0808 and LPC-P m/z181.0260,240.0995 and
+  composition-dependent trimethylamine loss. Append traceable isobaric P
+  alternatives only from existing unsaturated O sources, preserving original
+  archives, source IDs and order.
+- Expand positive LPE glycerol/phosphate loss labels in the browser and main
+  export, distinguishing dehydrated glycerol from free glycerol. Preserve the
+  original library names, measured masses, evidence pools and scores.
+- Correct display families for modified phospholipids, lyso betaine lipids,
+  acyl amides, vitamin D and prenol lipids. Limit the left class tree and
+  navigation plot to MS2 annotations while keeping every measured main row.
+- Simplify sample import: numbered rows, direct cell editing and all listed files
+  included; remove bulk controls and numeric increment/decrement buttons.
+- Use the same detection, alignment, feature browser and main result schema for
+  every input. Preserve detected areas even without an accepted MS2 annotation,
+  and open the browser on all results, including MS1 candidates and unknowns.
+- Show accepted MS2 results first, tentative library precursor totals as
+  `no MS2: <total>`, and unmatched features as `unknown`. Mass candidates carry no
+  MS2 score or chain confirmation and never rescue a rejected MS2 gate.
+- Reuse the selected library and precursor tolerance for mass candidates. The
+  built-in read-only index is queried on demand without another full cache.
+
+### 2026-11-11 consolidated package
 
 - Consolidate the same-day result export changes into this release: one shared
   main table with 12 base columns, measured isotope text, matched MS/MS fragment

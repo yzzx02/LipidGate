@@ -1,0 +1,231 @@
+{
+  "revision": "lyso_pools_negative_lpc_20261111",
+  "verified_at_utc": "2026-11-11T16:13:34.340341+00:00",
+  "release_status": "unreleased",
+  "base_application_version": "1.1.0",
+  "application_branch": "codex/unified-result-flow",
+  "release_version_changed": false,
+  "base_rules_sha256": "6935639d1e2994caf3d85c237346a404eb428403e7eb5fa47aa0a0e9270c4de6",
+  "ms2_rules_sha256": "b57ce3e5dffa0130ba62e245a7afc8032a064e71e1293d213abc66cfe44208d4",
+  "product_code_sha256": "b7b65483ca053ea3d64f75979488ceca21d8eb9152f1f25364e83be7a16855ca",
+  "libraries": {
+    "positive": {
+      "source_path": "libraries\\ms2\\current_positive.msp.gz",
+      "source_sha256": "82ab61fcfb6bbd1ee8d0141049adabb134797b5f21ade10249c45f821a4e94af",
+      "source_bytes": 23894631,
+      "source_archive_unchanged": true,
+      "index_records": 1254422,
+      "index_sha256": "42743586545fe1eda28eb4328f3a265aab5eb9094ec0e694da7d5c567800f51d",
+      "index_bytes": 74493952,
+      "rules_sha256": "b57ce3e5dffa0130ba62e245a7afc8032a064e71e1293d213abc66cfe44208d4"
+    },
+    "negative": {
+      "source_path": "libraries\\ms2\\current_negative.msp.gz",
+      "source_sha256": "ae425b298d6cfcb99bb91e4b66e89d2dc77c458d47f1350d83e77299f965225a",
+      "source_bytes": 39394998,
+      "source_archive_unchanged": true,
+      "index_records": 1088179,
+      "index_sha256": "35c31d9f081d3522b4ae1e0974430972846e39ff5c1e826edabe013b3839573f",
+      "index_bytes": 79134720,
+      "rules_sha256": "b57ce3e5dffa0130ba62e245a7afc8032a064e71e1293d213abc66cfe44208d4"
+    }
+  },
+  "positive_scope": {
+    "classes": [
+      "LPA",
+      "LPA-O",
+      "LPC",
+      "LPC-O",
+      "LPC-P",
+      "LPE",
+      "LPE-O",
+      "LPE-P",
+      "LPG",
+      "LPG-O",
+      "LPI",
+      "LPI-O",
+      "LPS",
+      "LPS-O"
+    ],
+    "weights": {
+      "HG": 60,
+      "Other": 40
+    },
+    "all_revised_records": 1861,
+    "newly_affected_lpa_lpg_lpi_lps_records": 1036,
+    "former_fah_pool_records": 492,
+    "class_adduct_counts": {
+      "LPA-O [M+H]+": 54,
+      "LPA [M+H]+": 164,
+      "LPE [M+H]+": 164,
+      "LPG-O [M+H]+": 54,
+      "LPE [M+Na]+": 82,
+      "LPC-O [M+H]+": 54,
+      "LPS-O [M+H]+": 54,
+      "LPG [M+H]+": 164,
+      "LPC [M+H]+": 164,
+      "LPS [M+H]+": 164,
+      "LPG [M+NH4]+": 164,
+      "LPE-O [M+H]+": 138,
+      "LPE-P [M+H]+": 117,
+      "LPC-P [M+H]+": 29,
+      "LPI-O [M+NH4]+": 54,
+      "LPI [M+NH4]+": 164,
+      "LPC [M+Na]+": 77
+    },
+    "source_fragment_types_preserved": true,
+    "source_identities_and_stable_precursor_order_preserved": true,
+    "hg_requirements_unchanged": true,
+    "legacy_fah_only_exception_unchanged": true,
+    "reported_fah_pool_score": 0,
+    "new_other_admission_gate": false,
+    "prepared_scoring_note": "Records with the legacy FAH-only exception retain native matching and use the full shared reference gate decision."
+  },
+  "negative_scope": {
+    "classes": [
+      "LPC-O"
+    ],
+    "weights": {
+      "HG": 60,
+      "Other": 40
+    },
+    "records": 108,
+    "class_adduct_counts": {
+      "[M+HCOO]-": 54,
+      "[M+CH3COO]-": 54
+    },
+    "hg": [
+      "[M-CH3]-",
+      "[C4H11NO4P]-"
+    ],
+    "mandatory_hg": "[M-CH3]-",
+    "optional_hg_mz": 168.0431,
+    "hg_intensity": "single strongest physical matched peak",
+    "formate_fragment_count": 10,
+    "acetate_fragment_count": 11,
+    "hg_count": 2,
+    "formate_other_count": 8,
+    "acetate_other_count": 9,
+    "additional_fragment_definitions": 270,
+    "new_negative_records": 0,
+    "other_additions": [
+      "[H2PO4]-96.9696",
+      "[M-CH3-C4H9N]-; composition-dependent NL71.0735",
+      "[CH3COO]-59.0139; acetate adduct only"
+    ],
+    "other_gate": false,
+    "other_negative_lyso_policies_unchanged": true,
+    "negative_plasmenyl_grid_added": false
+  },
+  "regression": {
+    "full_pytest_command": "python -m pytest -q --tb=short",
+    "full_pytest_passed": 1519,
+    "subtests_passed": 3118,
+    "pytest_seconds": 426.19,
+    "real_positive_fragment_subsets": {
+      "checked": 679,
+      "changed_gate_decisions": 0,
+      "failures": [],
+      "changed_resolution_decisions": 0,
+      "resolution_examples": []
+    },
+    "native_reference_production_queries": [
+      {
+        "case": "paper_like",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "annotations": [
+          "LPC(O-18:1)/LPC(P-18:0)"
+        ],
+        "scores": [
+          99.0526
+        ]
+      },
+      {
+        "case": "missing_demethylated",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "annotations": [],
+        "scores": []
+      },
+      {
+        "case": "168_only",
+        "native_reference_equal": true,
+        "accepted": 0,
+        "annotations": [],
+        "scores": []
+      },
+      {
+        "case": "demethylated_only",
+        "native_reference_equal": true,
+        "accepted": 1,
+        "annotations": [
+          "LPC(O-18:1)/LPC(P-18:0)"
+        ],
+        "scores": [
+          60.0
+        ]
+      }
+    ],
+    "all_1861_positive_pool_configurations_verified": true,
+    "all_108_negative_lpc_pool_configurations_verified": true,
+    "both_index_builds_blockwise_roundtrip_and_stable_sort_verified": true,
+    "repository_hygiene_problems": 0
+  },
+  "supplementary_data_1": {
+    "output_path": "build/lyso-pools-negative-lpc-20261111/outputs/lipidgate-si-lyso-20261111/LipidGate_Supplementary_Data_1.xlsx",
+    "sha256": "cf98055d02f84d4384492eac3e4356ee7fbaba5668c3f5b0f558d536e63b1141",
+    "bytes": 39072,
+    "template": "LipidGate_Supplementary_Data_1.xlsx (v1.0.8, 2026-10-28)",
+    "primary_count_basis": "normalized searchable precursor records, not fragment peaks or experimental standards",
+    "primary_totals": {
+      "classes": 167,
+      "records": 2342601,
+      "unique_names": 1729213,
+      "mode_records": {
+        "positive": 1254422,
+        "negative": 1088179
+      },
+      "fragments": 20735400
+    },
+    "raw_archive_totals": {
+      "classes": 166,
+      "records": 2330152,
+      "unique_names": 1726592,
+      "mode_records": {
+        "positive": 1241973,
+        "negative": 1088179
+      },
+      "fragments": 18095022
+    },
+    "new_references": 6,
+    "original_unrelated_class_text_styles_and_reference_rows_preserved": true
+  },
+  "references": [
+    {
+      "doi": "10.1016/j.jlr.2024.100600",
+      "scope": "LPC-O positive Fig2/Table3, negative Table4; 71/89 losses follow actual chain composition"
+    },
+    {
+      "doi": "10.1016/S1044-0305(99)00158-0",
+      "scope": "LPC/ether-LPC positive Fig2, negative Fig5, plasmenyl Fig7"
+    },
+    {
+      "doi": "10.1016/j.aca.2021.339088",
+      "scope": "LPE-P positive Fig1C, LPE positive Fig1D, section3.1/SchemeS1"
+    },
+    {
+      "doi": "10.1093/oxfordjournals.jbchem.a124600",
+      "scope": "Positive LSIMS LPE/LPE-P Fig5 and LPS Fig6; no transfer of instrument-specific intensities"
+    },
+    {
+      "doi": "10.1016/j.chroma.2011.05.081",
+      "scope": "Protonated LPG NL172/LPI NL260 Table1; not ammonium-template validation"
+    },
+    {
+      "doi": "10.1021/acs.analchem.5b00410",
+      "scope": "LPI/LPS negative standard spectra Fig1; sodium LPC/LPE positive experiments kept distinct"
+    }
+  ],
+  "weighting_provenance": "60/40 is a user-approved LipidGate method choice, not a literature-derived optimum."
+}

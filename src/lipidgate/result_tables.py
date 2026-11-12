@@ -9,6 +9,8 @@ from lipidgate.feature_annotations import CONSENSUS_LABELS, measured_feature_are
 from lipidgate.ms2.isotope_export import ISOTOPE_RESULT_COLUMNS, STATUS_LABELS, isotope_export_fields
 from lipidgate.ms2.result_export import prepare_ms2_result_export_df
 from lipidgate.result_file_io import UNGROUPED, sample_groups_for_result
+from lipidgate.feature_annotation_fallback import annotation_display
+from lipidgate.fragment_labels import fragment_text
 
 
 RESULT_CSV_NAME = "final_identifications.csv"
@@ -113,7 +115,20 @@ def feature_result_table(features, result_path=None, *, isotope_fields=None, sam
         ("MS/MS 碎片注释", "matched_fragments"),
     ):
         result[title] = values(column)
+    result["MS/MS 碎片注释"] = [fragment_text(value, lipid_class)
+        for value, lipid_class in zip(result["MS/MS 碎片注释"], values("compound_class"))]
     result["注释水平"] = prepare_ms2_result_export_df(features)["注释水平"].to_numpy()
+    result["Annotation"] = features.apply(annotation_display, axis=1) if not features.empty else pd.Series(dtype=str)
+    mass_names = values("ms1_candidate_name").fillna("")
+    mass_only = ~values("_identified", False).eq(True) & mass_names.ne("")
+    unannotated = ~values("_identified", False).eq(True) & ~mass_only
+    result.loc[mass_only, "Confidence"] = "no MS2"
+    result.loc[mass_only, "注释水平"] = "总组成候选"
+    formula_only = mass_only & values("ms1_candidate_resolution").eq("class_formula")
+    result.loc[formula_only, "注释水平"] = "分子式候选"
+    result.loc[unannotated, "注释水平"] = ""
+    result.loc[mass_only | unannotated, "Score"] = float("nan")
+    result.loc[mass_only | unannotated, "MS/MS 碎片注释"] = ""
     groups = sample_groups if sample_groups is not None else sample_groups_for_result(result_path)
     areas = _sample_areas(features, groups)
     available = pd.DataFrame(areas, index=features.index).notna().any(axis=1)
@@ -127,9 +142,13 @@ def feature_result_table(features, result_path=None, *, isotope_fields=None, sam
             result.loc[index, "鉴定提示"] = row["鉴定提示"]
             continue
         notes = [str(result.loc[index, "鉴定提示"]).strip("；")]
-        identified = str(row.get("matched_name", "")).strip() not in {"", "nan", "None"}
+        identified = bool(row.get("_identified", False))
         if not identified:
-            notes.append("未鉴定")
+            if mass_only.loc[index]:
+                count = pd.to_numeric(row.get("ms1_candidate_count"), errors="coerce")
+                notes.append(f"一级质量候选 {int(count)} 个，未经 MS2 确认" if pd.notna(count) and count > 1 else "仅一级质量匹配")
+            else:
+                notes.append("未鉴定")
         elif not available.loc[index]:
             if ms1_feature_display(row) in {"Linked", "Detected"}:
                 notes.append("检测峰未记录面积")

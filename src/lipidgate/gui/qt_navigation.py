@@ -469,7 +469,7 @@ class NavigationPlot(QtWidgets.QWidget):
         for row in self.rows:
             family = family_for(row["compound_class"])
             families.setdefault(family, FAMILY_COLORS[family])
-        self.legend = [(name, families[name]) for name in ("GP", "SP", "GL", "FA", "ST", "Other") if name in families]
+        self.legend = [(name, families[name]) for name in ("GP", "SP", "GL", "FA", "ST", "PR", "Other") if name in families]
         if not valid.empty:
             x0, x1 = float(valid._rt.min()), float(valid._rt.max())
             y0, y1 = float(valid._mz.min()), float(valid._mz.max())

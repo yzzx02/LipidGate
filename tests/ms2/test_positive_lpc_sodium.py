@@ -34,7 +34,7 @@ def test_lpc_sodium_exact_masses_roles_and_mandatory_nl59():
         mass, role = expected[fragment.name]
         assert fragment.mz == pytest.approx(mass, abs=1e-6)
         assert fragment.fragment_type == role
-    assert _pool_weights_for_record(r, DEFAULT_RULES.get("LPC")) == {"fah": 0., "hg": 75., "other": 25.}
+    assert _pool_weights_for_record(r, DEFAULT_RULES.get("LPC")) == {"fah": 0., "hg": 60., "other": 40.}
     def score(fragments):
         spectrum = ExperimentalSpectrum("lpc", r.precursor_mz, 5., "+",
             normalize_peaks([(fragment.mz, 1000.) for fragment in fragments]))
@@ -44,7 +44,7 @@ def test_lpc_sodium_exact_masses_roles_and_mandatory_nl59():
     ordinary = [f for f in r.fragments if f.fragment_type != "Diagnostic_HG"]
     assert not score(ordinary).passed_required_gates
     hg_only = score([f for f in r.fragments if f.fragment_type == "Diagnostic_HG"])
-    assert hg_only.passed_required_gates and hg_only.total_score == 75.
+    assert hg_only.passed_required_gates and hg_only.total_score == 60.
 
 
 def test_lpc_sodium_has_no_sn_position_claim_or_unrequested_chain_ions():

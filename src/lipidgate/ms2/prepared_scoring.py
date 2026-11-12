@@ -11,6 +11,7 @@ from .chain_utils import chain_token_counts, extract_chain_tokens, extract_fragm
 from .models import CandidateScore, FragmentRecord, LibraryRecord
 from .negative_lpc import is_negative_lpc
 from .positive_lpc_ether import is_positive_ether_lpc
+from .lysophospholipid_policy import is_positive_lysophospholipid
 from .native_bridge import load_bridge
 from .record_facts import cached_rule_fact, with_record_facts, get_native_query
 from . import native_engine
@@ -24,7 +25,7 @@ from .resolution_policy import (
 
 
 CLASSES = frozenset({'PC','PCO','PCP','PE','PEO','PG','PGO','PI','PIO','PA','PAO','PS','PSO',
-                     'LPC','LPCO','LPE','LPEO','LPEP','LPG','LPGO','LPI','LPIO','LPA','LPAO','LPS'})
+                     'LPC','LPCO','LPCP','LPE','LPEO','LPEP','LPG','LPGO','LPI','LPIO','LPA','LPAO','LPS'})
 ADDUCTS = frozenset({'[M+H]+','[M-H]-','[M+CH3COO]-','[M+HCOO]-'})
 _NATIVE_RESOLUTIONS = ('class_level', 'species_level', 'chain_level',
                        'tentative_species_level', 'tentative_chain_level')
@@ -147,6 +148,7 @@ def _prepare(record, rule):
     if ((not glyceride and (key not in CLASSES or record.adduct not in ADDUCTS)) or len(record.fragments) > 64
             or len({id(f) for f in record.fragments}) != len(record.fragments)
             or is_negative_lpc(record) or is_positive_ether_lpc(record)
+            or is_positive_lysophospholipid(record)
             or r._requires_precursor_fragment(record) or r.oxidized_chain_requirements(record) is not None):
         return None
     derived = r._derive_required_groups(record, rule)

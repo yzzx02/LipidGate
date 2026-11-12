@@ -5,6 +5,7 @@ from pathlib import Path
 from statistics import median
 from typing import Iterable, Sequence
 
+import numpy as np
 import pandas as pd
 from lipidbench.utils.ascii_paths import ascii_mzml_path
 from .ms1_evidence import confirmed_ms1_precursor, restore_ms1_support
@@ -242,6 +243,59 @@ def _attach_native_feature(out, index, best, link_rt, source, reason, observed_m
     out.at[index, "ms1_feature_link_reason"] = reason
 
 
+class _FeatureMassIndex:
+    """Search native peaks by file and mass, retaining their original tie order.
+
+    The index only narrows the search. Callers still apply the original exact
+    mass/RT predicates, including the reference-mass denominator for ppm links.
+    """
+
+    def __init__(self, features):
+        self.features = features
+        self.masses = pd.to_numeric(features["_feature_mz"], errors="coerce").to_numpy(dtype=float)
+        self.by_source = {}
+        if "_source_file" in features:
+            sources = features["_source_file"].map(lambda value: Path(str(value)).name.casefold())
+            groups = sources.groupby(sources, sort=False).groups
+        else:
+            groups = {None: np.arange(len(features))}
+        self.has_sources = "_source_file" in features
+        for source, positions in groups.items():
+            positions = np.asarray(positions, dtype=np.intp)
+            order = np.argsort(self.masses[positions], kind="stable")
+            positions = positions[order]
+            self.by_source[source] = (self.masses[positions], positions)
+
+    def has_source(self, source):
+        return not self.has_sources or source in self.by_source
+
+    def positions(self, source, mass, ppm, da=None, *, reference_ppm=True):
+        entry = self.by_source.get(source if self.has_sources else None)
+        if entry is None:
+            return np.empty(0, dtype=np.intp)
+        masses, positions = entry
+        fraction = float(ppm) * 1e-6
+        if da is not None:
+            lower, upper = mass - da, mass + da
+        elif reference_ppm and mass > 0 and 0 <= fraction < 1:
+            lower, upper = mass / (1 + fraction), mass / (1 - fraction)
+        elif not reference_ppm:
+            lower, upper = mass - mass * fraction, mass + mass * fraction
+        else:
+            return np.sort(positions)
+        # Include floating-point boundary neighbors, then recheck the exact
+        # original predicate in the caller. This does not widen the tolerance.
+        lower = np.nextafter(lower, -np.inf)
+        upper = np.nextafter(upper, np.inf)
+        left = np.searchsorted(masses, lower, side="left")
+        right = np.searchsorted(masses, upper, side="right")
+        return np.sort(positions[left:right])
+
+    def candidates(self, source, mass, ppm, da=None, *, reference_ppm=True):
+        positions = self.positions(source, mass, ppm, da, reference_ppm=reference_ppm)
+        return self.features.iloc[positions]
+
+
 def link_unmatched_by_eic_identity(feature_df, candidates, *, mz_tol_ppm=10., mz_tol_da=None):
     """Associate only one same-file native feature with the exact measured apex.
 
@@ -256,6 +310,8 @@ def link_unmatched_by_eic_identity(feature_df, candidates, *, mz_tol_ppm=10., mz
         return candidates
     work = _feature_work_table(feature_df)
     work["_observed_apex"] = pd.to_numeric(work._observed_apex_sec, errors="coerce") / 60.
+    mass_index = _FeatureMassIndex(work)
+    decisions = {}
     out = candidates.copy()
     local = out.get("Feature_ID", pd.Series("", index=out.index)).fillna("").astype(str).str.strip()
     for index, row in out.loc[local.eq("")].iterrows():
@@ -265,14 +321,19 @@ def link_unmatched_by_eic_identity(feature_df, candidates, *, mz_tol_ppm=10., mz
         mass = pd.to_numeric(row["precursor_mz"], errors="coerce")
         if not math.isfinite(apex) or not math.isfinite(mass) or mass <= 0:
             continue
-        same_file = work._source_file.map(lambda source: Path(str(source)).name.casefold()).eq(Path(str(row.source_file)).name.casefold())
-        tolerance = mz_tol_da if mz_tol_da is not None else mass * mz_tol_ppm * 1e-6
-        matches = work.loc[same_file & (pd.to_numeric(work._feature_mz) - mass).abs().le(tolerance)
-                           & (work._observed_apex - apex).abs().lt(1e-6)]
-        if len(matches) != 1:
-            continue
-        best = matches.iloc[0]
-        if str(best.get("_boundary_method")) == "unresolved_detector_bounds":
+        source = Path(str(row.source_file)).name.casefold()
+        key = (source, float(mass), float(apex))
+        if key not in decisions:
+            nearby = mass_index.candidates(source, mass, mz_tol_ppm, mz_tol_da, reference_ppm=False)
+            tolerance = mz_tol_da if mz_tol_da is not None else mass * mz_tol_ppm * 1e-6
+            matches = nearby.loc[(pd.to_numeric(nearby._feature_mz) - mass).abs().le(tolerance)
+                                 & (nearby._observed_apex - apex).abs().lt(1e-6)]
+            best = matches.iloc[0] if len(matches) == 1 else None
+            if best is not None and str(best.get("_boundary_method")) == "unresolved_detector_bounds":
+                best = None
+            decisions[key] = best
+        best = decisions[key]
+        if best is None:
             continue
         if "ms1_initial_link_reason" not in out:
             out["ms1_initial_link_reason"] = pd.Series(pd.NA, index=out.index, dtype=object)
@@ -332,19 +393,18 @@ def link_ms2_to_features(
         return _finish_feature_links(out)
 
     ms2_mz_col, ms2_rt_col = _ms2_numeric_columns(out)
-    feature_mz = pd.to_numeric(features["_feature_mz"], errors="coerce")
-    feature_rt = pd.to_numeric(features["_feature_rt"], errors="coerce")
-    feature_rtmin = pd.to_numeric(features["_feature_rtmin"], errors="coerce")
-    feature_rtmax = pd.to_numeric(features["_feature_rtmax"], errors="coerce")
-    has_bounds = feature_rtmin.notna() & feature_rtmax.notna()
+    feature_mz, feature_rt, feature_rtmin, feature_rtmax = (
+        pd.to_numeric(features[column], errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+        for column in ("_feature_mz", "_feature_rt", "_feature_rtmin", "_feature_rtmax")
+    )
+    has_bounds = ~np.isnan(feature_rtmin) & ~np.isnan(feature_rtmax)
+    feature_records = features.to_dict("records")
     ms2_masses = pd.to_numeric(out[ms2_mz_col], errors="coerce")
     ms2_times = pd.to_numeric(out[ms2_rt_col], errors="coerce")
     if "ms2_rt_raw_min" in out:
         ms2_times = pd.to_numeric(out["ms2_rt_raw_min"], errors="coerce").fillna(ms2_times)
-    feature_sources = (
-        features["_source_file"].map(lambda value: Path(str(value)).name.casefold())
-        if "_source_file" in features else None
-    )
+    mass_index = _FeatureMassIndex(features)
+    decisions = {}
     window_min = float(rt_window_sec) / 60.0
     mz_tol_ppm = float(mz_tol_ppm)
     rt_window_sec = max(float(rt_window_sec), 1e-9)
@@ -356,47 +416,65 @@ def link_ms2_to_features(
             continue
         use_precursor_scan = confirmed_ms1_precursor(row)
         link_rt = float(row["precursor_ms1_rt_raw_min"]) if use_precursor_scan else float(ms2_rt)
-
-        ppm_errors = ((float(ms2_mz) - feature_mz) / feature_mz) * 1e6
-        mz_ok = ((float(ms2_mz) - feature_mz).abs() <= mz_tol_da
-                 if mz_tol_da is not None else ppm_errors.abs() <= mz_tol_ppm)
-        if feature_sources is not None:
-            source_name = Path(str(row.get("source_file", ""))).name.casefold()
-            same_source = feature_sources.eq(source_name)
-            if not same_source.any():
-                out.at[row_index, "ms1_support_reason"] = "no_ms1_feature_for_sample"
-                continue
-            mz_ok &= same_source
+        source_name = Path(str(row.get("source_file", ""))).name.casefold()
+        key = (source_name, float(ms2_mz), link_rt, use_precursor_scan)
+        if key in decisions:
+            best, reason = decisions[key]
+            if best is None:
+                out.at[row_index, "ms1_support_reason"] = reason
+            else:
+                _attach_native_feature(out, row_index, best, link_rt,
+                                       "confirmed_precursor_ms1_scan" if use_precursor_scan else "ms2_scan",
+                                       reason, float(ms2_mz), float(ms2_rt))
+            continue
+        if not mass_index.has_source(source_name):
+            reason = "no_ms1_feature_for_sample"
+            out.at[row_index, "ms1_support_reason"] = reason
+            decisions[key] = (None, reason)
+            continue
+        nearby = mass_index.positions(source_name, float(ms2_mz), mz_tol_ppm, mz_tol_da)
+        nearby_mz = feature_mz[nearby]
+        ppm_errors = ((float(ms2_mz) - nearby_mz) / nearby_mz) * 1e6
+        mz_ok = (np.abs(float(ms2_mz) - nearby_mz) <= mz_tol_da
+                 if mz_tol_da is not None else np.abs(ppm_errors) <= mz_tol_ppm)
         if not mz_ok.any():
-            out.at[row_index, "ms1_support_reason"] = "no_ms1_feature_within_mz_tolerance"
+            reason = "no_ms1_feature_within_mz_tolerance"
+            out.at[row_index, "ms1_support_reason"] = reason
+            decisions[key] = (None, reason)
             continue
 
-        rt_ok_with_bounds = has_bounds & (link_rt >= feature_rtmin) & (link_rt <= feature_rtmax)
-        rt_ok_without_bounds = (~has_bounds) & feature_rt.notna() & ((feature_rt - link_rt).abs() <= window_min)
+        bounds = has_bounds[nearby]
+        apexes = feature_rt[nearby]
+        rt_ok_with_bounds = bounds & (link_rt >= feature_rtmin[nearby]) & (link_rt <= feature_rtmax[nearby])
+        rt_ok_without_bounds = (~bounds) & ~np.isnan(apexes) & (np.abs(apexes - link_rt) <= window_min)
         rt_ok = rt_ok_with_bounds | rt_ok_without_bounds
 
-        candidates = features.loc[mz_ok & rt_ok].copy()
-        if candidates.empty:
-            out.at[row_index, "ms1_support_reason"] = (
-                "ms2_outside_ms1_peak_bounds" if has_bounds.loc[mz_ok].all()
+        valid = mz_ok & rt_ok
+        if not valid.any():
+            reason = (
+                "ms2_outside_ms1_peak_bounds" if bounds[mz_ok].all()
                 else "ms2_outside_ms1_rt_window"
             )
+            out.at[row_index, "ms1_support_reason"] = reason
+            decisions[key] = (None, reason)
             continue
 
-        candidate_ppm_errors = ppm_errors.loc[candidates.index]
-        rt_deltas = (pd.to_numeric(candidates["_feature_rt"], errors="coerce") - link_rt).abs() * 60.0
-        rt_deltas = rt_deltas.fillna(0.0)
-        candidates["_mz_error_abs_ppm"] = candidate_ppm_errors.abs()
-        candidates["_rt_delta_sec"] = rt_deltas
-        mass_distance = ((float(ms2_mz) - feature_mz.loc[candidates.index]).abs() / mz_tol_da
-                         if mz_tol_da is not None else candidates["_mz_error_abs_ppm"] / mz_tol_ppm)
-        candidates["_distance"] = mass_distance + (rt_deltas / rt_window_sec)
-        candidates.sort_values(["_distance", "_mz_error_abs_ppm", "_rt_delta_sec"], inplace=True)
-        best = candidates.iloc[0]
+        positions = nearby[valid]
+        errors = np.abs(ppm_errors[valid])
+        rt_deltas = np.abs(feature_rt[positions] - link_rt) * 60.0
+        rt_deltas[np.isnan(rt_deltas)] = 0.0
+        mass_distance = (np.abs(float(ms2_mz) - feature_mz[positions]) / mz_tol_da
+                         if mz_tol_da is not None else errors / mz_tol_ppm)
+        distance = mass_distance + rt_deltas / rt_window_sec
+        # pandas' previous multi-column sort retained native order on ties.
+        order = np.lexsort((positions, rt_deltas, errors, distance))
+        best_position = int(positions[order[0]])
+        best = feature_records[best_position]
         reason = (
-            "feature_precursor_ms1_bounds_match" if use_precursor_scan and has_bounds.loc[best.name]
-            else "feature_bounds_match" if has_bounds.loc[best.name] else "feature_rt_window_match"
+            "feature_precursor_ms1_bounds_match" if use_precursor_scan and has_bounds[best_position]
+            else "feature_bounds_match" if has_bounds[best_position] else "feature_rt_window_match"
         )
+        decisions[key] = (best, reason)
         _attach_native_feature(out, row_index, best, link_rt,
                                "confirmed_precursor_ms1_scan" if use_precursor_scan else "ms2_scan",
                                reason, float(ms2_mz), float(ms2_rt))

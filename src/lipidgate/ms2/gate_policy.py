@@ -52,6 +52,7 @@ from .oxidized_chain_evidence import oxidized_chain_requirements, oxidized_chain
 from .positive_gm3 import is_positive_gm3
 from .negative_lpe import is_negative_lpe
 from .negative_lpc import is_negative_lpc
+from .lysophospholipid_policy import is_positive_lysophospholipid
 from .positive_lpc_ether import is_positive_ether_lpc
 from .positive_pc_sodium import is_positive_pc_sodium, HG_NAMES as PC_SODIUM_HG_NAMES
 from .positive_pe_cer import is_positive_pe_cer, from_name as pe_cer_from_name
@@ -352,7 +353,9 @@ def required_negative_hg_hits(
 ) -> int:
     if hg_fragment_count <= 0:
         return 0
-    if is_negative_lpe(record) or is_negative_lpc(record):
+    if is_negative_lpc(record):
+        return max(1, math.ceil(hg_fragment_count / 2))
+    if is_negative_lpe(record):
         return 1
     configured_minimum = max(int(getattr(rule, "negative_hg_min_matches", 0)), 0)
     if configured_minimum > 0:
@@ -450,6 +453,8 @@ def fah_only_low_confidence_gate_passes(
     missing_groups: Sequence[str] | None = None,
     has_hg_or_structural_pool: bool | None = None,
 ) -> bool:
+    if is_positive_lysophospholipid(record):
+        return False
     if is_positive_pc_sodium(record) or is_positive_pe_sodium(record) or is_positive_pep(record):
         return False
     if not _is_positive_adduct(record.adduct):
@@ -524,7 +529,10 @@ def missing_required_groups(
     matches: Sequence[FragmentMatch],
 ) -> List[str]:
     missing = []
-    if is_negative_lpc(record) or is_positive_ether_lpc(record):
+    if is_negative_lpc(record):
+        required = required_negative_hg_hits(record, hg_fragment_count, rule)
+        return [] if _matched_hg_fragment_count(record, matches) >= required else ["hg"]
+    if is_positive_ether_lpc(record):
         return [] if _matched_hg_fragment_count(record, matches) >= 1 else ["hg"]
     if is_negative_lpe(record):
         if not any(m.fragment.fragment_type == "Precursor Ion"

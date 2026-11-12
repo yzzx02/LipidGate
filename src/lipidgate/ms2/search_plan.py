@@ -17,6 +17,7 @@ from .chain_utils import extract_fragment_chain_token
 from .esterified_ceramide import is_esterified_ceramide
 from .negative_lpe import is_negative_lpe
 from .negative_lpc import is_negative_lpc
+from .lysophospholipid_policy import is_positive_lysophospholipid
 from .positive_lpc_ether import is_positive_ether_lpc
 from .evidence_policy import (
     LOSS_FRAGMENT_TYPES, POSITIVE_GLYCERIDE_RCO_GATE_CLASSES,
@@ -126,7 +127,14 @@ def evidence_program(record):
     """Compile only checks that every emitted result must satisfy."""
     if len(record.fragments) > 64:
         return ACCEPT
-    if is_negative_lpc(record) or is_positive_ether_lpc(record):
+    if is_negative_lpc(record):
+        hg = _mask(record, lambda f: _fragment_counts_as_hg(record, f))
+        return _and(ACCEPT, hg, max(1, math.ceil(hg.bit_count() / 2)))
+    if is_positive_lysophospholipid(record):
+        hg = _mask(record, lambda f: _fragment_counts_as_hg(record, f))
+        if hg:
+            return _and(ACCEPT, hg, math.ceil(hg.bit_count() / 2))
+    if is_positive_ether_lpc(record):
         return _and(ACCEPT, _mask(record, lambda f: _fragment_counts_as_hg(record, f)))
     if is_negative_lpe(record):
         precursor = _mask(record, lambda f: f.fragment_type == 'Precursor Ion'

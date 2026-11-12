@@ -64,6 +64,27 @@ def write_sample(path, *, scale=1):
     path.write_bytes(content.replace(b"\n", b"\r\n"))
 
 
+def test_export_decodes_only_the_actual_preceding_survey_for_requested_ms2(tmp_path, monkeypatch):
+    from lipidgate.ms2.isotope_export import _read_requests
+    from lipidgate.pymzml_compat import prepare_pymzml
+
+    source = tmp_path / 'sample.mzML'
+    write_sample(source)
+    pymzml = prepare_pymzml()
+    original = pymzml.spec.Spectrum.peaks
+    decoded = []
+    def measured(spectrum, *args, **kwargs):
+        decoded.append(spectrum.element.get('id'))
+        return original(spectrum, *args, **kwargs)
+    monkeypatch.setattr(pymzml.spec.Spectrum, 'peaks', measured)
+    rows = {'scan_4': [('selected', {'rt_minutes': 61 / 60, 'precursor_mz': 500., 'adduct': '[M+H]+'})]}
+    result = _read_requests(source, rows)['selected']
+    assert result['status'] == 'ok' and result['native_id'] == 'scan=3'
+    assert result['scan_id'] == 'scan_3'
+    assert [peak['intensity'] for peak in result['peaks']] == [100., 60.]
+    assert decoded == ['scan=3']
+
+
 @pytest.mark.parametrize("project_format", ["legacy", "modern"])
 def test_old_run_export_uses_exact_preceding_ms1_and_own_source(tmp_path, project_format):
     first, second = tmp_path / "a.mzML", tmp_path / "b.mzML"

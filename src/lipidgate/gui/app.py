@@ -34,7 +34,7 @@ _add_package_dll_directories("PySide6")
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from lipidgate.ms2.config import DEFAULT_SEARCH_CONFIG
-from lipidgate.paths import default_negative_msp, default_positive_msp, resolve_ms1_library
+from lipidgate.paths import default_negative_msp, default_positive_msp
 
 from .components import LogPanel, Worker
 from .parameter_pages import FeaturePage, MS2Page
@@ -346,8 +346,7 @@ class FilterPage(WorkflowPage):
         result = payload
         self.window.show_results(str(result.xlsx_path or result.csv_path))
         self.run_progress.finish()
-        label = "个 MS1 特征" if getattr(result, "analysis_mode", "ms1_ms2") == "ms1_only" else "个最终名称"
-        self.log.append(f"完成：{result.row_count} {label}\n{result.xlsx_path or result.csv_path}")
+        self.log.append(f"完成：{result.row_count} 个特征\n{result.xlsx_path or result.csv_path}")
         self.window.status.showMessage("分析完成")
 
 
@@ -509,10 +508,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.nav.currentRowChanged.connect(self._navigate)
         self.nav.setCurrentRow(0)
-        self.feature_page.ms1_mode.currentIndexChanged.connect(
-            lambda: self._sync_polarity(self.feature_page.ms1_mode, self.ms2_page.mode))
-        self.ms2_page.mode.currentIndexChanged.connect(
-            lambda: self._sync_polarity(self.ms2_page.mode, self.feature_page.ms1_mode))
         self._refresh_parameter_controls()
         self._apply_style()
 
@@ -564,19 +559,13 @@ class MainWindow(QtWidgets.QMainWindow):
         library_path = m.library.text().strip()
         if library_path == str(default_library):
             library_path = ""
-        candidate_library = f.ms1_library.text().strip()
-        if candidate_library and Path(candidate_library).resolve() == default_library.resolve():
-            candidate_library = ""
         return {
             "ms1": {
                 "enabled": f.enabled.isChecked(),
                 "algo": f.algo.currentText(),
                 "params": f._feature_params(f.algo.currentText()),
                 "msdial_table": f.msdial_table.text() or None,
-                "mode": f.ms1_mode.currentData(),
-                "candidate_search": {"enabled": f.candidate_search.isChecked(),
-                    "ppm": f.candidate_ppm.value(), "max_candidates": f.candidate_max.value(),
-                    "library_path": candidate_library},
+                "mode": m._mode_value(),
             },
             "ms2": {
                 "mode": m._mode_value(),
@@ -624,14 +613,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 else b.get("mode", a.get("mode", "negative")))
         if mode not in {"positive", "negative"}:
             raise ValueError("请选择正或负模式")
-        f.ms1_mode.setCurrentIndex(f.ms1_mode.findData(mode))
-        f.ms1_library.setText(str(default_positive_msp() if mode == "positive" else default_negative_msp()))
-        search = a.get("candidate_search", {})
-        f.candidate_search.setChecked(search.get("enabled", True))
-        f.candidate_ppm.setValue(search.get("ppm", 10.))
-        f.candidate_max.setValue(search.get("max_candidates", 10))
-        if search.get("library_path"):
-            f.ms1_library.setText(str(resolve_ms1_library(search["library_path"], mode)))
         f.enabled.setChecked(a.get("enabled", True))
         f.algo.setCurrentText(a.get("algo", "pyopenms"))
         p = a.get("params", {})
